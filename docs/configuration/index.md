@@ -80,7 +80,7 @@ Command line `--name`; the Where column says which config block takes it.
 
 | Setting | Where | Type, values | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `gpu` | entry, `granite`, `granite-bench`, `granite-probe` | `"0"`, `"0,1"`, `"auto"` | GPU 0 alone | Cards, numbered as `nvidia-smi`. The first is the main card. Every card must be sm_86. `auto` takes every sm_86 card and makes the one with the most memory bandwidth main. Two cards run tensor parallel. [GPUs](gpus.md) |
+| `gpu` | entry, `granite`, `granite-bench` | `"0"`, `"0,1"`, `"auto"` | GPU 0 alone | Cards, numbered as `nvidia-smi`. The first is the main card. Every card must be sm_86. `auto` takes every sm_86 card and makes the one with the most memory bandwidth main. Two cards run tensor parallel. [GPUs](gpus.md) |
 
 ## Context and KV cache
 
