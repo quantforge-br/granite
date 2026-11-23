@@ -277,7 +277,6 @@ target_link_libraries(basalt-device PRIVATE core)
 add_library(kernels STATIC src/kernels/cuda/sampler.cu
                         src/kernels/cuda/logprobs.cu
                         src/kernels/cuda/elementwise.cu
-                        src/kernels/cuda/bf16_gemv.cu
                         src/kernels/cuda/native_mmvq.cu
                         src/kernels/cuda/native_bf16.cu
                         src/kernels/cuda/iq_kernels.cu
@@ -644,11 +643,6 @@ add_executable(elementwise_parity tests/kernels/elementwise_parity.cpp)
 target_include_directories(elementwise_parity PRIVATE ${_gpu_include_directories})
 target_link_libraries(elementwise_parity PRIVATE kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME elementwise_parity COMMAND elementwise_parity --selftest)
-
-add_executable(bf16_gemv_parity tests/kernels/bf16_gemv_parity.cpp)
-target_include_directories(bf16_gemv_parity PRIVATE ${_gpu_include_directories})
-target_link_libraries(bf16_gemv_parity PRIVATE kernels ${_gpu_runtime_target})
-basalt_gpu_test(NAME bf16_gemv_parity COMMAND bf16_gemv_parity --selftest)
 
 # working-set lock of a host region (CPU only).
 add_executable(platform_memory_test tests/platform/memory_test.cpp)
