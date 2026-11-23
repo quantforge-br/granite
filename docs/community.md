@@ -1,7 +1,8 @@
 # Community runs
 
 `docs/community/benchmarks.json` holds benchmark runs submitted by users, all taken with the same preset so the rows compare.
-The rows from before the fork are upstream Basalt's, of its models and cards. Upstream's page,
+The rows submitted to upstream Basalt before the fork, of its models and cards, are kept in the
+[upstream archive](archive/upstream-basalt/README.md); upstream's page,
 [basalt.jgulfo.com/community](https://basalt.jgulfo.com/community/), reads upstream's copy of the file, not granite's.
 
 ## Add your run

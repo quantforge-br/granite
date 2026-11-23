@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """community_row_test --apply against tools/check_benchmarks.py --fix, byte for byte.
 
-For each input (the real docs/community/benchmarks.json, an empty runs list) and each row (plain, odd strings) the
-expected file is the input with the row appended in plain json and then rewritten by check_benchmarks.py --fix. The row
-values here must match plain_row()/odd_row() in community_row_test.cpp. The written file is also checked as it is.
+For each input (the real docs/community/benchmarks.json, a file of earlier test rows, an empty runs list) and each row
+(plain, odd strings) the expected file is the input with the row appended in plain json and then rewritten by
+check_benchmarks.py --fix. The row values here must match plain_row()/odd_row() in community_row_test.cpp. The written
+file is also checked as it is.
 """
 import json
 import os
@@ -34,6 +35,18 @@ def row(odd):
     return r
 
 
+def earlier(name, odd):
+    """A test row of another setup than row(odd): only the submitter differs."""
+    r = row(odd)
+    r["submitter"] = name
+    return r
+
+
+def one_row():
+    """A file holding the plain row alone, for the checks that edit one row."""
+    return {"preset": "basalt-bench --community", "runs": [row(False)]}
+
+
 def read(p):
     with open(p, "rb") as f:
         return f.read()
@@ -52,11 +65,15 @@ failed = 0
 with tempfile.TemporaryDirectory() as d:
     empty = os.path.join(d, "empty.json")
     write(empty, json.dumps({"preset": "basalt-bench --community", "runs": []}, indent=2))
-    # the real file with CRLF line endings, as a checkout that translates them gives
-    crlf = os.path.join(d, "real_crlf.json")
+    # earlier rows of other setups, in the canonical format
+    rows = os.path.join(d, "rows.json")
+    write(rows, json.dumps({"preset": "basalt-bench --community", "runs": [earlier("earlier", False), earlier("older", True)]}))
+    subprocess.run([sys.executable, checker, "--fix", rows], capture_output=True, text=True, check=True)
+    # those rows with CRLF line endings, as a checkout that translates them gives
+    crlf = os.path.join(d, "rows_crlf.json")
     with open(crlf, "wb") as f:
-        f.write(read(real).replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
-    for name, src, eol in (("real", real, b"\n"), ("empty", empty, b"\n"), ("real-crlf", crlf, b"\r\n")):
+        f.write(read(rows).replace(b"\n", b"\r\n"))
+    for name, src, eol in (("real", real, b"\n"), ("rows", rows, b"\n"), ("empty", empty, b"\n"), ("rows-crlf", crlf, b"\r\n")):
         for case in ("plain", "odd"):
             data = load(src)
             data["runs"].append(row(case == "odd"))
@@ -85,7 +102,7 @@ with tempfile.TemporaryDirectory() as d:
     failed |= not ok
 # the model and the KV format are required and checked against the names the engine uses
 for key, bad in (("model", "Qwen"), ("kv", "int4"), ("model", None), ("kv", None)):
-    data = load(real)
+    data = one_row()
     if bad is None:
         del data["runs"][0][key]
     else:
@@ -100,7 +117,7 @@ for key, bad in (("model", "Qwen"), ("kv", "int4"), ("model", None), ("kv", None
 # every model the engine names is accepted, with the cache formats it reports (Hy4-flash and Inkling 2 Mini report fp16 or fp8)
 for model, kv in (("Qwen3.8-Flash-Next", "int8"), ("Qwen3.8-27B", "int8"), ("DeepSeek-V4.1-Flash", "fp8+fp4"),
                   ("Hy4-flash", "fp16"), ("Hy4-flash", "fp8"), ("Inkling-2-Mini", "fp16"), ("Inkling-2-Mini", "fp8")):
-    data = load(real)
+    data = one_row()
     data["runs"][0]["model"], data["runs"][0]["kv"] = model, kv
     p = os.path.join(tempfile.gettempdir(), "cb_good_row.json")
     write(p, json.dumps(data, indent=2, ensure_ascii=False))
@@ -115,7 +132,7 @@ for model, kv in (("Qwen3.8-Flash-Next", "int8"), ("Qwen3.8-27B", "int8"), ("Dee
 
 # the per-test fields are optional and type-checked; rows without them (every old row) are valid
 def check_with(key, value):
-    data = load(real)
+    data = one_row()
     if value is None:
         data["runs"][0].pop(key, None)
     else:
@@ -209,12 +226,13 @@ with tempfile.TemporaryDirectory() as d:
     ok = "runs[1] (tester): same submitter, model, quant and hardware as runs[0]: update your run instead" in dup_pairs(p)[1]
     print("community_row_fix dup message: " + ("ok" if ok else "FAILED"))
     failed |= not ok
-    # the real file has no duplicate; adding the same setup again to it is one
+    # the real file has no duplicate; one setup added to it twice is one
     data = load(real)
     ok = dup_pairs(real)[0] == [] and cpp_pairs(real) == []
-    data["runs"].append(json.loads(json.dumps(data["runs"][4])))
+    data["runs"] += [row(False), row(False)]
+    n = len(data["runs"])
     write(p, json.dumps(data, indent=2, ensure_ascii=False))
-    ok = ok and dup_pairs(p)[0] == [(len(data["runs"]) - 1, 4)] and cpp_pairs(p) == [(len(data["runs"]) - 1, 4)]
+    ok = ok and dup_pairs(p)[0] == [(n - 1, n - 2)] and cpp_pairs(p) == [(n - 1, n - 2)]
     print("community_row_fix dup real file: " + ("ok" if ok else "FAILED"))
     failed |= not ok
 sys.exit(failed)
