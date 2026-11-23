@@ -784,6 +784,7 @@ uint64_t InklingModel::promote(uint64_t keep_free) {
 }
 
 bool InklingModel::resize_reserve(uint64_t free_bytes, void* stream) {
+    const uint64_t before = reserve_;
     reserve_ = free_bytes;
     if (lent_) return true;   // the wake takes the copies back against this reserve
     size_t free_b = 0, total_b = 0;
@@ -792,7 +793,11 @@ bool InklingModel::resize_reserve(uint64_t free_bytes, void* stream) {
     if (free_b < want) demote(want - free_b, stream);
     else promote(want);
     cudaMemGetInfo(&free_b, &total_b);
-    return free_b >= want;
+    if (free_b >= want) return true;
+    // refused: the reserve before it holds again (the image encoder's room is planned against it), with the copies it allows
+    reserve_ = before;
+    promote(held_free(kCardSpare));
+    return false;
 }
 
 void InklingModel::lend(bool low, void* stream) {
