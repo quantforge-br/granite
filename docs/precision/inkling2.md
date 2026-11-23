@@ -4,11 +4,11 @@ Where Inkling 2 Mini rounds and how its output compares. Method: [quality](quali
 
 ## Summary
 
-- **Against the reference:** the pack scores mean KLD 0.00305 and top-1 97.76% over 100 chunks
-  ([below](#against-the-reference)).
+- **Against the reference:** on one RTX 3090 the pack scores mean KLD 0.00289 and top-1 97.76% over 100 chunks; tensor
+  parallel on two, 0.00290 and 97.74% ([below](#against-the-reference)).
 - **The reference is not a true BF16 model.** No BF16 checkpoint exists: the release ships its routed experts in NVFP4 and
-  MXFP8. The base is the official release with its experts dequantized to BF16, so its KLD is not comparable with the other
-  models' true-BF16 KLDs.
+  MXFP8. The base is the official release with its experts dequantized to BF16, so its KLD is not comparable with KLDs
+  measured against a true BF16 model.
 - **The experts are the release's bits.** Layers 0 to 19 keep the release's NVFP4 codes and scales as they are.
 - **Drafting does not change output.** Greedy drafted decoding gives plain decoding's tokens.
 
@@ -32,14 +32,14 @@ converter.
 The release marks NVFP4 activation quantization as required (its own serving runs W4A4); transformers and llama.cpp run
 dequantized weights, and so does the reference.
 
-Formats measured for layers 20 to 23 over 20 chunks: Q8_0 of the MXFP8 values 0.00256 KLD, NVFP4 0.00431. Keeping attention in
+Formats upstream measured for layers 20 to 23 over 20 chunks: Q8_0 of the MXFP8 values 0.00256 KLD, NVFP4 0.00431. Keeping attention in
 BF16 instead of Q8_0 scored 0.00218 for 1.2 GB more reads a token; it was not taken.
 
 ## Where each stage rounds
 
 | Stage | Format | Arithmetic |
 | --- | --- | --- |
-| Routed experts | NVFP4, Q8_0 | decode: q8_1 activations, fp32 sums; experts in RAM on the CPU: Q8_0 activations, fp32 sums, the card's softcapped SwiGLU (the sigmoid on the raw gate); prompt chunks: NVFP4 layers on the FP4 block-scaled tensor cores, each activation row as two FP4 terms under one per-row scale (its rounding and the rounding of what that leaves, about 8 bits), fp32 accumulation with fp16 SwiGLU and down intermediates before fp32 weighted combine; Q8_0 layers MMQ (int8 mma); each matrix's FP32 scale applied after |
+| Routed experts | NVFP4, Q8_0 | decode: q8_1 activations, fp32 sums; experts in RAM on the CPU: Q8_0 activations, fp32 sums, the card's softcapped SwiGLU (the sigmoid on the raw gate); prompt chunks: MMQ (int8 mma, q8_1 activations) for both formats; each matrix's FP32 scale applied after |
 | Q8_0 projections, head | Q8_0 | q8_1 activations (decode); MMQ (prompt); fp32 logits, softcap 30 |
 | Router | F32 | fp32 sigmoid, top 8 |
 | Attention-residual mixes, controllers, norms | F32, BF16 weights | fp32 |
@@ -50,9 +50,9 @@ A decode row's arithmetic does not depend on how many rows share its window. Pro
 On two cards ([tensor parallelism](../models/inkling2.md#two-cards)) each card sums its half of every routed expert's
 intermediate (fp32), and the two sums are added, the first card's first; everything else rounds as on one card.
 
-The prompt path's NVFP4 experts, measured over 20 chunks: one FP4 term per activation (the release's W4A4) 0.00407 KLD, two
-terms 0.00264; the same chunks through MMQ (q8_1 activations) 0.00252. Two terms were taken: the prompt reads about 1.5 times
-as fast as through MMQ.
+The prompt path's NVFP4 experts run through MMQ (q8_1 activations). Upstream ran them on Blackwell's FP4 block-scaled tensor
+cores, which sm_86 does not have; over 20 chunks it measured one FP4 term per activation (the release's W4A4) at 0.00407 KLD,
+two terms at 0.00264 and MMQ at 0.00252.
 
 ## Attention caches
 
@@ -63,21 +63,21 @@ as fast as through MMQ.
 ## Against the reference
 
 The base: the official release with its routed experts dequantized to BF16 (llama.cpp 29b52d398, `convert_hf_to_gguf
---outtype bf16`), through `llama-perplexity`, wikitext-2, 100 chunks of 512, `-b 8192 -ub 8192`; `inkling2-bf16-base.kld`, base
-PPL 7.0714. transformers' implementation on the CPU agrees with it (chunks 0 and 1: KLD 0.0017 and 0.0019, top-1 98.4% and
+--outtype bf16`), through `llama-perplexity`, wikitext-2, 100 chunks of 512; `inkling2-bf16-base.kld`. Upstream's base
+(`-b 8192 -ub 8192`) has PPL 7.0714. transformers' implementation on the CPU agrees with it (chunks 0 and 1: KLD 0.0017 and 0.0019, top-1 98.4% and
 97.7%).
 
 | Run | Mean KLD | Top-1 | PPL |
 | --- | ---: | ---: | ---: |
-| 100 chunks, `--kv fp16` | 0.00305 | 97.76% | 7.0695 (base 7.0633 over the scored rows) |
-| 20 chunks (the quick gate) | 0.00264 | 97.80% | 7.6642 (base 7.6534) |
-| 90 chunks, RTX 5060 Ti alone, 1,047 experts in RAM on the CPU | 0.00298 | 97.70% | |
-| the same 90 chunks, the whole model on the card | 0.00304 | 97.76% | |
 | 100 chunks, one RTX 3090, against a base made the same way on that machine | 0.00289 | 97.76% | 7.0758 (base 7.0655) |
 | the same, tensor parallel on two RTX 3090s | 0.00290 | 97.74% | 7.0721 (base 7.0655) |
+| upstream, 100 chunks, `--kv fp16` | 0.00305 | 97.76% | 7.0695 (base 7.0633 over the scored rows) |
+| upstream, 20 chunks (the quick gate) | 0.00264 | 97.80% | 7.6642 (base 7.6534) |
+| upstream, 90 chunks, RTX 5060 Ti alone, 1,047 experts in RAM on the CPU | 0.00298 | 97.70% | |
+| upstream, the same 90 chunks, the whole model on the card | 0.00304 | 97.76% | |
 
-RTX 5090 at 400 W, the whole model on the card, unless the row says otherwise. On the 5060 Ti the CPU computes the experts in
-RAM (a Ryzen 9 9950X, AVX-512).
+The upstream rows are Basalt's before the fork, with the FP4 prompt path: an RTX 5090 at 400 W with the whole model on the
+card unless the row says otherwise. On the 5060 Ti the CPU computes the experts in RAM (a Ryzen 9 9950X, AVX-512).
 
 ## Drafting
 
