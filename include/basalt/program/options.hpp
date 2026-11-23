@@ -28,34 +28,18 @@ struct CommonOptions {
     int pool_workers = 0;         ///< >0 = the user's worker count; otherwise the start-up pick
     /// The pool's core layout; the start-up pick unless given
     basalt::kernels::cpu::PoolAffinity pool_affinity = basalt::kernels::cpu::PoolAffinity::Auto;
-    /// CS-T `--resident-budget-gib N`: the resident mode with a RAM budget - the N GiB of experts the GPU cache does
-    /// not hold that the expert profile ranks hottest are copied into RAM, the rest are read from the files in place
-    /// (the GGUF shards when the model file has no experts section).  0 = the whole complement (--resident-experts).
-    uint64_t resident_budget = 0;
     /// Slots of VRAM-resident experts.  **0 = off, and off is the default.**  Switching the cache on moves work off the
     /// CPU pool (the model's hit kernel).
     int expert_cache = 0;
-    /// Multi-GPU: a second expert tier on CUDA device `peer_device` (-1 = off), `peer_reserve_mib` left free
-    /// there, `peer_slots` caps its size (0 = as many as fit), `peer_adapt_swaps` per adaptive round
-    /// (-1 = adapt_swaps).
+    /// Multi-GPU: the first card after the main one (-1 = none)
     int peer_device = -1;
-    /// every expert tier's device, the first one peer_device, and each card's memory bandwidth (GB/s, 0 unknown)
+    /// every card after the main one, the first one peer_device
     std::vector<int> peer_devices;
-    std::vector<double> peer_gbps;
-    double main_gbps = 0;         ///< the main card's memory bandwidth (GB/s, 0 unknown)
-    int peer_reserve_mib = 600;
-    bool no_prompt_skip = false;  ///< --no-prompt-skip: every prompt row through every layer
     std::string kv;               ///< --kv: the KV storage, as each model names it (empty: the model's default)
     /// --rope-scaling, --rope-scale, --yarn-* ...: taken by the models that extend their context (basalt/model/rope_flags.hpp)
     basalt::model::RopeFlags rope;
     /// --route-tail-skip, --route-prior: taken by the mixture-of-experts models (basalt/model/route_flags.hpp)
     basalt::model::RouteFlags route;
-    /// --kv-resident N: K/V streaming, N cells of each attention layer in VRAM and the rest in page-locked RAM (0: all in
-    /// VRAM), for the models that take it
-    int64_t kv_resident = 0;
-    /// --diag-split-at N: diagnostic, a model split across two cards at layer N whatever the start would pick (0: off)
-    int diag_rows = 0;
-    int diag_split_at = 0;
     /// The engine's expert profile for the model (--expert-profile, else data/profiles/<key>.prof, cli::profile_key),
     /// or the --expert-profile-save file a start places from; empty means none.  A profile decides residency by routing
     /// frequency instead of by first use.
@@ -71,7 +55,6 @@ struct CommonOptions {
     /// sent as `BGEN <slot> <max_new> ...` reads its prompt and its first token through the usual path, then
     /// continues in slot <slot> of the batch windows (`BT <slot> <id> [<id> ...]` lines, then `BDONE <slot> ...`).
     int batch = 0;
-    bool resident_budget_given = false;  // --resident-budget-gib on the command line
     bool pool_affinity_given = false;    // --pool-affinity on the command line
     bool pool_workers_given = false;     // --pool-workers on the command line
     /// Stop when the model emits an end-of-turn token (the pack's own, or --eos-ids).
@@ -100,12 +83,8 @@ struct CommonOptions {
     /// that take --suffix-draft; 0 = the drafter only.
     int suffix_draft = 3;
     std::string spec_oracle;
-    int draft_experts = 32;            ///< --draft-experts N: the drafter's routed experts each stage keeps (0: all)
-    int drafter_device = -1;           ///< --diag-drafter-gpu N: the CUDA device it runs on (-1: the main card)
     bool diag_teacher = false;         ///< --diag-teacher: --spec-oracle's tokens go on whatever the picks
-    bool diag_tier_frozen = false;     ///< --diag-tier-frozen: the VRAM tier keeps what it holds
     std::string diag_dump;                 ///< --diag-dump DIR: a model's per-layer tensors, off by default
-    int diag_tier_ram = -1, diag_tier_vram = -1;   ///< --diag-tier-ram / --diag-tier-vram: fixed expert-tier sizes
     bool diag_serial_prompt = false;       ///< --diag-serial-prompt: an adapter model reads its prompt one decode step at a time
     std::string diag_logits;               ///< --diag-logits FILE: an adapter model writes the logits of each decoded row
     bool diag_batch_check = false;         ///< --diag-batch-check: the batch conformance check over --batch N sessions (model/batch_check.hpp)

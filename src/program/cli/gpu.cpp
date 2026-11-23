@@ -58,7 +58,6 @@ std::optional<int> select_gpus(CommonOptions& o, std::vector<GpuCard>& chosen_ca
                 (c.smi >= 0 ? " (nvidia-smi " + std::to_string(c.smi) + ")" : "") + " " + bp::gpu_role_name(roles[d]);
         if (roles[d] == bp::GpuRole::ExpertTier || roles[d] == bp::GpuRole::PromptSplit || roles[d] == bp::GpuRole::LayerStage) {
             o.peer_devices.push_back((int) d);
-            o.peer_gbps.push_back(c.mem_gbps);
         }
     }
     int drv = 0, rt = 0;
@@ -74,7 +73,6 @@ std::optional<int> select_gpus(CommonOptions& o, std::vector<GpuCard>& chosen_ca
                            : prompt_split  ? std::string("one card reads prompts beside the main card; later cards idle")
                                        : "expert tiers max " + std::to_string(ri.max_expert_tiers) + "; later cards idle").c_str());
     if (!o.peer_devices.empty()) o.peer_device = o.peer_devices[0];
-    if (!ri.cards.empty()) o.main_gbps = ri.cards[0].mem_gbps;
     chosen_cards = ri.cards;
     // The split hands a window's activations from one card to the next, and a tier card reads its experts d2d: both
     // want peer access, which every pair must opt into once per process.  A pair the driver refuses is left alone and

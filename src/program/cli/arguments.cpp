@@ -38,8 +38,6 @@ std::optional<int> parse_options(int argc, char** argv, CommonOptions& o, const 
         else if (a == "--max-new") o.max_new = std::atoll(next("--max-new"));
         else if (a == "--max-context") { o.max_context = std::atoll(next("--max-context")); }
         else if (a == "--diag-dump") o.diag_dump = next("--diag-dump");
-        else if (a == "--diag-tier-ram") o.diag_tier_ram = std::atoi(next("--diag-tier-ram"));
-        else if (a == "--diag-tier-vram") o.diag_tier_vram = std::atoi(next("--diag-tier-vram"));
         else if (a == "--diag-serial-prompt") o.diag_serial_prompt = true;
         else if (a == "--diag-logits") o.diag_logits = next("--diag-logits");
         else if (a == "--diag-batch-check") o.diag_batch_check = true;
@@ -111,14 +109,7 @@ std::optional<int> parse_options(int argc, char** argv, CommonOptions& o, const 
             if (!parse_i64_list(next("--eos-ids"), o.eos_ids, e)) { basalt::log::error("granite", "--eos-ids: %s", e.c_str()); return 2; }
             o.stop_eos = true;
         }
-        else if (a == "--peer-reserve-mib") o.peer_reserve_mib = std::atoi(next("--peer-reserve-mib"));
         else if (a == "--expert-profile") o.expert_profile = next("--expert-profile");
-        else if (a == "--resident-budget-gib") {
-            const double gib = std::atof(next("--resident-budget-gib"));
-            if (!(gib > 0.0)) { basalt::log::error("granite generate", "--resident-budget-gib needs N > 0"); return 2; }
-            o.resident_budget = (uint64_t) (gib * 1073741824.0);
-            o.resident_budget_given = true;
-        }
         else {
             // An unknown flag is an ERROR and not a warning: a typo'd `--max-neww` that silently generated 16
             // tokens would look like a working run.  A flag another model takes is unknown to this one.

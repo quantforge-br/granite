@@ -80,34 +80,20 @@ struct Result {
 struct LoadRequest {
     std::vector<std::string> paths;   ///< pack or GGUF shards
     std::string diag_dump;            ///< diagnostic: directory for per-layer tensor dumps (empty = off)
-    int diag_tier_ram = -1;           ///< diagnostic: fixed RAM-tier experts per layer (-1 = sized from free memory)
-    int diag_tier_vram = -1;          ///< diagnostic: fixed VRAM-tier experts per layer (-1 = sized from free memory)
     std::vector<int> peer_devices;    ///< CUDA devices of the expert tier cards after the main one
     int64_t max_context = 0;          ///< --max-context, or the default every model shares
     int sessions = 1;                 ///< sessions the model will be asked for (--batch)
     bool vision = false;              ///< --vision: requests may carry images (each slot keeps buffers for one)
     std::string expert_profile;       ///< the routing order of the experts (empty: the file's own order)
     int expert_cache = 0;             ///< VRAM expert slots over all layers (0 or -1: from the free memory)
-    uint64_t resident_budget = 0;     ///< bytes the RAM tier may take (0: from the free memory)
     int pool_workers = 0;             ///< CPU pool workers (0: the start-up pick, kernels::cpu::start_pool_workers)
     kernels::cpu::PoolAffinity pool_affinity = kernels::cpu::PoolAffinity::All;
     bool pool_affinity_given = false;
-    int peer_reserve_mib = 600;       ///< VRAM a second card leaves free
-    bool prompt_skip = true;          ///< a prompt's far rows may stop at the layer a model says is the last they matter to
     int vram_reserve_mib = 0;         ///< VRAM the main card leaves free beyond what the model needs (0: none)
     int spec = 0;                     ///< rows a decode window may hold (0 or 1: one)
-    bool draft = false;               ///< run the drafter the pack carries, if any
-    int drafter_device = -1;          ///< diagnostic: the CUDA device it runs on (-1: the main card)
-    std::string profile_dir;          ///< the engine's data/profiles, where a model finds the files its name keys
-    int draft_experts = 32;           ///< the drafter's routed experts each stage keeps (0: all)
-    bool diag_tier_frozen = false;    ///< diagnostic: the VRAM tier keeps what it holds, no bus copy and no promotion
     std::string kv;                   ///< --kv: the KV storage as the model names it, checked by its flags (empty: default)
     RopeFlags rope;                   ///< the rope scaling flags, for a model that takes them (rope_flags.hpp)
     RouteFlags route;                 ///< the lossy routing flags, for a model that takes them (route_flags.hpp)
-    int64_t kv_resident = 0;          ///< --kv-resident: K/V cells per attention layer kept in VRAM (0: all)
-    std::vector<double> card_gbps;    ///< memory bandwidth of the main card, then of each peer device (GB/s, 0: unknown)
-    int diag_rows = 0;                ///< diagnostic: rows of one forward call of a prompt (0: the model's own chunk)
-    int diag_split_at = 0;            ///< diagnostic: a model's layers split at this one across two cards (0: off)
     bool diag_tp_check = false;       ///< diagnostic: after each call a tensor-parallel model checks its cards hold the same state
 };
 

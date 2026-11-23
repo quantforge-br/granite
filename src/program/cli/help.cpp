@@ -90,7 +90,6 @@ void usage() {
                  "                       left after the weights, the session and --vram-reserve-mib\n"
                  "  --vram-reserve-mib N  VRAM left free on the primary GPU for graphs, scratch and the head when\n"
                  "                       --expert-cache auto sizes the tier (default 700; at least 256)\n"
-                 "  --peer-reserve-mib N  VRAM the peer tier leaves free on its card (default 600)\n"
                  "  --pool-workers N     CPU expert pool worker count.  Auto when not set: every physical core\n"
                  "                       except the one the host loop spins on (on a hybrid CPU, with --pool-affinity\n"
                  "                       auto: P-cores minus 1 plus half the E-cores; p-cores: P-cores minus 1),\n"
@@ -99,11 +98,7 @@ void usage() {
                  "  --pool-affinity MODE Which cores size the worker pool (workers are not pinned): all (one\n"
                  "                       worker per physical core), auto (hybrid CPUs: the P-cores minus the\n"
                  "                       host's, plus half the E-cores) or p-cores (the P-cores minus the host's).\n"
-                 "                       Auto when not set.\n"
-                 "  --resident-budget-gib N  the resident mode with at most N GiB of experts in RAM (hottest first;\n"
-                 "                       auto when not set: what fits);\n"
-                 "                       a budget that would leave less than the RAM floor free is refused, naming\n"
-                 "                       the largest safe value.\n", (long long) basalt::program::kDefaultContext);
+                 "                       Auto when not set.\n", (long long) basalt::program::kDefaultContext);
 }
 
 }  // namespace basalt::program::cli

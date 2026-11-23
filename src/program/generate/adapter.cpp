@@ -356,8 +356,6 @@ int run_session_model(basalt::program::CommonOptions& o, const basalt::model::Mo
         basalt::model::LoadRequest lreq;
         lreq.paths = o.native_shards;
         lreq.diag_dump = o.diag_dump;
-        lreq.diag_tier_ram = o.diag_tier_ram;
-        lreq.diag_tier_vram = o.diag_tier_vram;
         lreq.peer_devices = o.peer_devices;
         lreq.max_context = o.max_context;
         lreq.sessions = std::max(o.batch, 1);
@@ -378,27 +376,14 @@ int run_session_model(basalt::program::CommonOptions& o, const basalt::model::Mo
             if (!key.empty() && basalt::platform::file_size(prof, bytes) && bytes > 0) lreq.expert_profile = prof;
         }
         lreq.expert_cache = o.expert_cache;
-        lreq.resident_budget = o.resident_budget;
         lreq.pool_workers = o.pool_workers;
         lreq.pool_affinity = o.pool_affinity;
         lreq.pool_affinity_given = o.pool_affinity_given;
-        lreq.peer_reserve_mib = o.peer_reserve_mib;
-        lreq.prompt_skip = !o.no_prompt_skip;
         lreq.vram_reserve_mib = o.vram_reserve_given ? o.vram_reserve_mib : 0;
         lreq.spec = o.spec;
-        lreq.draft = o.spec >= 2 && o.spec_oracle.empty();
-        lreq.drafter_device = o.drafter_device;
-        lreq.profile_dir = basalt::platform::install_root() + "/data/profiles";
-        lreq.draft_experts = o.draft_experts;
-        lreq.diag_tier_frozen = o.diag_tier_frozen;
         lreq.kv = o.kv;
         lreq.rope = o.rope;
         lreq.route = o.route;
-        lreq.kv_resident = o.kv_resident;
-        lreq.card_gbps.push_back(o.main_gbps);
-        lreq.card_gbps.insert(lreq.card_gbps.end(), o.peer_gbps.begin(), o.peer_gbps.end());
-        lreq.diag_split_at = o.diag_split_at;
-        lreq.diag_rows = o.diag_rows;
         lreq.diag_tp_check = o.diag_tp_check;
         const basalt::model::Result r = adapter->start(lreq, started);
         if (!r.ok() || started.sessions.empty()) return fatal_start_error(r.message);
