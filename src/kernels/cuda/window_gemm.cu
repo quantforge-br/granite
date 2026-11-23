@@ -7,7 +7,6 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <map>
 #include <mutex>
@@ -121,14 +120,12 @@ struct Plan {
     int tiles = 0, ks = 1, cps = 0, nchunks = 0, grid = 1;
 };
 
-std::atomic<int> plan_dev{-1};   // plan_device
-
-// the SM count of the device that plans (plan_device's, else the current one)
+// the current device's SM count
 int sm_count() {
     static std::mutex mu;
     static std::map<int, int> known;
-    int dev = plan_dev.load(std::memory_order_relaxed);
-    if (dev < 0) cudaGetDevice(&dev);
+    int dev = 0;
+    cudaGetDevice(&dev);
     std::lock_guard<std::mutex> lock(mu);
     const auto it = known.find(dev);
     if (it != known.end()) return it->second;
@@ -137,8 +134,7 @@ int sm_count() {
     return known[dev] = v > 0 ? v : 1;
 }
 
-// blocks of k that fit on the planning device at once: its blocks per SM (the same on every card of the architecture,
-// read on the current one after raising the kernel's smem allowance there) times the planning device's SMs
+// blocks of k that fit on the current device at once (after raising the kernel's smem allowance there)
 int resident(const Kernel& k) {
     static std::mutex mu;
     static std::map<std::pair<int, const void*>, int> known;   // per device and kernel: blocks per SM
@@ -264,8 +260,6 @@ void norm_pack(const uint16_t* x, const float* w, float eps, int64_t K, int T, v
     launch_pdl(norm_pack_kernel<uint16_t>, dim3(T), dim3(kPackThreads), 0, (cudaStream_t) stream, x, w, eps, K, (uint16_t*) act, xn);
     check("window gemm: norm_pack");
 }
-
-void plan_device(int device) { plan_dev.store(device, std::memory_order_relaxed); }
 
 void workspace_need(const Call& c, std::size_t& partial_floats, std::size_t& tickets) {
     const Plan p = plan_for(c);
