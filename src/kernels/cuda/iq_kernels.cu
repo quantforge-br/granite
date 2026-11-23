@@ -2385,18 +2385,21 @@ __device__ __forceinline__ void row_dot_sub8(const uint8_t* row, const block_q8_
     for (int i = 0; i < 4; ++i) {
 #pragma unroll
         for (int c = 0; c < NC; ++c) a[i][c] = 0.0f;
-        const auto call = [&](int k) {
-            const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
+        const auto call = [&](int kbx, int iqs) {
             const typename S::W w = S::load(row, kbx, iqs);
 #pragma unroll
             for (int c = 0; c < NC; ++c)
                 if (EXACT_N || c < n) a[i][c] += S::apply(w, x + off[c] + kbx * (F::qk / 32), iqs);
         };
         if constexpr (KC > 0) {
+            // call t + j with j = 8 i + 32 m a constant: the lane's block t / ipb and slot t % ipb, plus whole blocks,
+            // so every call's weight and activation addresses are the lane's own plus a fixed offset
+            static_assert(8 % F::ipb == 0, "a block's calls divide the eight lanes");
 #pragma unroll
-            for (int k = t + 8 * i; k < KC; k += 32) call(k);
+            for (int j = 8 * i; j < KC; j += 32)
+                if (KC - j >= 8 || t < KC - j) call(t / F::ipb + j / F::ipb, F::step * (t % F::ipb));
         } else {
-            for (int k = t + 8 * i; k < K; k += 32) call(k);
+            for (int k = t + 8 * i; k < K; k += 32) call(k / F::ipb, F::step * (k % F::ipb));
         }
     }
 #pragma unroll
