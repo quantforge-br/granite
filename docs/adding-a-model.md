@@ -24,14 +24,14 @@ The router then needs one config entry. Nothing in the server names a model.
 - Benchmark token ids go in `data/bench/<arch>`. `--quality` needs a BF16 reference.
 - Flags: `parse_flag` and `finish_flags`. A flag a model lacks is the normal unknown-argument error. Token id flags default to the pack's tokens.
 - The start (`ModelAdapter::start`) runs in three steps. The model's `plan` decides and allocates everything, in the order its
-  sizing depends on (weights, then what is sized from the memory left: caches, tiers, prompt-split stages), and queues every
+  sizing depends on (weights, then what is sized from the memory left: caches, the RAM tier), and queues every
   range of the file it reads in one `LoadPlan` (`basalt/core/loader.hpp`), with copies of bytes the plan itself places (a second
-  home, a stage's image) as memory sources; nothing is placed yet. The start announces the plan's bytes as the one total, places
+  home) as memory sources; nothing is placed yet. The start announces the plan's bytes as the one total, places
   them in one unbuffered pass on a thread pool (the ranges bound for a card first, the main card then the others, each streamed
   through small pinned staging; then the ranges bound for RAM; the one bar names the stage and its own part: `loading model
   weights: cuda0 3.1/12.5`, ..., `ram`; each destination's share is summed from the plan and the result line splits the
-  total by it: `loaded 76.8GiB 30.1s  cuda0=12.5GiB ram=64.3GiB`), then calls the model's `attach`: what needs the bytes landed (packed forms,
-  checks, timing a prompt split's cards) and the sessions, when nothing was sized after them. A model makes its sessions in
+  total by it: `loaded <total>GiB <seconds>s  cuda0=<GiB> ram=<GiB>`), then calls the model's `attach`: what needs the bytes landed (packed forms,
+  checks) and the sessions, when nothing was sized after them. A model makes its sessions in
   `plan` instead when a cache or tier sizes itself from the memory they leave. `core/ram_load` allocates and pins the RAM tier:
   `plan` allocates it, the pass gives it its pages as it reads into it, and it is pinned once its reads have landed (in
   `attach`, or as a step of the plan, `LoadPlan::after_reads`, when the pass copies from it), so a start holds no RAM before
@@ -40,6 +40,4 @@ The router then needs one config entry. Nothing in the server names a model.
 - `--parallel` slots in one pass through the weights: derive the session from `model::BatchSession`, write its hooks and run
   the batch check, see [batched decoding](design/batching.md#adding-batching-to-a-model).
 - A model with its own fast path derives from `serve::Runtime` and `serve::Request`.
-- A Qwen chat model takes the shared pre-tokenizer, tool form and token names (`basalt/program/qwen_forms.hpp`) and the
-  shared Qwen dialect (`serve/models/qwen.py`).
 - Kernels: shared kernels stay in `src/kernels/`. Every new kernel gets a parity test and a microbench line.
