@@ -422,6 +422,24 @@ void test_attention() {
         attention_decode(one, 1, 1 << 20, scr, out1, nullptr);
         g1 = host(out1, (size_t) kHeads * kHeadDim);
         same_bits("  any launch bound", g1.data(), &got[(size_t) 2 * kHeads * kHeadDim], g1.size() * 4);
+        // rows whose slices start too far apart to share their keys' loads: each row's bits as alone
+        const std::vector<int> apart = {p0 + 3, p0 - 37, p0 + 1, p0 - 20};
+        int* dap = dev(apart);
+        AttnArgs b = a;
+        b.pos = dap;
+        float* outa = zeros<float>((size_t) R * kHeads * kHeadDim);
+        attention_decode(b, R, max_keys, scr, outa, nullptr);
+        const std::vector<float> ga = host(outa, (size_t) R * kHeads * kHeadDim);
+        std::vector<float> alone(ga.size());
+        for (int r = 0; r < R; ++r) {
+            AttnArgs o = b;
+            o.q = dq + (size_t) r * kHeads * kHeadDim; o.r = drs + (size_t) r * kHeads * kRel; o.sink = dsink + (size_t) r * kHeads;
+            o.pos = dap + r;
+            attention_decode(o, 1, max_keys, scr, out1, nullptr);
+            const std::vector<float> g = host(out1, (size_t) kHeads * kHeadDim);
+            std::copy(g.begin(), g.end(), alone.begin() + (size_t) r * kHeads * kHeadDim);
+        }
+        same_bits("  rows far apart, each alone", alone.data(), ga.data(), ga.size() * 4);
         // gated, and as q8_1 blocks
         AttnArgs gq = a;
         gq.gate = dgate + kOffGate;
