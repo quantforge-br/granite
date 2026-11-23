@@ -65,8 +65,8 @@ template <int P> __device__ __forceinline__ int swz(int r) {
     else return 0;
 }
 
-template <int N> __device__ __forceinline__ void cp_async(void* smem, const void* gmem) {
-    const unsigned s = (unsigned) __cvta_generic_to_shared(smem);
+// N bytes from gmem to the shared-window address s
+template <int N> __device__ __forceinline__ void cp_async(unsigned s, const void* gmem) {
     if constexpr (N == 16) asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" ::"r"(s), "l"(gmem));
     else asm volatile("cp.async.ca.shared.global [%0], [%1], %2;\n" ::"r"(s), "l"(gmem), "n"(N));
 }
@@ -108,42 +108,60 @@ __global__ void __launch_bounds__(Cfg<RS, NM, CH, ST>::kThreads, 1) wgemm_kernel
         return mi;
     };
     auto chunks_of = [&](int item) { return min(a.cps, a.nchunks - (item % ks) * a.cps); };
-    auto issue = [&](int item, int i, int stage) {
+
+    // A chunk's copies.  Of each matrix slot, thread t copies the 16-byte weight pieces t + j kThreads (rows
+    // t / P + j kRowStep, all with piece t % P, so all with one swizzle) and the scale lines t + j kThreads: fixed offsets
+    // in a stage.  The sources of the item being issued are set when it starts and advance a chunk at a time.
+    constexpr int NW = RS * C::P / kThreads, NS = KB * 32 / kThreads;   // weight pieces, scale lines a thread copies
+    constexpr int kRowStep = kThreads / C::P, kLineStep = kThreads / 32;
+    static_assert(NW * kThreads == RS * C::P && kRowStep * C::P == kThreads && kRowStep % 4 == 0, "window gemm: copies");
+    static_assert(NS * kThreads == KB * 32 && kLineStep * 32 == kThreads, "window gemm: scale copies");
+    const int wr = threadIdx.x / C::P, wq = threadIdx.x % C::P;   // the first piece's row, the piece
+    const int skb = threadIdx.x >> 5, sl = threadIdx.x & 31;      // the first scale line's 64-value block, the line
+    const unsigned smem_s = (unsigned) __cvta_generic_to_shared(smem);
+    const unsigned w_dst = smem_s + wr * C::CB + ((wq ^ swz<C::P>(wr)) << 4);
+    const unsigned s_dst = smem_s + RS * C::CB + skb * RS * 4 + sl * C::kScalePiece;
+    const uint8_t* wsrc[NM][NW];
+    const uint8_t* ssrc[NM];
+    auto start = [&](int item) {   // the sources of the item's first chunk (rows are whole tiles: multiples of 128)
         const int tile = item / ks, mi = matrix_of(tile);
-        const int64_t row0 = (int64_t) (tile - a.tile0[mi]) * RS;
-        const int64_t kc = (int64_t) ((item % ks) * a.cps + i);   // chunk index along K
-        uint8_t* st = smem + stage * C::kStage;
+        const int64_t row0 = (int64_t) (tile - a.tile0[mi]) * RS, kc = (int64_t) (item - tile * ks) * a.cps;
 #pragma unroll
         for (int m = 0; m < NM; ++m) {
             const int mat = NM == 1 ? mi : m;
-            const uint8_t* W = a.w[mat];
-            const int64_t rows = a.rows[mat];
-            uint8_t* sm = st + m * C::MB;
-            for (int p = threadIdx.x; p < RS * C::P; p += kThreads) {
-                const int r = p / C::P, q = p - r * C::P;
-                const int64_t row = min(row0 + r, rows - 1);   // rows past the last read the last (not written)
-                cp_async<16>(sm + r * C::CB + ((q ^ swz<C::P>(r)) << 4), W + row * row_bytes + kc * C::CB + q * 16);
-            }
-            const uint8_t* S = a.sp[mat];
-            const int64_t tbase = (row0 >> 7) * (a.K / 64);
-            const int quart = (int) ((row0 & 127) >> 5) * 4;
-            for (int p = threadIdx.x; p < KB * 32; p += kThreads) {
-                const int kb = p >> 5, l = p & 31;
-                cp_async<C::kScalePiece>(sm + RS * C::CB + kb * RS * 4 + l * C::kScalePiece,
-                                         S + (tbase + kc * KB + kb) * 512 + l * 16 + quart);
-            }
+#pragma unroll
+            for (int j = 0; j < NW; ++j)
+                wsrc[m][j] = a.w[mat] + (row0 + wr + j * kRowStep) * row_bytes + kc * C::CB + wq * 16;
+            ssrc[m] = a.sp[mat] + ((row0 >> 7) * (a.K / 64) + kc * KB + skb) * 512 + sl * 16 + ((row0 & 127) >> 5) * 4;
         }
     };
-    int iss_item = blockIdx.x, iss_c = 0, iss_q = 0;
-    int iss_n = iss_item < items ? chunks_of(iss_item) : 0;
+    auto issue = [&](unsigned st) {   // the next chunk into the stage at byte st
+#pragma unroll
+        for (int m = 0; m < NM; ++m) {
+#pragma unroll
+            for (int j = 0; j < NW; ++j) {
+                cp_async<16>(w_dst + st + m * C::MB + j * kRowStep * C::CB, wsrc[m][j]);
+                wsrc[m][j] += C::CB;
+            }
+#pragma unroll
+            for (int j = 0; j < NS; ++j)
+                cp_async<C::kScalePiece>(s_dst + st + m * C::MB + j * kLineStep * RS * 4, ssrc[m] + j * kLineStep * 512);
+            ssrc[m] += KB * 512;
+        }
+    };
+    int iss_item = blockIdx.x, iss_c = 0, iss_n = 0;
+    unsigned iss_st = 0;
     auto issue_next = [&]() {
         if (iss_item < items) {
-            issue(iss_item, iss_c, iss_q % ST);
-            ++iss_q;
+            if (iss_c == 0) {
+                start(iss_item);
+                iss_n = chunks_of(iss_item);
+            }
+            issue(iss_st);
+            iss_st = iss_st == (ST - 1) * C::kStage ? 0u : iss_st + C::kStage;
             if (++iss_c == iss_n) {
                 iss_c = 0;
                 iss_item += G;
-                if (iss_item < items) iss_n = chunks_of(iss_item);
             }
         }
         cp_commit();
