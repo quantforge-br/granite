@@ -1092,14 +1092,203 @@ int drawn_parity() {
     return bad;
 }
 
+// `reps` of sample_tokens' greedy pick on `s` captured into a graph: a stream under capture takes the one-block argmax
+cudaGraphExec_t greedy_graph(const float* l, int T, int nv, const int* h, int H, const basalt::kernels::SamplerParams& p,
+                             int* o, cudaStream_t s, int reps) {
+    cudaGraph_t g = nullptr;
+    cudaGraphExec_t ge = nullptr;
+    check(cudaStreamBeginCapture(s, cudaStreamCaptureModeThreadLocal), "begin capture");
+    for (int r = 0; r < reps; ++r) basalt::kernels::sample_tokens(l, T, nv, h, H, p, o, s);
+    check(cudaStreamEndCapture(s, &g), "end capture");
+    check(cudaGraphInstantiate(&ge, g, 0), "instantiate");
+    cudaGraphDestroy(g);
+    return ge;
+}
+
+// `--greedy`: the greedy split (the engine's) against the one-block argmax (its fallback) on random rows at real and
+// edge geometry - exact ties within and across blocks, -0 and +0, -inf, NaN and +inf, rows with no candidate, penalties
+// with ids outside the vocabulary, a bias, 1..8 rows and 65 (more than a split launch takes), vocabularies that end a
+// block partway, exactly and one past the widest split - the same picks, and the host argmax on rows without penalties.
+// `bench`: then the per-call time of each at a 200,058-logit vocabulary, rows 1..8.
+int greedy_parity(bool bench) {
+    using namespace basalt::kernels;
+    const float inf = std::numeric_limits<float>::infinity();
+    const float qnan = std::numeric_limits<float>::quiet_NaN();
+    cudaStream_t s = nullptr;
+    check(cudaStreamCreate(&s), "stream");
+    const int max_t = 65, H = 80, max_nv = 262145;
+    int *d_o[2] = {}, *d_h = nullptr;
+    float *d_l = nullptr, *d_b = nullptr;
+    for (int*& o : d_o) check(cudaMalloc(&o, max_t * sizeof(int)), "out");
+    check(cudaMalloc(&d_h, (size_t) max_t * H * sizeof(int)), "history");
+    check(cudaMalloc(&d_b, (size_t) max_nv * sizeof(float)), "bias");
+    check(cudaMalloc(&d_l, (size_t) max_t * max_nv * sizeof(float)), "logits");
+    std::mt19937 rng(57);
+    int ncase = 0, nfail = 0, nref = 0, nref_fail = 0, none = 0;
+    for (int nv : {200058, 248320, 262144, 262145, 4097, 4096, 300, 7}) {
+        for (int c = 0; c < 30; ++c) {
+            const int T = c == 29 ? 65 : 1 + c % 8;
+            std::normal_distribution<float> g(0.0f, c % 3 == 0 ? 1.0f : 4.0f);
+            std::vector<float> l((size_t) T * nv);
+            for (auto& v : l) v = g(rng);
+            if (c % 4 == 1) for (auto& v : l) v = std::round(v * 4.0f) / 4.0f;           // many exact ties
+            for (int t = 0; t < T; ++t) {
+                float* r = l.data() + (size_t) t * nv;
+                switch ((c + t) % 6) {
+                case 1:   // the top value at ids spread over every block, the lowest of them past the first block
+                    for (int v = std::min(nv - 1, 4100 + t); v < nv; v += 997) r[v] = 60.0f;
+                    break;
+                case 2:   // nothing above zero, zeros in the row's second half, each signed by its id's parity
+                    for (int v = 0; v < nv; ++v) {
+                        r[v] = -std::fabs(r[v]) - 0.125f;
+                        if (v % 5 == 0 && v >= nv / 2) r[v] = (v & 1) ? 0.0f : -0.0f;
+                    }
+                    break;
+                case 3:   // -inf but for a few finite logits, NaN beside them; every third row no candidate at all
+                    for (int v = 0; v < nv; ++v) r[v] = -inf;
+                    if (c % 3 != 0)
+                        for (int j = 0; j < 6; ++j) r[(size_t) ((int64_t) j * 7919 % nv)] = j < 3 ? 1.5f : 0.5f;
+                    for (int j = 0; j < 4; ++j) r[(size_t) ((int64_t) (j + 11) * 104729 % nv)] = qnan;
+                    break;
+                case 4:   // two +inf
+                    r[nv / 3] = inf;
+                    r[nv - 1] = inf;
+                    break;
+                default: break;
+                }
+            }
+            SamplerParams p;
+            p.greedy = c % 2 == 0;
+            p.temperature = p.greedy ? 0.6f : 0.0f;
+            const bool pen = c % 3 == 1;
+            std::vector<int> hist((size_t) T * H, -1);
+            if (pen) {
+                p.penalty_last_n = 64; p.penalty_repeat = 1.3f; p.penalty_freq = 0.25f; p.penalty_present = 0.5f;
+                for (int t = 0; t < T; ++t) {
+                    int* hr = hist.data() + (size_t) t * H;
+                    for (int i = 0; i < H; ++i) hr[i] = (int) (rng() % (unsigned) std::min(nv, 9000)) - 3;
+                    // the row's first three candidates in the window, so the penalties move the pick
+                    const float* r = l.data() + (size_t) t * nv;
+                    std::vector<char> taken((size_t) nv, 0);
+                    for (int j = 0; j < 3; ++j) {
+                        float bv = -inf;
+                        int best = -1;
+                        for (int v = 0; v < nv; ++v)
+                            if (!taken[(size_t) v] && r[v] > bv) { bv = r[v]; best = v; }
+                        if (best < 0) break;
+                        taken[(size_t) best] = 1;
+                        hr[H - 1 - 2 * j] = best;
+                    }
+                    hr[H - 2] = nv + 5;                                                    // outside: ignored
+                }
+            }
+            const bool bias = c % 5 == 3;
+            std::vector<float> b((size_t) nv, 0.0f);
+            if (bias) {
+                for (int i = 0; i < nv; i += 13) b[(size_t) i] = (i % 2) ? 2.5f : -inf;
+                check(cudaMemcpy(d_b, b.data(), (size_t) nv * 4, cudaMemcpyHostToDevice), "bias");
+                p.logit_bias = d_b;
+            }
+            check(cudaMemcpy(d_l, l.data(), l.size() * 4, cudaMemcpyHostToDevice), "logits");
+            check(cudaMemcpy(d_h, hist.data(), hist.size() * 4, cudaMemcpyHostToDevice), "history");
+            std::vector<int> o[2];
+            for (int v = 0; v < 2; ++v) {
+                check(cudaMemset(d_o[v], 0xff, max_t * sizeof(int)), "out fill");
+                if (v == 0) {
+                    sample_tokens(d_l, T, nv, pen ? d_h : nullptr, pen ? H : 0, p, d_o[v], s);
+                } else {
+                    cudaGraphExec_t ge = greedy_graph(d_l, T, nv, pen ? d_h : nullptr, pen ? H : 0, p, d_o[v], s, 1);
+                    check(cudaGraphLaunch(ge, s), "graph launch");
+                    check(cudaStreamSynchronize(s), "graph sync");
+                    cudaGraphExecDestroy(ge);
+                }
+                check(cudaStreamSynchronize(s), "sync");
+                o[v].resize((size_t) T);
+                check(cudaMemcpy(o[v].data(), d_o[v], (size_t) T * 4, cudaMemcpyDeviceToHost), "out");
+            }
+            ++ncase;
+            if (o[0] != o[1]) {
+                ++nfail;
+                std::printf("  FAIL nv %d case %d T %d: the split's picks differ from the one-block argmax's\n", nv, c, T);
+            }
+            if (pen) continue;
+            for (int t = 0; t < T; ++t) {   // the first maximum above -inf of the biased row, 0 when none
+                const float* r = l.data() + (size_t) t * nv;
+                float bv = -inf;
+                int want = -1;
+                for (int v = 0; v < nv; ++v) {
+                    const float x = bias ? r[v] + b[(size_t) v] : r[v];
+                    if (x > bv) { bv = x; want = v; }
+                }
+                none += want < 0;
+                ++nref;
+                if (o[0][(size_t) t] != (want < 0 ? 0 : want)) {
+                    ++nref_fail;
+                    std::printf("  FAIL nv %d case %d row %d: pick %d, the host argmax %d\n", nv, c, t, o[0][(size_t) t],
+                                want);
+                }
+            }
+        }
+    }
+    std::printf("greedy parity: %d cases, %d split vs one-block mismatches; %d rows vs the host argmax (%d with no "
+                "candidate), %d mismatches\n", ncase, nfail, nref, none, nref_fail);
+    int bad = nfail + nref_fail + (none == 0);
+    if (bench) {
+        const int NV = 200058, reps = 200;
+        std::normal_distribution<float> g(0.0f, 3.0f);
+        std::vector<float> l((size_t) 8 * NV);
+        for (auto& v : l) v = g(rng);
+        check(cudaMemcpy(d_l, l.data(), l.size() * 4, cudaMemcpyHostToDevice), "bench logits");
+        SamplerParams p;
+        p.greedy = true;
+        cudaEvent_t e0, e1;
+        check(cudaEventCreate(&e0), "event");
+        check(cudaEventCreate(&e1), "event");
+        for (int T = 1; T <= 8; ++T) {
+            float ms[2] = {};
+            for (int v = 0; v < 2; ++v) {
+                cudaGraphExec_t ge = nullptr;
+                if (v == 0) sample_tokens(d_l, T, NV, nullptr, 0, p, d_o[0], s);   // warm: the scratch
+                else ge = greedy_graph(d_l, T, NV, nullptr, 0, p, d_o[1], s, reps);
+                check(cudaStreamSynchronize(s), "warm");
+                check(cudaEventRecord(e0, s), "record");
+                if (v == 0)
+                    for (int r = 0; r < reps; ++r) sample_tokens(d_l, T, NV, nullptr, 0, p, d_o[0], s);
+                else
+                    check(cudaGraphLaunch(ge, s), "graph launch");
+                check(cudaEventRecord(e1, s), "record");
+                check(cudaEventSynchronize(e1), "event sync");
+                if (ge) cudaGraphExecDestroy(ge);
+                check(cudaEventElapsedTime(&ms[v], e0, e1), "elapsed");
+            }
+            std::printf("  greedy %d rows: split %.2f us, one-block %.2f us\n", T, 1e3 * ms[0] / reps, 1e3 * ms[1] / reps);
+        }
+        cudaEventDestroy(e0);
+        cudaEventDestroy(e1);
+    }
+    for (int* o : d_o) cudaFree(o);
+    cudaFree(d_h); cudaFree(d_b); cudaFree(d_l);
+    cudaStreamDestroy(s);
+    return bad;
+}
+
 int main(int argc, char** argv) {
-    bool selftest = false, bench = false, split = false, drawn = false;
+    bool selftest = false, bench = false, split = false, drawn = false, greedy = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--selftest") selftest = true;
         else if (std::string(argv[i]) == "--bench") bench = true;
         else if (std::string(argv[i]) == "--split") split = true;
         else if (std::string(argv[i]) == "--drawn") drawn = true;
-        else { std::fprintf(stderr, "usage: sampler_parity [--selftest] [--bench] [--split [--bench]] [--drawn]\n"); return 2; }
+        else if (std::string(argv[i]) == "--greedy") greedy = true;
+        else {
+            std::fprintf(stderr, "usage: sampler_parity [--selftest] [--bench] [--split [--bench]] [--greedy [--bench]] [--drawn]\n");
+            return 2;
+        }
+    }
+    if (greedy) {
+        const int bad = greedy_parity(bench);
+        std::printf(bad ? "GREEDY PARITY FAIL (%d)\n" : "GREEDY PARITY OK\n", bad);
+        return bad ? 1 : 0;
     }
     if (drawn) {
         const int bad = drawn_parity();

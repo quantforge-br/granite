@@ -7,8 +7,10 @@
 // and TEMPERATURE AFTER THE TRUNCATION FILTERS.  Every order produces a valid token, so only a comparison at the
 // distribution level can tell them apart; the parity test does that against an independently computed distribution.
 //
-// `sampler_greedy_kernel` is the plain argmax, one block per token over the vocabulary.  The sampled chain has these
-// implementations, which pick the same token, bit for bit:
+// The plain argmax is `sampler_greedy_split_kernel`, each row cut into 4,096-logit blocks over the whole GPU and the
+// row's last block taking the first of their picks, or where it cannot run `sampler_greedy_kernel`, one block per
+// token over the vocabulary: the same token.  The sampled chain has these implementations, which pick the same token,
+// bit for bit:
 //   - the SORTED SPLIT (top_k <= 32, the engine's): `sampler_sort_kernel` cuts each row into 4,096-logit blocks over
 //     the whole GPU, each finds its first k with bitonic networks, and the row's last block merges the lists and runs
 //     the tail (`sampled_tail_pair`), all in one launch;
@@ -990,6 +992,95 @@ sampler_sort_kernel(const float* __restrict__ logits, int n_vocab, const int* __
     sampled_tail_pair(ts, k, p, t, out, query, nq, qprob);
 }
 
+/// **THE GREEDY ARGMAX OVER THE WHOLE GPU.**  Grid (blocks per row, rows), kGreedyThreads threads.  Block b takes the
+/// row's logits [b kSplitBlockSpan, (b + 1) kSplitBlockSpan), biased and penalised as `sampler_greedy_kernel` takes
+/// them (its window's ids in a bitmap of the span), every load in flight before the first comparison, and keeps the
+/// span's first candidate in the selection order; the row's last block (counted in `done[t]`, reset by it) takes the
+/// first of the blocks' candidates.  The first of a union is the first of its parts' firsts, so the token is
+/// `sampler_greedy_kernel`'s, bit for bit, and 0 when no logit is above -inf.
+constexpr int kGreedyThreads = 256;
+constexpr int kGreedyPer = kSplitBlockSpan / kGreedyThreads;   // 16 logits per thread
+static_assert(kSplitBlockSpan % kGreedyThreads == 0, "a block's span splits evenly over its threads");
+__global__ void __launch_bounds__(kGreedyThreads)
+sampler_greedy_split_kernel(const float* __restrict__ logits, int n_vocab, const int* __restrict__ history,
+                            int history_len, const SamplerParams p, int n_blocks, int2* __restrict__ cand,
+                            unsigned* __restrict__ done, int* __restrict__ out) {
+    const int t = blockIdx.y;
+    const float* l = logits + (size_t) t * n_vocab;
+    const int blo = (int) blockIdx.x * kSplitBlockSpan;
+    const int warp = (int) (threadIdx.x >> 5), lane = (int) (threadIdx.x & 31);
+    const float ninf = __int_as_float(0xff800000);
+
+    const int* hrow = history ? history + (size_t) t * history_len : nullptr;
+    int hlen = 0;
+    if (hrow) {
+        hlen = p.penalty_last_n < history_len ? p.penalty_last_n : history_len;
+        if (hlen < 0) hlen = 0;
+        hrow += history_len - hlen;          // the window is the TAIL
+    }
+    __shared__ unsigned int bits[kSplitBlockSpan / 32];
+    const bool use_bits = hrow != nullptr && hlen > 0;
+    if (use_bits) {
+        for (int w = threadIdx.x; w < kSplitBlockSpan / 32; w += blockDim.x) bits[w] = 0u;
+        __syncthreads();
+        for (int i = threadIdx.x; i < hlen; i += blockDim.x) {
+            const int h = hrow[i];
+            if (h >= 0 && h < n_vocab && h >= blo && h - blo < kSplitBlockSpan)
+                atomicOr(&bits[(h - blo) >> 5], 1u << ((h - blo) & 31));
+        }
+        __syncthreads();
+    }
+
+    float x[kGreedyPer];
+#pragma unroll
+    for (int j = 0; j < kGreedyPer; ++j) {
+        const int v = blo + j * kGreedyThreads + (int) threadIdx.x;
+        x[j] = v < n_vocab ? (p.logit_bias ? l[v] + p.logit_bias[v] : l[v]) : ninf;
+    }
+    float bv = ninf;                         // `n_vocab` is "no candidate", as in sampler_greedy_kernel
+    int best = n_vocab;
+#pragma unroll
+    for (int j = 0; j < kGreedyPer; ++j) {   // ascending ids, a strict `>`: the thread's first maximum
+        const int v = blo + j * kGreedyThreads + (int) threadIdx.x;
+        float s = x[j];
+        if (use_bits) {
+            const int b = v - blo;
+            if (v < n_vocab && (bits[b >> 5] & (1u << (b & 31)))) s = apply_penalties(s, history_count(hrow, hlen, v), p);
+        }
+        if (s > bv) { bv = s; best = v; }
+    }
+    warp_first(bv, best);
+    __shared__ float wv[kGreedyThreads / 32];
+    __shared__ int wi[kGreedyThreads / 32];
+    __shared__ int last;
+    if (lane == 0) { wv[warp] = bv; wi[warp] = best; }
+    __syncthreads();
+    if (warp == 0) {
+        bv = lane < kGreedyThreads / 32 ? wv[lane] : ninf;
+        best = lane < kGreedyThreads / 32 ? wi[lane] : n_vocab;
+        warp_first(bv, best);
+        if (lane == 0) {
+            cand[(size_t) t * n_blocks + blockIdx.x] = make_int2(best, __float_as_int(bv));
+            __threadfence();                 // the candidate is visible device-wide before the count that publishes it
+            const unsigned prior = atomicAdd(&done[t], 1u);
+            last = prior == (unsigned) (n_blocks - 1);
+            if (last) done[t] = 0u;          // every block of the row has counted: ready for the next launch
+        }
+    }
+    __syncthreads();
+    if (!last || warp != 0) return;
+    __threadfence();
+    const int2* src = cand + (size_t) t * n_blocks;
+    bv = ninf;
+    best = n_vocab;
+    for (int b = lane; b < n_blocks; b += 32) {
+        const int2 c = __ldcg(src + b);
+        take_first(bv, best, __int_as_float(c.y), c.x);
+    }
+    warp_first(bv, best);
+    if (lane == 0) out[t] = best < n_vocab ? best : 0;
+}
+
 // A stream being captured into a graph must not reach `split_scratch` (cudaMalloc): it
 // gets the one-block kernel, which needs no memory of its own.  The legacy stream cannot be captured.
 bool stream_capturing(void* stream) {
@@ -1470,24 +1561,29 @@ void sample_tokens_impl(int split, const float* logits, int n_tokens, int n_voca
                                ? (unsigned) ((n_vocab + 31) / 32) * sizeof(unsigned)   // the penalty bitmap
                                : 0;
     const cudaStream_t cs = (cudaStream_t) stream;
+    // The splits' 4,096-logit blocks (49 per row for 200,058 logits) and their scratch, sized for 16 rows and 64
+    // entries at least, so a verify window or a wider top_k does not regrow it.  No scratch where a split cannot run:
+    // a wider vocabulary than the merge holds, more than `kSplitMaxRows` rows (the engine samples at most a verify
+    // window), a stream under capture; the one-block kernels then.
+    const int n_blocks = (n_vocab + kSplitBlockSpan - 1) / kSplitBlockSpan;
+    const dim3 grid((unsigned) n_blocks, (unsigned) n_tokens);
+    unsigned* done = nullptr;
+    auto split_lists = [&]() -> int2* {
+        if (n_blocks > kSplitMaxBlocks || n_tokens > kSplitMaxRows || stream_capturing(stream)) return nullptr;
+        return split_scratch(stream, (size_t) (n_tokens > 16 ? n_tokens : 16) * n_blocks * kSelMax, &done);
+    };
     if (p.greedy || p.temperature <= 0.0f) {
-        // One block per token, 1,024 threads over the vocabulary.  See `sampler_greedy_kernel`.
-        const int gthreads = 1024;
-        sampler_greedy_kernel<<<(unsigned) n_tokens, gthreads, shmem, cs>>>(
-            logits, n_vocab, history, history_len, p, p.penalty_last_n, p.penalty_last_n, out);
+        // The split argmax (`sampler_greedy_split_kernel`), else one block per token, 1,024 threads over the
+        // vocabulary (`sampler_greedy_kernel`).
+        if (int2* scratch = split_lists())
+            sampler_greedy_split_kernel<<<grid, kGreedyThreads, 0, cs>>>(logits, n_vocab, history, history_len, p,
+                                                                         n_blocks, scratch, done, out);
+        else
+            sampler_greedy_kernel<<<(unsigned) n_tokens, 1024, shmem, cs>>>(
+                logits, n_vocab, history, history_len, p, p.penalty_last_n, p.penalty_last_n, out);
     } else {
-        // The split top_k over 4,096-logit blocks (61 per row for 248,320 logits).  The one-block kernel when the
-        // split cannot run: a wider vocabulary than the merge holds, more than `kSplitMaxRows` rows (the engine
-        // samples at most a verify window), a stream under capture, no scratch.
         const int k = sampled_k(p.top_k, n_vocab);
-        const int n_blocks = (n_vocab + kSplitBlockSpan - 1) / kSplitBlockSpan;
-        int2* scratch = nullptr;
-        unsigned* done = nullptr;
-        if (k <= kSelMax && split != 3 && n_blocks <= kSplitMaxBlocks && n_tokens <= kSplitMaxRows &&
-            !stream_capturing(stream))
-            // sized for 16 rows and 64 entries at least, so a verify window or a wider top_k does not regrow it
-            scratch = split_scratch(stream, (size_t) (n_tokens > 16 ? n_tokens : 16) * n_blocks * kSelMax, &done);
-        const dim3 grid((unsigned) n_blocks, (unsigned) n_tokens);
+        int2* scratch = k <= kSelMax && split != 3 ? split_lists() : nullptr;
         if ((k > kSelMax || split == 3) && p.n_drawn > 0) {
             basalt::log::error("granite", "sample_tokens: drawn drafts on the wide path (a list of %d)", k);
             std::exit(1);
