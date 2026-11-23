@@ -1,5 +1,5 @@
 // include/basalt/kernels/route_lossy.hpp - the opt-in routing changes that trade accuracy for fewer missed experts
-// (--route-tail-skip, --route-prior; basalt/model/route_flags.hpp): which experts the GPUs hold, and the tail skip's rule.
+// (--route-tail-skip, --route-prior; basalt/model/route_flags.hpp): which experts the GPUs hold.
 //
 // Both change the output, so a model applies them to its decode windows only.
 #pragma once
@@ -27,26 +27,5 @@ struct ResidentTabs {
         return in;
     }
 };
-
-/// The rank (0-based) of entry i by router weight among its token's k entries: the heavier first, a tie to the lower slot.
-ROUTE_LOSSY_HD inline int route_weight_rank(const float* w, int i, int k) {
-    const float wi = w[i];
-    const int base = i - i % k;
-    int rank = 0;
-    for (int j = 0; j < k; ++j) {
-        const float wj = w[base + j];
-        rank += wj > wi || (wj == wi && base + j < i);
-    }
-    return rank;
-}
-
-/// Whether entry i is dropped: its expert `miss`es every GPU and every entry of the window naming that expert is in its
-/// token's tail (`tail[j]`: rank R or lower).
-ROUTE_LOSSY_HD inline bool route_tail_drop(const int32_t* ids, const uint8_t* tail, int n, int i, bool miss) {
-    bool drop = miss;
-    for (int j = 0; drop && j < n; ++j)
-        if (ids[j] == ids[i] && !tail[j]) drop = false;
-    return drop;
-}
 
 }  // namespace basalt::kernels
