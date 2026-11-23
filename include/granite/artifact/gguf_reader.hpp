@@ -279,7 +279,10 @@ struct MetaValue {
     double num() const { return (type == MetaType::F32 || type == MetaType::F64) ? f : (double)u; }
 };
 
-inline MetaValue read_value(Cursor& c, MetaType t, int depth = 0) {
+/// The array items a reader keeps by default: a sample, as the count is what most readers need.
+inline constexpr uint64_t kArraySample = 64;
+
+inline MetaValue read_value(Cursor& c, MetaType t, int depth = 0, uint64_t keep = kArraySample) {
     if (depth > 2) throw std::runtime_error("GGUF: array nesting too deep");
     MetaValue v;
     v.type = t;
@@ -327,10 +330,10 @@ inline MetaValue read_value(Cursor& c, MetaType t, int depth = 0) {
         v.elem = (MetaType)c.read<uint32_t>();
         v.count = c.read<uint64_t>();
         if (v.count > (1u << 24)) throw std::runtime_error("GGUF: implausible array length");
-        v.items.reserve((size_t)std::min<uint64_t>(v.count, 64));
+        v.items.reserve((size_t)std::min<uint64_t>(v.count, keep));
         for (uint64_t i = 0; i < v.count; ++i) {
-            MetaValue e = read_value(c, v.elem, depth + 1);
-            if (i < 64) v.items.push_back(std::move(e)); // keep a sample; the count is what matters
+            MetaValue e = read_value(c, v.elem, depth + 1, keep);
+            if (i < keep) v.items.push_back(std::move(e));
         }
         break;
     }
@@ -365,6 +368,12 @@ public:
     }
     /// A GGUF stored whole inside a larger file: `bytes` bytes at `offset`.
     GgufFile(const std::string& path, uint64_t offset, uint64_t bytes) : path_(path), range_off_(offset), range_bytes_(bytes) {
+        try { open(); }
+        catch (...) { close(); throw; }
+    }
+    /// Keeps every item of the metadata arrays (a tokenizer's tables), not a sample.
+    struct WholeArrays {};
+    GgufFile(const std::string& path, WholeArrays) : path_(path), keep_(~0ull) {
         try { open(); }
         catch (...) { close(); throw; }
     }
@@ -447,7 +456,7 @@ private:
         for (uint64_t i = 0; i < n_kv; ++i) {
             std::string key = c.str();
             MetaType t = (MetaType)c.read<uint32_t>();
-            meta_.emplace(std::move(key), read_value(c, t));
+            meta_.emplace(std::move(key), read_value(c, t, 0, keep_));
         }
         tensors_.reserve((size_t)n_tensors);
         // GGUF has no index to arbitrate between two tensors of one name: find() is first-match, so a
@@ -478,6 +487,7 @@ private:
     const uint8_t* base_ = nullptr;
     uint64_t size_ = 0, data_start_ = 0, alignment_ = 32;
     uint64_t range_off_ = 0, range_bytes_ = 0;
+    uint64_t keep_ = kArraySample;
     uint32_t version_ = 0;
     platform::MappedFile map_;
     bool virtual_ = false;

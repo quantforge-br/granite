@@ -52,7 +52,7 @@ void pack_tokens(const model::ModelAdapter& adapter, CommonOptions& o) {
     std::string err;
     std::vector<uint8_t> text;
     granite::core::Json vocab;
-    if (!file.open(o.model, err) || !file.load_meta(err) || !granite::core::read_range(file.range("tokenizer/vocab.json"), text, err) ||
+    if (!file.open(o.model, err) || !file.load_meta(err) || !file.read("tokenizer/vocab.json", text, err) ||
         !granite::core::parse_json((const char*) text.data(), text.size(), vocab, err)) {
         granite::log::warn("granite", "the pack's vocabulary cannot be read (%s): no end-of-turn or turn token", err.c_str());
         return;

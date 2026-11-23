@@ -9,6 +9,10 @@
 // `meta.tensors`, whose offsets are absolute file offsets, so the loaders that read GGUF tensors in place read them
 // from the .granite unchanged.
 //
+// A GGUF opens as a ModelFile too: its tensor data is the `gguf` section, its metadata and tensor directory are the
+// meta's `gguf_kv` and `tensors` (meta.format "gguf"), and its byte-level BPE tokenizer gives the `tokenizer/*`
+// files a converter writes into a .granite, held in memory (read() serves them; they have no range of the file).
+//
 // The `hc8` section is a table of the 8-bit hyper-connection copies, little-endian:
 //   Hc8Header                 magic "GRANITH8", version, n_entries
 //   n_entries x Hc8Entry      name (NUL-padded), rows, cols, srow, offset (from the start of the section), bytes
@@ -87,29 +91,41 @@ public:
         uint64_t bytes = 0;
     };
 
-    /// Opens `path`: checks the magic, the version, the size and every section's bounds, and reads the table.
+    /// Opens `path`: a .granite (checks the magic, the version, the size and every section's bounds, and reads the
+    /// table), or a GGUF of one file (its metadata read now, see the header).
     bool open(const std::string& path, std::string& err);
     const std::string& path() const { return path_; }
+    /// Whether the file is a GGUF.
+    bool gguf() const { return gguf_; }
     uint64_t file_bytes() const { return file_bytes_; }
     const std::vector<Section>& sections() const { return sections_; }
     const Section* find(const std::string& name) const;
-    /// The section as a range of the file; an empty range when there is no such section.
+    /// The section as a range of the file; an empty range when the file has no such section (a section held in
+    /// memory has none).
     FileRange range(const std::string& name) const;
+    /// The section's bytes, from the file or from memory.
     bool read(const std::string& name, std::vector<uint8_t>& out, std::string& err) const;
 
-    /// Parses the `meta` section (once).
+    /// Parses the `meta` section (once); a GGUF's is built when it opens.
     bool load_meta(std::string& err);
     const Json& meta() const { return meta_; }
 
-    /// After load_meta: makes `GgufFile(path())` serve meta.gguf_kv and the tensors of the `gguf` section.
+    /// After load_meta: makes `GgufFile(path())` serve meta.gguf_kv and the tensors of the `gguf` section (a GGUF
+    /// serves its own).
     bool register_gguf_view(std::string& err) const;
 
 private:
+    bool open_gguf(std::string& err);
+    /// Builds a GGUF's tokenizer files (on the first read of one: the tables are 200k strings).
+    bool gguf_tokenizer(std::string& err) const;
+
     std::string path_;
     uint64_t file_bytes_ = 0;
     std::vector<Section> sections_;
+    mutable std::map<std::string, std::string> held_;   ///< sections built in memory (a GGUF's tokenizer files)
     Json meta_;
     bool meta_loaded_ = false;
+    bool gguf_ = false;
 };
 
 /// Where each loader reads from: the sections of the .granite.

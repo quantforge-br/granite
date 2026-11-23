@@ -111,10 +111,8 @@ int Runtime::init_protocol() {
     {
         std::vector<uint8_t> vj, mj, tj, cj;
         std::string terr;
-        if (granite::core::read_range(model_file.range("tokenizer/vocab.json"), vj, terr) &&
-            granite::core::read_range(model_file.range("tokenizer/merges.txt"), mj, terr) &&
-            granite::core::read_range(model_file.range("tokenizer/token_type.json"), tj, terr) &&
-            granite::core::read_range(model_file.range("tokenizer/tokenizer.json"), cj, terr) &&
+        if (model_file.read("tokenizer/vocab.json", vj, terr) && model_file.read("tokenizer/merges.txt", mj, terr) &&
+            model_file.read("tokenizer/token_type.json", tj, terr) && model_file.read("tokenizer/tokenizer.json", cj, terr) &&
             std::string_view((const char*) cj.data(), cj.size()).find("\"pre\": \"" + std::string(pre_.name) + "\"") != std::string_view::npos) {
             text_tokenizer.set_pretokenize(pre_.split);
             text_tokenizer.set_ignore_merges(pre_.ignore_merges);

@@ -18,14 +18,22 @@ namespace fixture {
 
 struct Kv {
     std::string key;
-    uint32_t type = 8;         ///< GGUF value type: 8 string, 2 u16, 4 u32, 5 i32
+    uint32_t type = 8;         ///< GGUF value type: 8 string, 2 u16, 4 u32, 5 i32, 6 f32, 7 bool, 9 array
     std::string s;
     uint64_t u = 0;
+    float f = 0;
+    uint32_t elem = 0;                 ///< array: 8 string or 5 i32
+    std::vector<std::string> strs;     ///< array of strings
+    std::vector<int32_t> ints;         ///< array of i32
 };
 inline Kv str(const std::string& k, const std::string& v) { return Kv{k, 8, v, 0}; }
 inline Kv u16(const std::string& k, uint64_t v) { return Kv{k, 2, {}, v}; }
 inline Kv i32(const std::string& k, uint64_t v) { return Kv{k, 5, {}, v}; }
 inline Kv u32(const std::string& k, uint64_t v) { return Kv{k, 4, {}, v}; }
+inline Kv f32(const std::string& k, float v) { Kv x{k, 6}; x.f = v; return x; }
+inline Kv boolean(const std::string& k, bool v) { return Kv{k, 7, {}, v ? 1u : 0u}; }
+inline Kv strs(const std::string& k, std::vector<std::string> v) { Kv x{k, 9}; x.elem = 8; x.strs = std::move(v); return x; }
+inline Kv i32s(const std::string& k, std::vector<int32_t> v) { Kv x{k, 9}; x.elem = 5; x.ints = std::move(v); return x; }
 
 struct Tensor {
     std::string name;
@@ -65,6 +73,10 @@ inline Written write(const std::filesystem::path& path, const std::vector<Kv>& k
         if (k.type == 8) puts(k.s);
         else if (k.type == 2) { const uint16_t v = (uint16_t) k.u; put(&v, 2); }
         else if (k.type == 4 || k.type == 5) { const uint32_t v = (uint32_t) k.u; put(&v, 4); }
+        else if (k.type == 6) put(&k.f, 4);
+        else if (k.type == 7) { const uint8_t v = (uint8_t) k.u; put(&v, 1); }
+        else if (k.type == 9 && k.elem == 8) { put32(8); put64(k.strs.size()); for (const auto& e : k.strs) puts(e); }
+        else if (k.type == 9 && k.elem == 5) { put32(5); put64(k.ints.size()); for (int32_t e : k.ints) put(&e, 4); }
         else throw std::runtime_error("fixture: unsupported metadata type");
     }
     Written w;

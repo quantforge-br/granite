@@ -83,8 +83,7 @@ public:
             std::string gerr;
             granite::program::grammar::PackVocab pv;
             std::vector<int32_t> ends(o.eos_ids.begin(), o.eos_ids.end());
-            if (!granite::core::read_range(model_file.range("tokenizer/vocab.json"), vj, gerr) ||
-                !granite::core::read_range(model_file.range("tokenizer/token_type.json"), tj, gerr) ||
+            if (!model_file.read("tokenizer/vocab.json", vj, gerr) || !model_file.read("tokenizer/token_type.json", tj, gerr) ||
                 !granite::program::grammar::vocab_from_pack(std::string_view((const char*) vj.data(), vj.size()),
                                                            std::string_view((const char*) tj.data(), tj.size()),
                                                            (size_t) n_vocab, ends, pv, gerr)) {

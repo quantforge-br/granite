@@ -271,19 +271,25 @@ bool parse_json(const char* text, size_t n, Json& out, std::string& err) {
 bool ModelFile::open(const std::string& path, std::string& err) {
     path_ = path;
     sections_.clear();
+    held_.clear();
     meta_ = Json{};
     meta_loaded_ = false;
+    gguf_ = false;
     uint64_t actual = 0;
     if (!platform::file_size(path, actual)) { err = "cannot open " + path; return false; }
-    if (actual < kHeaderBytes) { err = path + ": not a .granite model file (too short)"; return false; }
-    std::vector<uint8_t> head((size_t) kHeaderBytes);
+    std::vector<uint8_t> head((size_t) std::min<uint64_t>(actual, kHeaderBytes));
     {
         const int fd = platform::open_fd_utf8(path);
         if (fd < 0) { err = "cannot open " + path; return false; }
-        const bool ok = platform::pread_all(fd, head.data(), kHeaderBytes, 0);
+        const bool ok = platform::pread_all(fd, head.data(), head.size(), 0);
         platform::close_fd(fd);
         if (!ok) { err = "cannot read the header of " + path; return false; }
     }
+    if (head.size() >= 4 && std::memcmp(head.data(), "GGUF", 4) == 0) {
+        file_bytes_ = actual;
+        return open_gguf(err);
+    }
+    if (actual < kHeaderBytes) { err = path + ": not a .granite model file (too short)"; return false; }
     FileHeader h;
     std::memcpy(&h, head.data(), sizeof h);
     if (std::memcmp(h.magic, kModelMagic, sizeof kModelMagic) != 0) {
@@ -335,6 +341,16 @@ FileRange ModelFile::range(const std::string& name) const {
 }
 
 bool ModelFile::read(const std::string& name, std::vector<uint8_t>& out, std::string& err) const {
+    if (gguf_ && name.rfind("tokenizer/", 0) == 0) {
+        if (held_.empty() && !gguf_tokenizer(err)) return false;
+        const auto held = held_.find(name);
+        if (held == held_.end()) {
+            err = path_ + " has no '" + name + "' (the GGUF carries no byte-level BPE tokenizer, or no chat template)";
+            return false;
+        }
+        out.assign(held->second.begin(), held->second.end());
+        return true;
+    }
     const Section* s = find(name);
     if (s == nullptr) { err = path_ + " has no '" + name + "' section"; return false; }
     out.resize((size_t) s->bytes);
@@ -378,7 +394,190 @@ MetaValue meta_value(const Json& j) {
 
 }  // namespace
 
+namespace {
+
+Json json_text(const std::string& s) {
+    Json j;
+    j.type = Json::Type::String;
+    j.s = s;
+    return j;
+}
+
+Json json_uint(uint64_t u) {
+    Json j;
+    j.type = Json::Type::Int;
+    j.u = u;
+    return j;
+}
+
+// A metadata value as the meta section's JSON holds it (an array: its first kJsonArrayKeep items and its length).
+Json json_of(const MetaValue& v) {
+    Json j;
+    switch (v.type) {
+        case MetaType::BOOL: j.type = Json::Type::Bool; j.b = v.u != 0; break;
+        case MetaType::STRING: j.type = Json::Type::String; j.s = v.s; break;
+        case MetaType::F32:
+        case MetaType::F64: j.type = Json::Type::Float; j.f = v.f; break;
+        case MetaType::I8:
+        case MetaType::I16:
+        case MetaType::I32:
+        case MetaType::I64: {
+            const int64_t x = (int64_t) v.u;
+            j.type = Json::Type::Int;
+            j.neg = x < 0;
+            j.u = x < 0 ? 0 - v.u : v.u;
+            break;
+        }
+        case MetaType::ARRAY:
+            j.type = Json::Type::Array;
+            j.count = v.count;
+            for (size_t i = 0; i < v.items.size() && i < Json::kJsonArrayKeep; ++i) j.items.push_back(json_of(v.items[i]));
+            break;
+        default: j.type = Json::Type::Int; j.u = v.u; break;
+    }
+    return j;
+}
+
+void append_json_string(std::string& out, const std::string& s) {
+    out += '"';
+    for (const char ch : s) {
+        const unsigned char c = (unsigned char) ch;
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (c < 0x20) {
+                    char u[8];
+                    std::snprintf(u, sizeof u, "\\u%04x", c);
+                    out += u;
+                } else {
+                    out += ch;
+                }
+        }
+    }
+    out += '"';
+}
+
+// The tokenizer/* files a converter writes into a .granite (tools/tokenizer.py extract_metadata), from a GGUF's
+// byte-level BPE tables; none for another tokenizer.
+bool tokenizer_files(const GgufFile& g, std::map<std::string, std::string>& out, std::string& err) {
+    const MetaValue* model = g.get("tokenizer.ggml.model");
+    const MetaValue* tokens = g.get("tokenizer.ggml.tokens");
+    const MetaValue* merges = g.get("tokenizer.ggml.merges");
+    const MetaValue* types = g.get("tokenizer.ggml.token_type");
+    if (model == nullptr || model->s != "gpt2" || tokens == nullptr || merges == nullptr || types == nullptr) return true;
+    if (tokens->items.size() != tokens->count || merges->items.size() != merges->count || types->items.size() != tokens->count) {
+        err = "the tokenizer's tables do not agree in length";
+        return false;
+    }
+    std::string vocab = "{";
+    std::map<std::string, size_t> seen;
+    for (size_t i = 0; i < tokens->items.size(); ++i) {
+        const std::string& t = tokens->items[i].s;
+        if (!seen.emplace(t, i).second) {
+            err = "the vocabulary has the token \"" + t + "\" twice";
+            return false;
+        }
+        if (i) vocab += ", ";
+        append_json_string(vocab, t);
+        vocab += ": " + std::to_string(i);
+    }
+    vocab += "}";
+    std::string merge_lines;
+    for (size_t i = 0; i < merges->items.size(); ++i) {
+        if (i) merge_lines += '\n';
+        merge_lines += merges->items[i].s;
+    }
+    std::string type_list = "[";
+    for (size_t i = 0; i < types->items.size(); ++i) type_list += (i ? ", " : "") + std::to_string((int64_t) types->items[i].u);
+    type_list += "]";
+    const MetaValue* pre = g.get("tokenizer.ggml.pre");
+    std::string config = "{\"model\": \"gpt2\", \"pre\": ";
+    append_json_string(config, pre != nullptr ? pre->s : "qwen35");
+    config += ", \"vocab_size\": " + std::to_string(tokens->count) + ", \"n_merges\": " + std::to_string(merges->count) + "}";
+    out["tokenizer/vocab.json"] = std::move(vocab);
+    out["tokenizer/merges.txt"] = std::move(merge_lines);
+    out["tokenizer/token_type.json"] = std::move(type_list);
+    out["tokenizer/tokenizer.json"] = std::move(config);
+    if (const MetaValue* tpl = g.get("tokenizer.chat_template"); tpl != nullptr && !tpl->s.empty())
+        out["tokenizer/chat_template.jinja"] = tpl->s;
+    return true;
+}
+
+}  // namespace
+
+bool ModelFile::gguf_tokenizer(std::string& err) const {
+    try {
+        const GgufFile g(path_, GgufFile::WholeArrays{});
+        if (!tokenizer_files(g, held_, err)) {
+            err = path_ + ": " + err;
+            return false;
+        }
+    } catch (const std::exception& e) {
+        err = path_ + ": " + e.what();
+        return false;
+    }
+    return true;
+}
+
+bool ModelFile::open_gguf(std::string& err) {
+    gguf_ = true;
+    try {
+        const GgufFile g(path_);
+        if (const MetaValue* n = g.get("split.count"); n != nullptr && n->u > 1) {
+            err = path_ + ": one of " + std::to_string(n->u) + " split GGUF files; this engine reads a GGUF of one file "
+                  "(llama-gguf-split --merge joins them)";
+            return false;
+        }
+        Json kv;
+        kv.type = Json::Type::Object;
+        for (const auto& [k, v] : g.metadata()) kv.members.emplace(k, json_of(v));
+        if (g.data_start() > file_bytes_) {
+            err = path_ + ": the tensor data starts past the end of the file (a cut download?)";
+            return false;
+        }
+        const uint64_t data_bytes = file_bytes_ - g.data_start();
+        Json tensors;
+        tensors.type = Json::Type::Object;
+        for (const TensorInfo& t : g.tensors()) {
+            const uint64_t bytes = tensor_payload_bytes(t);
+            if (bytes != 0 && (t.offset > data_bytes || bytes > data_bytes - t.offset)) {
+                err = path_ + ": tensor " + t.name + " runs past the end of the file (a cut download?)";
+                return false;
+            }
+            Json e;
+            e.type = Json::Type::Object;
+            Json shape;
+            shape.type = Json::Type::Array;
+            shape.count = t.shape.size();
+            for (uint64_t d : t.shape) shape.items.push_back(json_uint(d));
+            e.members.emplace("type_id", json_uint(t.type));
+            e.members.emplace("shape", std::move(shape));
+            e.members.emplace("offset", json_uint(t.offset));
+            e.members.emplace("bytes", json_uint(bytes));   // 0: a type this reader does not size
+            tensors.members.emplace(t.name, std::move(e));
+        }
+        meta_.type = Json::Type::Object;
+        meta_.members.emplace("format", json_text("gguf"));
+        const MetaValue* arch = g.get("general.architecture");
+        meta_.members.emplace("arch", json_text(arch != nullptr ? arch->s : std::string()));
+        if (const MetaValue* name = g.get("general.name")) meta_.members.emplace("name", json_text(name->s));
+        meta_.members.emplace("gguf_kv", std::move(kv));
+        meta_.members.emplace("tensors", std::move(tensors));
+        sections_.push_back(Section{"gguf", g.data_start(), data_bytes});
+    } catch (const std::exception& e) {
+        err = path_ + ": " + e.what();
+        return false;
+    }
+    meta_loaded_ = true;
+    return true;
+}
+
 bool ModelFile::register_gguf_view(std::string& err) const {
+    if (gguf_) return true;   // GgufFile(path) reads the file itself
     const Json* kv = meta_.get("gguf_kv");
     const Json* tensors = meta_.get("tensors");
     const Section* gg = find("gguf");
