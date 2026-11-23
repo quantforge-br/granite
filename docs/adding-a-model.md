@@ -14,7 +14,7 @@ A model lives in `src/models/<arch>/` and `include/basalt/models/<arch>/`. Share
 - A dialect in `serve/models/`: prompt rendering, output parsing, stop texts.
 
 Registering it is one word: the id in `BASALT_BUILTIN_MODELS` (`cmake/models.cmake`), which adds it to `-DBASALT_MODELS`
-([building](building.md#building-only-some-models)) and to the registration in `src/models/builtin.cpp`. Everything of the model in
+([building](building.md#models-in-the-build)) and to the registration in `src/models/builtin.cpp`. Everything of the model in
 `CMakeLists.txt` (its libraries, kernels, tests and tools) sits under `if(BASALT_MODEL_<ARCH>)`, so a build without it compiles none of it.
 
 The router then needs one config entry. Nothing in the server names a model.

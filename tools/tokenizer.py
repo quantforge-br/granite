@@ -43,14 +43,6 @@ QWEN35_PATTERN = (
     r"|\s+"
 )
 
-# The `hy_v4` pre-tokenizer (Hy4-flash; llama.cpp's LLAMA_VOCAB_PRE_TYPE_HY_V4 shares the JOYAI_LLM case): the regexes
-# apply in turn, each one splitting the pieces the previous left; text a regex does not match stays a piece for the next.
-JOYAI_PATTERNS = [
-    r"\p{N}{1,3}",
-    "[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+",
-    r"[!\"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~][A-Za-z]+|[^\r\n\p{L}\p{P}\p{S}]?[\p{L}\p{M}]+"
-    r"| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+",
-]
 # `inkling2` (Inkling 2): OpenAI's o200k split, the one regex of the checkpoint's tokenizer.json (llama.cpp maps it to
 # LLAMA_VOCAB_PRE_TYPE_GPT4O).
 INKLING2_PATTERNS = [
@@ -62,8 +54,8 @@ INKLING2_PATTERNS = [
     r"|\s+(?!\S)"
     r"|\s+",
 ]
-PRE_PATTERNS = {"hy_v4": JOYAI_PATTERNS, "inkling2": INKLING2_PATTERNS}
-PRE_SOURCES = {"hy_v4": "HY_V4", "inkling2": "GPT4O"}
+PRE_PATTERNS = {"inkling2": INKLING2_PATTERNS}
+PRE_SOURCES = {"inkling2": "GPT4O"}
 # pre-tokenizers whose checkpoint sets Hugging Face BPE's ignore_merges: a piece that is a vocabulary entry is that token
 # (llama.cpp sets ignore_merges for the same pre-types)
 IGNORE_MERGES = {"inkling2"}

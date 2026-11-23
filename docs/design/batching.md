@@ -86,7 +86,7 @@ times the slots plus the shared scratch once, so more slots cost only their cach
    tokens and positions to the card, the launch bounds into the graph key), `batch_forward` (the layers over the segments and
    the head; false with an error when the window fails), `batch_take` (a segment's logits rows into its session, its
    history) and `batch_draw` (its draws, queued). A model whose forward only launches is captured by the driver, a graph per
-   composition. A model whose host steers its forward between launches (Hy4 places its experts between per-layer graphs)
+   composition. A model whose host steers its forward between launches
    returns false from `batch_captured`: the driver runs its forward directly every window and the model replays its own
    graphs of the stretches between. A session whose state the batch path does not cover yet returns false from
    `batch_ready`, and the batch's windows run in turn.
@@ -97,13 +97,13 @@ times the slots plus the shared scratch once, so more slots cost only their cach
 ## Models on the driver
 
 The goal is no separate batching paths: every model batches through the shared driver and the shared engine, for
-consistency. Inkling 2 Mini and Hy4-flash are on it.
+consistency. Inkling 2 Mini is on it.
 
 ## Retrofits
 
 How each model below went onto the driver: its state, the kernels that read it, its cap and what its sessions share.
 
-### Inkling 2 Mini (first)
+### Inkling 2 Mini
 
 - **State:** per visit (48 layer applications, the loop's core three times) a `VisitCache`: K/V (a window ring on sliding
   layers, a cell per position on full ones) and four convolution rings (key and value inputs, attention output, experts'
@@ -122,26 +122,6 @@ How each model below went onto the driver: its state, the kernels that read it, 
   with the session's own sampler into its pinned picks.
 - **Shared:** the forward's row buffers and expert scratch, the prompt path (its chunk buffers) and the drafter's tap.
 
-### Hy4-flash (second)
-
-- **State:** MLA latent rows per sparse layer and the indexer's pooled keys (one per 4 positions), sliding-window rings, the
-  indexer's rows of the last positions, the Engram history (the conversation's own tokens), the DFly2 drafter's tap, the
-  sampler and the logits. Hyper-connections are stateless.
-- **Kernels:** they already take a position per row (`mla_query`, the row spans of `mla_attend`); only a cache's base is per
-  conversation. The batch runs each segment's cache write, attention and indexer (ring rows, pooled keys, selection) as one
-  launch of its rows over its own state; every other launch takes every row. The Engram's lookups read each row's own
-  history on the host.
-- **On the driver:** `batch_captured` is false: the host waits for the router's ids and places each layer's experts between
-  three graphs a layer. The graphs hold no session state (the per-segment launches run between them), so they are keyed by
-  the row count only. `batch_ready` is false for a session holding a picture's rotary table.
-- **Cap:** 8 rows, the experts' group. With frozen tiers every row's pick and logits equal its solo window's.
-- **Checks:** both with the tier frozen and its size pinned (`--diag-tier-frozen --expert-cache N`): each session costs
-  VRAM, so an unpinned tier holds fewer experts at more slots. The serve check runs on one card: with a second card a
-  prompt's experts split between the cards by measured rates, so two engine starts can differ (in turn as well); together
-  equals alone on two cards too.
-- **Experts:** one tier shared by every session. Most decode time goes to experts on the bus and in RAM, so the MoE caveat
-  below decides whether more rows pay.
-
 ## The MoE caveat
 
 Rows from different conversations route independently. With k of E experts a row, R independent rows touch about
@@ -151,7 +131,7 @@ rows.
 
 - **Experts on the card:** a window's cost is mostly fixed (launches, dense weights, attention); the union grows the expert
   reads only. Inkling's decode is far from the card's bandwidth at one row, so a batch is close to free.
-- **Experts in RAM (Hy4):** a RAM expert costs a bus copy or a CPU product per distinct expert touched, and the CPU
+- **Experts in RAM:** a RAM expert costs a bus copy or a CPU product per distinct expert touched, and the CPU
   cost grows with its rows. The union grows those directly, so a batch costs close to linear in its slots where most routed
   pairs land in RAM. Such a model still batches every round, through the same path.
 

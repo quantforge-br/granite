@@ -137,55 +137,6 @@ target_compile_definitions(model PRIVATE BASALT_KNOWN_MODELS="${_basalt_known}" 
 target_include_directories(model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(model PUBLIC artifact warnings)
 
-if(BASALT_MODEL_HY4FLASH)
-add_library(hy4flash_kernels STATIC src/models/hy4flash/kernels/mla.cu src/models/hy4flash/kernels/ops.cu
-  src/models/hy4flash/kernels/indexer.cu)
-target_include_directories(hy4flash_kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(hy4flash_kernels PUBLIC ${_gpu_runtime_target})
-add_library(model_hy4flash STATIC src/models/hy4flash/adapter.cpp src/models/hy4flash/pretok_hy4.cpp src/models/hy4flash/pack.cpp
-  src/models/hy4flash/model.cpp src/models/hy4flash/session.cpp
-  src/models/hy4flash/vision.cpp src/models/hy4flash/vision_encoder.cpp)
-target_include_directories(model_hy4flash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src PRIVATE ${_gpu_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/src/program/tokenizer)
-target_link_libraries(model_hy4flash PUBLIC model tokenizer hy4flash_kernels expert_tier tiers mmq peer_share kernels core vision_cuda ${_gpu_runtime_target})
-# the DFly2 drafter (src/models/hy4flash/dfly*)
-add_library(hy4flash_dfly_kernels STATIC src/models/hy4flash/dfly_kernels.cu)
-target_include_directories(hy4flash_dfly_kernels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(hy4flash_dfly_kernels PUBLIC ${_gpu_runtime_target})
-target_sources(model_hy4flash PRIVATE src/models/hy4flash/dfly.cpp src/models/hy4flash/dfly_meta.cpp)
-target_link_libraries(model_hy4flash PUBLIC hy4flash_dfly_kernels)
-if(BUILD_TESTING)
-  add_executable(hy4flash_dfly_test src/models/hy4flash/dfly_test.cpp src/models/hy4flash/dfly_meta.cpp)
-  target_include_directories(hy4flash_dfly_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_link_libraries(hy4flash_dfly_test PRIVATE core)
-  basalt_cpu_test(NAME hy4flash_dfly_test COMMAND hy4flash_dfly_test)
-  add_executable(hy4flash_dfly_parity src/models/hy4flash/dfly_parity.cpp)
-  target_include_directories(hy4flash_dfly_parity PRIVATE ${_gpu_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_link_libraries(hy4flash_dfly_parity PRIVATE model_hy4flash hy4flash_dfly_kernels hy4flash_kernels kernels core ${_gpu_runtime_target})
-  basalt_gpu_test(NAME hy4flash_dfly_parity COMMAND hy4flash_dfly_parity)
-  add_executable(hy4flash_dfly_real src/models/hy4flash/dfly_real.cpp)
-  target_include_directories(hy4flash_dfly_real PRIVATE ${_gpu_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_link_libraries(hy4flash_dfly_real PRIVATE model_hy4flash hy4flash_dfly_kernels hy4flash_kernels kernels core ${_gpu_runtime_target})
-endif()
-if(BUILD_TESTING)
-  add_executable(hy4flash_kernels_parity src/models/hy4flash/kernels/kernels_parity.cpp)
-  target_include_directories(hy4flash_kernels_parity PRIVATE ${_gpu_include_directories})
-  target_link_libraries(hy4flash_kernels_parity PRIVATE hy4flash_kernels mmq kernels ggml_quants ${_gpu_runtime_target})
-  basalt_gpu_test(NAME hy4flash_kernels_parity COMMAND hy4flash_kernels_parity)
-  add_executable(hy4flash_context_policy_test src/models/hy4flash/context_policy_test.cpp)
-  target_include_directories(hy4flash_context_policy_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  basalt_cpu_test(NAME hy4flash_context_policy_test COMMAND hy4flash_context_policy_test)
-  add_executable(hy4flash_vision_test src/models/hy4flash/vision_test.cpp src/models/hy4flash/vision.cpp)
-  target_include_directories(hy4flash_vision_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_link_libraries(hy4flash_vision_test PRIVATE vision_core warnings)
-  basalt_gpu_test(NAME hy4_encoder_parity COMMAND hy4_encoder_parity)
-  basalt_cpu_test(NAME hy4flash_vision_test COMMAND hy4flash_vision_test ${CMAKE_CURRENT_SOURCE_DIR}/assets/basalt-lockup-light.png)
-  add_executable(hy4flash_pretok_test src/models/hy4flash/pretok_test.cpp src/models/hy4flash/pretok_hy4.cpp)
-  target_include_directories(hy4flash_pretok_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/src/program/tokenizer)
-  target_link_libraries(hy4flash_pretok_test PRIVATE tokenizer)
-  basalt_cpu_test(NAME hy4flash_pretok_test COMMAND hy4flash_pretok_test)
-endif()
-endif()
-
 if(BASALT_MODEL_INKLING2)
 add_library(inkling2_kernels STATIC src/models/inkling2/kernels/ops.cu src/models/inkling2/kernels/attn.cu
   src/models/inkling2/kernels/glue.cu src/models/inkling2/kernels/dspark.cu src/models/inkling2/kernels/attn_prompt.cu
@@ -628,14 +579,6 @@ basalt_embed_manifest(community_row_test)
 basalt_cpu_test(NAME community_row_test COMMAND community_row_test)
 set_tests_properties(community_row_test PROPERTIES TIMEOUT 60)
 if(Python3_Interpreter_FOUND)
-  if(BASALT_MODEL_HY4FLASH)
-  # a long prompt's last-row logits in one chunk and in chunks of one attention step each
-  basalt_gpu_test(NAME hy4flash_prompt_steps_test
-                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/models/hy4flash/prompt_steps_test.py
-                          --engine $<TARGET_FILE:basalt>
-                          --model ${CMAKE_CURRENT_SOURCE_DIR}/models/Hy4-flash-NVFP4.basalt)
-  set_tests_properties(hy4flash_prompt_steps_test PROPERTIES TIMEOUT 1800 SKIP_RETURN_CODE 77)
-  endif()
   basalt_cpu_test(NAME community_row_fix_test
                   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/program/community_row_fix_test.py
                           $<TARGET_FILE:community_row_test> ${CMAKE_CURRENT_SOURCE_DIR})

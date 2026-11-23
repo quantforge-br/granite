@@ -1,4 +1,4 @@
-"""What the checkpoint converters share (checkpoint_inkling2.py, hy4flash_bf16.py): the safetensors files of a
+"""What the checkpoint converters share (checkpoint_inkling2.py): the safetensors files of a
 checkpoint directory, NVIDIA Model Optimizer's NVFP4 rows moved into Basalt's blocks, and the model metadata and
 tokenizer as GGUF keys. Needs numpy.
 """

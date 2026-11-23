@@ -1,72 +1,33 @@
-"""Build the single .basalt model file from the source GGUF shards or a safetensors checkpoint.
+"""Build the single .basalt model file from a safetensors checkpoint.
 
-    python3 tools/convert/convert.py --gguf MODEL-00001-of-0000N.gguf --out MODEL.basalt [--mmproj MMPROJ.gguf] \\
-        [--name NAME] [--compat-bf16] [--no-vision] [--force]
-    python3 tools/convert/convert.py --gguf MODEL-00001-of-0000N.gguf --sections-from BASE.basalt --out MODEL.basalt [--name NAME] [--force]
-    python3 tools/convert/convert.py --gguf MODEL-00001-of-0000N.gguf --hf-dir HF_DIR --out MODEL.basalt [--name NAME] [--force]
-    python3 tools/convert/convert.py --gguf Hy4-flash-BF16.gguf --nvfp4 --hf-dir HF_DIR --mmproj MMPROJ.gguf [--dfly FILE] --out MODEL.basalt \\
-        [--dense-q6k] [--name NAME] [--workers N] [--force]
-    python3 tools/convert/convert.py --verify PACK.basalt --gguf MODEL-00001-of-0000N.gguf
-    python3 tools/convert/convert.py --dfly FILE --into PACK.basalt --undo-dir DIR
     python3 tools/convert/convert.py --checkpoint INKLING2_DIR --out MODEL.basalt [--name NAME] [--workers N] [--force]
-
-Inputs
-  --gguf FILE        the model's GGUF: shard 1 of a split model (the others are found beside it) or --gguf per shard
-  --sections-from BASE.basalt  with --gguf: the drafter and vision sections are copied from BASE byte for byte (BASE's
-                     vocabulary must be the GGUF's); replaces --mmproj. A tensor with a section of its own (the Engram
-                     table) whose shard stops after its header is copied from BASE's section of the same tensor
-  --mmproj FILE      the vision projector GGUF, stored whole as vision/mmproj (with --nvfp4: required unless --no-vision)
-  --hf-dir DIR       hy_v4_flash only: the tencent/Hy4-flash directory (LICENSE and config.json are embedded, the
-                     weights are not read); the pack is the GGUF's tensors as they are, with the next-n block as mtp/*
-  --nvfp4            hy4flash: the release pack from the BF16 GGUF (tools/convert/hy4flash_bf16.py): routed experts rounded
-                     to NVFP4, projections to Q8_0 (--dense-q6k: Q6_K where rows are whole blocks), the Engram table to
-                     E4M3; needs --hf-dir (its tokenizer files must equal the GGUF's); --dfly FILE adds the drafter
-  --verify PACK      read PACK back against its source --gguf: every section's SHA-256, and every source tensor's
-                     bytes (type, shape and SHA-256) at the place the pack's index and layout name; writes nothing.
-                     A pack made with --nvfp4 is checked by repeating its roundings
 
 From Thinking Machines' Inkling 2 Mini release (tools/convert/checkpoint_inkling2.py)
   --checkpoint DIR   a checkpoint of model type inkling2_loop: the release's safetensors (the model and its DSpark
                      drafter), config.json, hf_quant_config.json, the tokenizer files and the chat template. Everything
                      comes from DIR
 
-Adding the drafter to a hy4flash pack that exists
-  --dfly FILE --into PACK.basalt --undo-dir DIR
-                     writes dfly and a new meta past the file's end and replaces the header in one write: no other
-                     section moves or changes. DIR (new) keeps the old header and meta;
-  --roll-back --into PACK.basalt --undo-dir DIR
-                     puts them back and cuts the file to its old size.
-
 Options
   --name NAME        the model's name, reported by the server
-  --compat-bf16      convert small projections stored in another form to BF16 (round-to-nearest-even, recorded in
-                     meta.conversions)
-  --no-vision        leave out the vision projector
+  --workers N        converter processes
   --force            overwrite --out
 
-Every mode writes a version 2 file. Sections are listed in include/basalt/core/model_format.hpp. Everything is streamed.
+It writes a version 2 file. Sections are listed in include/basalt/core/model_format.hpp. Everything is streamed.
 """
 from __future__ import annotations
 
 import argparse
-import gc
 import hashlib
 import json
-import math
-import os
-import re
 import struct
 import sys
-import tempfile
 import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parent))   # for model_file, gguf_reader, tokenizer
-import arch as A  # noqa: E402
-import model_sections as S  # noqa: E402
-from model_file import SECTION_ALIGN, TENSOR_ALIGN, ModelFile, ModelWriter, Stream, undo_append  # noqa: E402
+sys.path.insert(0, str(HERE.parent))   # for model_file
+from model_file import ModelWriter  # noqa: E402
 
 FINGERPRINT_BYTES = 64 << 20
 
@@ -88,115 +49,12 @@ def fingerprint(path: Path) -> str:
     return h.hexdigest()
 
 
-def source_record(path: Path) -> dict:
-    return {"path": path.name, "size": path.stat().st_size, "fingerprint_sha256_first_last_64mib_and_size": fingerprint(path)}
-
-
-def roll_back(a) -> None:
-    """--roll-back with --into: the pack as it was before a section joined it."""
-    pack = Path(a.into)
-    if not pack.is_file():
-        die(f"missing input: {pack}")
-    undo_append(str(pack), a.undo_dir)
-    print(f"done: {pack} is back to {pack.stat().st_size} bytes")
-
-
-def json_safe(v):
-    """GGUF metadata as JSON: non-finite floats become strings, which JSON cannot carry."""
-    if isinstance(v, float) and not math.isfinite(v):
-        return repr(v)
-    if isinstance(v, list):
-        return [json_safe(x) for x in v]
-    return v
-
-
-def export_tokenizer(first_gguf: Path, out_dir: Path) -> list[Path]:
-    """The tokenizer files (tools/tokenizer.py) of the model's first shard, written under `out_dir`/tokenizer."""
-    import tokenizer
-    tokenizer.extract(first_gguf, out_dir)
-    return sorted(p for p in (out_dir / "tokenizer").iterdir() if p.is_file())
-
-
-def source_architecture(first_gguf: Path) -> str | None:
-    """`general.architecture` from the first shard's header."""
-    from gguf_reader import GGUFFile
-    return GGUFFile(first_gguf).metadata.get("general.architecture")
-
-
-def arch_of(first_gguf: Path) -> A.Arch:
-    """The conversion rules (tools/convert/arch) of the first shard's architecture."""
-    name = source_architecture(first_gguf)
-    try:
-        return A.for_architecture(name)
-    except KeyError:
-        die(f"{first_gguf}: no conversion rules for the GGUF architecture {name!r}")
-
-
-def source_tensors(model: S.SourceModel, own_sections=()):
-    """(kv, [(name, shard path, absolute offset, size, TensorInfo)]) over every shard, expert tensors and the tensors
-    that get a section of their own (`own_sections`) excluded."""
-    kv, tensors = {}, []
-    for p, g in zip(model.paths, model.files):
-        for k, v in g.metadata.items():
-            kv.setdefault(k, json_safe(v))
-    for name, (g, t, p) in model.where.items():
-        if S.is_expert(name) or name in own_sections:
-            continue
-        a, n = g.data_start + t.offset, t.expected_bytes()
-        tensors.append((name, p, a, n, t))
-    order = {p: i for i, p in enumerate(model.paths)}
-    tensors.sort(key=lambda x: (order[x[1]], x[2]))      # sequential reads per shard
-    return kv, tensors
-
-
 # ------------------------------------------------------------------ the conversion
-class DryWriter:
-    """ModelWriter's interface without writing: sections get the offsets and sizes a real build would give them."""
-
-    def __init__(self):
-        self.pos = 64 << 10
-        self.entries: list[tuple[str, int, int, bytes]] = []
-
-    def _start(self, name):
-        if any(e[0] == name for e in self.entries):
-            raise ValueError(f"duplicate section: {name}")
-        self.pos = (self.pos + SECTION_ALIGN - 1) // SECTION_ALIGN * SECTION_ALIGN
-        return self.pos
-
-    def add_size(self, name, size):
-        off = self._start(name)
-        self.pos = off + size
-        self.entries.append((name, off, size, b""))
-        return size
-
-    def add_bytes(self, name, data):
-        self.add_size(name, len(data))
-
-    def add_file(self, name, src, offset=0, size=None):
-        self.add_size(name, os.path.getsize(src) - offset if size is None else size)
-
-    def add_chunks(self, name, chunks):
-        return self.add_size(name, sum(len(b) for b in chunks))
-
-    def add_parts(self, name, parts, align=TENSOR_ALIGN):
-        pos, offsets = 0, []
-        for part in parts:
-            pos += (-pos) % align
-            offsets.append(pos)
-            pos += len(part) if isinstance(part, (bytes, bytearray)) else part.size if isinstance(part, Stream) else part[2]
-        self.add_size(name, pos)
-        return offsets
-
-    def close(self):
-        pass
-
-
 class Job:
     def __init__(self, writer: ModelWriter):
         self.w = writer
         self.rows: list[tuple[str, int]] = []
         self.t0 = time.time()
-        self.dry = isinstance(writer, DryWriter)
 
     def _report(self, name, nbytes, secs):
         mbs = nbytes / (1 << 20) / secs if secs > 0 else float("inf")
@@ -213,204 +71,10 @@ class Job:
         self.w.add_file(name, str(src), offset, size)
         self._report(name, self.w.entries[-1][2], time.time() - t)
 
-    def chunks(self, name, chunks, size=None):
+    def chunks(self, name, chunks):
         t = time.time()
-        n = self.w.add_size(name, size) if size is not None and self.dry else self.w.add_chunks(name, chunks)
+        n = self.w.add_chunks(name, chunks)
         self._report(name, n, time.time() - t)
-
-
-def source_paths(given) -> list[Path]:
-    paths = [Path(p) for p in given]
-    for p in paths:
-        if not p.is_file():
-            die(f"missing input: {p}")
-    return S.expand_shards(paths[0]) if len(paths) == 1 else paths
-
-
-def convert(a) -> None:
-    out = Path(a.out)
-    partial = Path(str(out) + ".partial")
-    if out.exists() and not a.force:
-        die(f"{out} exists (use --force to overwrite)")
-    base = None
-    dry = getattr(a, "dry_run", False)
-    try:
-        paths = source_paths(a.gguf)
-    except S.ConvertError as e:
-        die(str(e))
-    arch = arch_of(paths[0])
-    hf_dir = Path(a.hf_dir) if getattr(a, "hf_dir", None) else None
-    if arch.needs_hf_dir != (hf_dir is not None):
-        die(f"{arch.name} packs {'need' if arch.needs_hf_dir else 'take no'} --hf-dir")
-    mmproj = Path(a.mmproj) if a.mmproj else None
-    vision = mmproj is not None and not a.no_vision
-    if vision:
-        if not mmproj.is_file():
-            die(f"missing input: {mmproj}")
-        with open(mmproj, "rb") as f:
-            head = f.read(1 << 20)
-        if head[:4] != b"GGUF" or arch.projector_type.encode() not in head:
-            die(f"{mmproj} is not a {arch.projector_type} projector GGUF")
-    if a.sections_from:
-        base = ModelFile(a.sections_from) if Path(a.sections_from).is_file() else die(f"missing input: {a.sections_from}")
-        if a.mmproj or a.no_vision:
-            die("--sections-from supplies the drafter and vision sections; do not combine it with --mmproj or --no-vision")
-        base_meta = json.loads(base.read("meta"))
-
-    err = None
-    try:
-        print("reading the source GGUFs ...", flush=True)
-        model = S.SourceModel(paths, frozenset(arch.own_sections) if base is not None else frozenset())
-        kv, tensors = source_tensors(model, arch.own_sections)
-        own = {n: model.where[n][1] for n in arch.own_sections if n in model.where}
-        arch.check(kv, own)
-        for k, v in arch.sampling_kv.items():
-            kv.setdefault(k, v)
-        hf_meta = arch.hf_meta(hf_dir) if hf_dir else {}
-        mtp_ids = arch.mtp_layers(kv)
-        in_mtp = lambda n: (m := re.match(r"blk\.(\d+)\.", n)) is not None and int(m.group(1)) in mtp_ids
-        mtp_gguf = None
-        if mtp_ids:
-            # the drafter's layers come from the GGUF itself: its own dense pool and experts, the main sections without them
-            tensors = [x for x in tensors if not in_mtp(x[0])]
-            dense = S.Dense(model, a.compat_bf16, arch, only=lambda n: not in_mtp(n))
-            experts = S.Experts(model, [l for l in range(min(mtp_ids)) if f"blk.{l}.ffn_gate_exps.weight" in model.where])
-            mtp_gguf = (S.Dense(model, a.compat_bf16, arch, only=in_mtp), S.Experts(model, mtp_ids))
-        else:
-            dense = S.Dense(model, a.compat_bf16, arch)
-            experts = S.Experts(model)
-        if base is not None:
-            if base_meta.get("gguf_kv", {}).get("tokenizer.ggml.tokens") != kv.get("tokenizer.ggml.tokens"):
-                die(f"{a.sections_from}s vocabulary differs from the GGUFs; its drafter and vision sections would not fit")
-    except S.ConvertError as e:
-        err = str(e)
-    if err is not None:
-        # Drop every view of the source files so they are unmapped (and deletable) before the process exits.
-        model = dense = experts = None
-        gc.collect()
-        die(err)
-
-    if out.parent and not out.parent.exists():
-        die(f"{out.parent} does not exist")
-    if partial.exists():
-        partial.unlink()
-    w = DryWriter() if dry else ModelWriter(str(partial))
-    job = Job(w)
-    ok = False
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            print("planning sections:" if dry else "writing sections:", flush=True)
-            for p in export_tokenizer(model.paths[0], Path(tmp)):
-                job.file(f"tokenizer/{p.name}", p)
-            job.chunks("dense", dense.chunks())
-            job.bytes("dense.index", dense.index_text())
-            job.chunks("experts", experts.chunks(), experts.total)
-            job.bytes("experts.layout", experts.layout_text())
-            t = time.time()
-            offs = w.add_parts("gguf", [(src, off, size) for _, src, off, size, _ in tensors], TENSOR_ALIGN)
-            job._report("gguf", w.entries[-1][2], time.time() - t)
-            tensor_offsets = dict(zip((x[0] for x in tensors), offs))
-            own_entries = {}
-            copied = []
-            for name, section in arch.own_sections.items():
-                t = own[name]
-                if name in model.short:   # its shard stops after the header: the same tensor's section in the base
-                    size = t.expected_bytes()
-                    bt = base_meta.get("tensors", {}).get(name, {})
-                    if (bt.get("section"), bt.get("type_id"), bt.get("shape"), bt.get("bytes")) != \
-                            (section, t.type_id, [int(d) for d in t.shape], size) or section not in base.sections:
-                        die(f"{name}: its shard holds only the header, and {a.sections_from} has no section of that tensor")
-                    off, _ = base.section(section)
-                    job.file(section, a.sections_from, off, size)
-                    if w.entries[-1][3] != base.sections[section][2]:
-                        die(f"section {section}: the copy's SHA-256 differs from {a.sections_from}'s")
-                    copied.append(section)
-                else:
-                    src, off, size = model.abs_range(name)
-                    job.file(section, src, off, size)
-                own_entries[name] = {"type": t.type_name, "type_id": t.type_id, "shape": [int(d) for d in t.shape],
-                                     "bytes": size, "offset": 0, "section": section}
-            if base is not None:
-                for name in base.names():
-                    if name.startswith(("mtp/", "vision/")):
-                        off, size = base.section(name)
-                        job.file(name, a.sections_from, off, size)
-                        if w.entries[-1][3] != base.sections[name][2]:
-                            die(f"section {name}: the copys SHA-256 differs from {a.sections_from}s")
-                        copied.append(name)
-            if mtp_gguf is not None:
-                m_dense, m_experts = mtp_gguf
-                job.chunks("mtp/dense", m_dense.chunks())
-                job.bytes("mtp/dense.index", m_dense.index_text())
-                job.chunks("mtp/experts", m_experts.chunks(), m_experts.total)
-                job.bytes("mtp/experts.layout", m_experts.layout_text())
-            if vision:
-                job.file("vision/mmproj", mmproj)
-
-            sources = [source_record(p) for p in model.paths + ([mmproj] if vision else [])]
-            meta = {
-                "format": "basalt", "version": 2, "name": a.name,
-                "converter": {"tool": "tools/convert/convert.py"},
-                "sources": sources,
-                "gguf_kv": kv,
-                "tensors": {**{n: {"type": t.type_name, "type_id": t.type_id, "shape": [int(d) for d in t.shape],
-                                   "bytes": nb, "offset": tensor_offsets[n]}
-                               for n, _, _, nb, t in tensors}, **own_entries},
-                "conversions": {"compat_bf16": a.compat_bf16, "tensors": dense.records},
-                "license": arch.license(kv),
-                "mtp": base_meta.get("mtp") if base is not None else None,
-                "vision": base_meta.get("vision") if base is not None else None if not vision else {
-                    "mmproj": "vision/mmproj", "mmproj_bytes": mmproj.stat().st_size, "extra": []},
-                **arch.meta_extra(kv, {n: t for n, _, _, _, t in tensors}, own),
-            }
-            if mtp_gguf is not None:
-                meta["mtp"] = {"source": "gguf", "layers": mtp_ids, "format": "as stored in the GGUF",
-                               "sections": ["mtp/dense", "mtp/dense.index", "mtp/experts", "mtp/experts.layout"],
-                               "dense_shapes": {n: [int(d) for d in model.where[n][1].shape] for n in model.where if in_mtp(n)
-                                                and not S.is_expert(n)},
-                               "experts": {"layers": m_experts.layers, "gate_type_id": m_experts.layout[0][1],
-                                           "down_type_id": m_experts.layout[0][2], "bytes": m_experts.total}}
-            if hf_dir is not None:
-                meta.update(hf_meta)
-                meta["sources"] += [{"path": f"hf/{n}", "size": (hf_dir / n).stat().st_size,
-                                     "sha256": hashlib.sha256((hf_dir / n).read_bytes()).hexdigest()}
-                                    for n in ("config.json", "LICENSE")]
-            if base is not None:
-                meta["sections_from"] = {"path": Path(a.sections_from).name, "size": Path(a.sections_from).stat().st_size,
-                                         "fingerprint_sha256_first_last_64mib_and_size": fingerprint(Path(a.sections_from)),
-                                         "copied": copied}
-            job.bytes("meta", json.dumps(meta, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-        w.close()
-        ok = True
-    except S.ConvertError as e:
-        err = str(e)
-    finally:
-        if not ok and not dry:
-            try:
-                w.f.close()
-            except OSError:
-                pass
-            partial.unlink(missing_ok=True)
-    if err is not None:
-        model = dense = experts = job = None
-        gc.collect()
-        die(err)
-    if dry:
-        end = w.pos
-        print(f"dry run: {'section':<28} {'offset':>16} {'bytes':>16}")
-        for name, off, size, _ in w.entries:
-            print(f"         {name:<28} {off:>16} {size:>16}")
-        print(f"dry run: {len(w.entries)} sections, {end} bytes ({end / (1 << 30):.3f} GiB) -> {out}")
-        return
-    os.replace(partial, out)
-    total = out.stat().st_size
-    print(f"done: {len(job.rows)} sections, {total / (1 << 30):.3f} GiB, {time.time() - job.t0:.1f} s -> {out}")
-
-
-def convert_bf16(a) -> None:
-    """--nvfp4: the hy4flash release pack from the BF16 GGUF."""
-    import hy4flash_bf16
-    hy4flash_bf16.build(a, Job, DryWriter, fingerprint, source_record, source_tensors, export_tokenizer)
 
 
 def checkpoint_model_type(d: Path) -> str | None:
@@ -423,79 +87,23 @@ def checkpoint_model_type(d: Path) -> str | None:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--sections-from", metavar="PACK.basalt",
-                    help="with --gguf: the drafter and vision projector come from this .basalt; everything else from the GGUF")
-    ap.add_argument("--gguf", action="append", metavar="FILE",
-                    help="the model's GGUF: shard 1 of a split model (the others are found beside it), or repeat per shard")
-    ap.add_argument("--mmproj", help="the vision projector GGUF, stored whole as vision/mmproj (with --nvfp4: required "
-                                     "unless --no-vision)")
-    ap.add_argument("--hf-dir", metavar="DIR", help="hy_v4_flash: the tencent/Hy4-flash directory (LICENSE, config.json)")
-    ap.add_argument("--verify", metavar="PACK.basalt", help="read PACK back against its source --gguf and report; writes nothing")
-    ap.add_argument("--dfly", metavar="FILE", help="hy4flash: the DFly2 drafter's safetensors (model.dfly_layers.*), stored whole as dfly")
-    ap.add_argument("--nvfp4", action="store_true",
-                    help="hy4flash: from the BF16 GGUF, the routed experts as NVFP4, projections Q8_0, the Engram table E4M3 (needs --hf-dir)")
-    ap.add_argument("--dense-q6k", action="store_true", help="with --nvfp4: the attention, shared-expert and dense FFN projections as Q6_K")
-    ap.add_argument("--into", metavar="PACK.basalt", help="with --dfly: add it to this pack, whose other sections stay as they are")
-    ap.add_argument("--undo-dir", metavar="DIR", help="with --into: a new directory for what --roll-back restores")
-    ap.add_argument("--roll-back", action="store_true", help="with --into and --undo-dir: restore the pack as it was")
     ap.add_argument("--out", help="the .basalt file to write")
     ap.add_argument("--name")
-    ap.add_argument("--compat-bf16", action="store_true",
-                    help="convert small projections stored in another form to BF16 (rounds)")
-    ap.add_argument("--no-vision", action="store_true")
     ap.add_argument("--checkpoint", metavar="DIR", help="an Inkling 2 safetensors checkpoint (inkling2_loop): a whole inkling2 pack")
-    ap.add_argument("--workers", type=int, default=16, help="with --checkpoint: converter processes")
+    ap.add_argument("--workers", type=int, default=16, help="converter processes")
     ap.add_argument("--force", action="store_true", help="overwrite --out")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="with --gguf: print every section's offset and size and write nothing")
     a = ap.parse_args()
-    if a.into or a.roll_back or a.undo_dir:
-        if not a.into or not a.undo_dir or bool(a.dfly) + a.roll_back != 1 or a.out or a.gguf or a.sections_from or a.checkpoint:
-            ap.error("--into takes --undo-dir and one of --dfly or --roll-back, and nothing else")
-        if a.dfly:
-            from dfly_attach import add_dfly
-            add_dfly(a, source_record)
-        else:
-            roll_back(a)
-        return
-    if a.dfly and not a.nvfp4:
-        ap.error("--dfly takes --into and --undo-dir, or --nvfp4")
-    if a.dense_q6k and not a.nvfp4:
-        ap.error("--dense-q6k needs --nvfp4")
-    if a.verify:
-        if not a.gguf or a.out or a.sections_from or a.checkpoint:
-            ap.error("--verify takes --gguf and nothing else")
-        import verify_pack
-        sys.exit(0 if verify_pack.verify(a.verify, a.gguf[0], a.workers) else 1)
     if not a.out:
         ap.error("--out is required")
-    if a.checkpoint:
-        if a.gguf or a.mmproj or a.sections_from or a.dry_run:
-            ap.error("--checkpoint takes only --out, --name, --workers and --force")
-        if not Path(a.checkpoint).is_dir():
-            ap.error(f"missing input: {a.checkpoint}")
-        model_type = checkpoint_model_type(Path(a.checkpoint))
-        if model_type != "inkling2_loop":
-            ap.error(f"{a.checkpoint}: model type {model_type!r}; --checkpoint alone takes an Inkling 2 checkpoint (inkling2_loop)")
-        import checkpoint_inkling2 as I
-        I.build(a, Job, fingerprint, die)
-        return
-    if not a.gguf:
-        ap.error("--gguf is required")
-    if not Path(a.gguf[0]).is_file():
-        ap.error(f"missing input: {a.gguf[0]}")
-    if a.nvfp4:
-        if a.sections_from:
-            ap.error("--nvfp4 takes --gguf, --hf-dir, --mmproj, --dfly, --dense-q6k, --name, --workers, --dry-run, --no-vision and --force")
-        if source_architecture(Path(a.gguf[0])) != "hy_v4_flash" or not a.hf_dir:
-            ap.error("--nvfp4 takes a hy_v4_flash BF16 GGUF and --hf-dir")
-        if not a.mmproj and not a.no_vision:
-            ap.error("--mmproj is required unless --no-vision")
-        convert_bf16(a)
-        return
-    from gguf_reader import GGUFFile
-    a.name = a.name or arch_of(Path(a.gguf[0])).default_name(a.gguf[0], GGUFFile(Path(a.gguf[0])).metadata)
-    convert(a)
+    if not a.checkpoint:
+        ap.error("--checkpoint is required")
+    if not Path(a.checkpoint).is_dir():
+        ap.error(f"missing input: {a.checkpoint}")
+    model_type = checkpoint_model_type(Path(a.checkpoint))
+    if model_type != "inkling2_loop":
+        ap.error(f"{a.checkpoint}: model type {model_type!r}; --checkpoint takes an Inkling 2 checkpoint (inkling2_loop)")
+    import checkpoint_inkling2 as I
+    I.build(a, Job, fingerprint, die)
 
 
 if __name__ == "__main__":

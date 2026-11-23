@@ -157,13 +157,11 @@ last bits of the logits, so a greedy answer can fork after some tokens (`dynamic
 | `cpu` | sidecar on the CPU | none | about 6 s / 40 s / 70 s |
 
 `dynamic` borrows the cache's last slots per image and refills them afterwards (about 70 ms), so the cache is identical after.
-Hy4-flash reads images with `dynamic` only: its main-card expert slots go back for the request's pictures and fill again as after a
-prompt. Which
-images a request may name: [image sources](configuration/image-sources.md). An image may not sit in a system prompt.
+Which images a request may name: [image sources](configuration/image-sources.md). An image may not sit in a system prompt.
 
 ## Video
 
-With image input on, Qwen3.8-Flash-Next reads video (Hy4-flash and Inkling 2 Mini do not). A user message names a video as it names an image, from
+With image input on, Qwen3.8-Flash-Next reads video (Inkling 2 Mini does not). A user message names a video as it names an image, from
 the same [sources](configuration/image-sources.md):
 
 | API | Part |

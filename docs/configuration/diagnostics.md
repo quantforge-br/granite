@@ -37,13 +37,10 @@ Binary: **CLI** = `bin/basalt` one-shot (`--tokens IDS`), **serve** = `--serve` 
 |---|---|---|
 | `--dump-residual`, `--dump-mixed`, `--dump-final-r` | CLI | Write residual or head inputs as f32, for bisecting. |
 | `--dump-routing` | CLI | Routed expert ids and weights per layer and position. |
-| `--spec-oracle FILE` | CLI | With `--spec N` on a pack without a drafter: draft from an expected continuation. The verify exactness test. |
 | `--prefill-until P` | CLI | Batch the first P prompt positions; run the rest teacher-forced. |
 | `--spec-corrupt N` | CLI | Replace every Nth draft with a wrong token, to test rejection. |
 | `--diag-batch-check` | CLI | With `--batch N` (2 or more) and a prompt: every session's windows alone against the same windows batched, bitwise ([batched decoding](../design/batching.md)). |
 | `--diag-tp-check` | CLI | Inkling 2 on two cards (tensor parallelism): after each prompt and decode call and each batch window, every cache and ring of the second card against the first's, bitwise; a difference fails the call. |
-| `--diag-teacher` | CLI | Hy4-flash with `--spec-oracle`: teacher-forces the file's tokens and counts differing picks. |
-| `--diag-tier-frozen` | CLI, serve | Hy4-flash: fixed placement (no copies or promotion). |
 | `--force-zero-doorbell` | serve | Scheduling test on a card that cannot hold every expert. The output is wrong by design. |
 
 ## Experts and n-gram table

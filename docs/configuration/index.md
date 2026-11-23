@@ -139,8 +139,6 @@ Unless `relaxed-drafting` is on, output is exactly plain decoding's.
 | `suffix-draft` | engine | tokens | 3 (`0` = the drafter only) | Flash-Next only. Prompt lookup: fill a window from an earlier repeat of at least N tokens. Its index takes host RAM by `max-context`: 64 MiB per slot at 262,144 tokens. |
 | `mtp-max-t` | engine | integer | 0 (= `spec`) | Flash-Next only. Caps the MTP's own windows. |
 | `mtp-window` | engine | cells | 32768 (`0` = all) | Flash-Next only. The drafter attends to the last N cells. |
-| `route-tail-skip` | engine (`[R]`) | `true` or 1 to k-1 | off | **Changes output.** Skips experts no GPU holds when they rank R or lower in every window entry. [quality](../precision/quality.md#lossy-routing-flags) |
-| `route-prior` | engine (`[LAMBDA]`) | `true` or 0 to 16 | off | **Changes output.** Adds LAMBDA to held experts' router scores. [quality](../precision/quality.md#lossy-routing-flags) |
 
 ## Parallel slots
 

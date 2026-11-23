@@ -85,6 +85,8 @@ class Reference(unittest.TestCase):
     def test_the_registry(self):
         self.assertIsInstance(dialect_for("inkling2"), Inkling2)
         self.assertIsInstance(dialect_for(None), Qwen)              # no file: the mock engine's plain chat template
+        with self.assertRaises(ValueError):
+            dialect_for("hy5")
 
 
 class Controls(unittest.TestCase):
