@@ -48,7 +48,8 @@ BF16 instead of Q8_0 scored 0.00218 for 1.2 GB more reads a token; it was not ta
 
 A decode row's arithmetic does not depend on how many rows share its window. Prompt chunks round differently from decoded rows.
 On two cards ([tensor parallelism](../models/inkling2.md#two-cards)) each card sums its half of every routed expert's
-intermediate (fp32), and the two sums are added, the first card's first; everything else rounds as on one card.
+intermediate and, in a decode window, the output projection over its heads' 1,536 input columns (fp32); each pair of sums
+is added the first card's first. Everything else rounds as on one card.
 
 The prompt path's NVFP4 experts run through MMQ (q8_1 activations). Upstream ran them on Blackwell's FP4 block-scaled tensor
 cores, which sm_86 does not have; over 20 chunks it measured one FP4 term per activation (the release's W4A4) at 0.00407 KLD,
@@ -70,7 +71,7 @@ The base: the official release with its routed experts dequantized to BF16 (llam
 | Run | Mean KLD | Top-1 | PPL |
 | --- | ---: | ---: | ---: |
 | 100 chunks, one RTX 3090, against a base made the same way on that machine | 0.00289 | 97.76% | 7.0758 (base 7.0655) |
-| the same, tensor parallel on two RTX 3090s | 0.00290 | 97.74% | 7.0721 (base 7.0655) |
+| the same, tensor parallel on two RTX 3090s | 0.00286 | 97.79% | 7.0719 (base 7.0655) |
 | upstream, 100 chunks, `--kv fp16` | 0.00305 | 97.76% | 7.0695 (base 7.0633 over the scored rows) |
 | upstream, 20 chunks (the quick gate) | 0.00264 | 97.80% | 7.6642 (base 7.6534) |
 | upstream, 90 chunks, RTX 5060 Ti alone, 1,047 experts in RAM on the CPU | 0.00298 | 97.70% | |

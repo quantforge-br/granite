@@ -23,8 +23,10 @@ With one card (unset, or one number) no other card is visible to the process.
 The start prints a `gpus:` line with the cards, then Inkling 2 Mini's own line says what the second card does.
 
 - **Tensor parallel:** `tensor parallelism on CUDA0 and CUDA1: each holds every dense weight and half of every expert`. Both
-  cards run every layer on the same rows; each computes its half of every routed expert, writes its sum into the other's
-  memory, and both add the two sums in the same order, so both hold the same bits. Each card runs half of the head's rows
+  cards run every layer on the same rows. In a decode window each runs the attention of half of the heads with the output
+  projection over their columns, then its half of every routed expert; after each, it writes its sum into the other's
+  memory, and both add the two sums in the same order, so both hold the same bits. Prompt chunks run the whole attention
+  on both cards. Each card runs half of the head's rows
   and the second copies its logits into the first card's, which alone runs the sampler, the drafter and the image encoder.
 - **Runs alone:** `CUDA1 idles (...): CUDA0 runs alone`, with the reason: no peer access both ways, SM counts or shared
   memory per block that differ, or `--expert-cache` given (a one-card diagnostic).

@@ -80,11 +80,16 @@ Two alike cards (the same SM count and shared memory per block) with peer access
 together (`tensor parallelism on CUDA0 and CUDA1`):
 
 - **Weights:** each card holds every dense weight and half of every routed expert: gate and up rows 0 to 575 on the first
-  card, 576 to 1,151 on the second, with the matching half of each down row (about 7.36 GiB of experts a card).
-- **A layer:** both cards run the attention, the router and the mixes on the same rows, then their halves of the routed
-  experts. Each card writes its experts' sum into the other's memory, then its count of sums sent, which the other card's
-  kernel waits for (a wait past two seconds fails the call); both add the two sums, the first card's first, so both cards
-  hold the same bits (`--diag-tp-check` compares every cache after each call). Prompt chunks split the same way.
+  card, 576 to 1,151 on the second, with the matching half of each down row (about 7.36 GiB of experts a card). Each also
+  keeps a copy of the output projection's columns that read its heads (about 0.08 GiB).
+- **A decode window's layer:** each card makes the queries, gates and sinks of half of the heads (key/value groups 0 to 3 on
+  the first card, 4 to 7 on the second: 12 query heads each) and every group's keys and values, so both hold whole caches.
+  It runs its heads' attention and the output projection over their 1,536 input columns, then the router and the mixes on
+  the same rows as the other card, then its half of the routed experts. After each of the two products the card writes its
+  sum into the other's memory, then its count of sums sent, which the other card's kernel waits for (a wait past two
+  seconds fails the call); both add the two sums, the first card's first, so both cards hold the same bits
+  (`--diag-tp-check` compares every cache after each call). Prompt chunks run the whole attention on both cards and split
+  the experts the same way.
 - **The head:** the first card holds every row (the drafter reads them all), the second a copy of the second half (about
   0.23 GiB). Each card runs its half of a window's head with the kernels one card runs, so every logit keeps its bits; the
   second runs its half as four products and copies each one's logits into the first card's while the next runs, so a
