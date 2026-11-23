@@ -1373,18 +1373,21 @@ __device__ __forceinline__ void row_dot_multi(const uint8_t* row, const block_q8
     using S = Split<TY>;
 #pragma unroll
     for (int c = 0; c < NC; ++c) s[c] = 0.0f;
-    const auto call = [&](int k) {
-        const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
+    const auto call = [&](int kbx, int iqs) {
         const typename S::W w = S::template load<STAGE_GRID>(row, kbx, iqs, s_grid);
 #pragma unroll
         for (int c = 0; c < NC; ++c)
             if (EXACT_N || c < n) s[c] += S::apply(w, x + off[c] + kbx * (F::qk / 32), iqs);
     };
     if constexpr (KC > 0) {
+        // call lane + j with j = 32 m a constant: the lane's block lane / ipb and slot lane % ipb, plus whole blocks,
+        // so every call's weight and activation addresses are the lane's own plus a fixed offset
+        static_assert(32 % F::ipb == 0, "a block's calls divide the warp");
 #pragma unroll
-        for (int k = lane; k < KC; k += 32) call(k);
+        for (int j = 0; j < KC; j += 32)
+            if (KC - j >= 32 || lane < KC - j) call(lane / F::ipb + j / F::ipb, F::step * (lane % F::ipb));
     } else {
-        for (int k = lane; k < nb * F::ipb; k += 32) call(k);
+        for (int k = lane; k < nb * F::ipb; k += 32) call(k / F::ipb, F::step * (k % F::ipb));
     }
 #pragma unroll
     for (int c = 0; c < NC; ++c)
