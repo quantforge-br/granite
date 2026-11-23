@@ -604,6 +604,40 @@ __global__ void __launch_bounds__(128) prepare_kernel(AttnPrep a) {
                   a.sink + (size_t) r * kHeads + g * 3);
 }
 
+// ---- the cards' exchanges (Exchange) -----------------------------------------------------------------------------------
+
+__device__ __forceinline__ void st_release_sys(uint32_t* p, uint32_t v) {
+    asm volatile("st.release.sys.global.u32 [%0], %1;" ::"l"(p), "r"(v) : "memory");
+}
+__device__ __forceinline__ uint32_t ld_acquire_sys(const uint32_t* p) {
+    uint32_t v;
+    asm volatile("ld.acquire.sys.global.u32 %0, [%1];" : "=r"(v) : "l"(p) : "memory");
+    return v;
+}
+__device__ __forceinline__ uint64_t global_ns() {
+    uint64_t t;
+    asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
+    return t;
+}
+
+// The exchange's wait (Exchange): until the box reaches `want` (counts wrap). It reads the abort word only once it has
+// waited kXchPollNs, and gives up past kXchBoundNs, setting the word.
+constexpr uint64_t kXchPollNs = 1000000ull, kXchBoundNs = 2000000000ull;
+__device__ __noinline__ void exchange_wait(Exchange x, uint32_t want) {
+    const uint64_t t0 = global_ns();
+    while ((int32_t) (ld_acquire_sys(x.box) - want) < 0) {
+        const uint64_t waited = global_ns() - t0;
+        if (waited < kXchPollNs) continue;
+        volatile uint32_t* const word = x.abort;
+        if (*word != 0) return;
+        if (waited > kXchBoundNs) {
+            *word = 1;
+            __threadfence_system();
+            return;
+        }
+    }
+}
+
 // ---- after the attention -----------------------------------------------------------------------------------------------
 
 __global__ void __launch_bounds__(kThreads) post_attn_kernel(PostAttn a) {
@@ -641,13 +675,27 @@ __global__ void __launch_bounds__(kThreads) post_attn_kernel(PostAttn a) {
     }
     bk::pdl_wait();
     bk::pdl_launch_dependents();
+    // the exchange: block 0 tells the other card this card's count (its share went out in the projection), then every
+    // block waits for the other's
+    if (a.xch.sent) {
+        if (threadIdx.x == 0) {
+            const uint32_t want = *a.xch.sent;
+            if (r == 0) st_release_sys(a.xch.peer_box, want);
+            exchange_wait(a.xch, want);
+        }
+        __syncthreads();
+    }
     __shared__ float red[kMaxMix * 2 * (kWarpsB + 1)];
-    // the convolution's rows of the output projection: this row's and the window's rows before it
+    // the convolution's rows of the output projection: this row's and the window's rows before it (two cards: card 0's
+    // heads' sum, then card 1's)
 #pragma unroll
     for (int j = 0; j < kPer; ++j)
 #pragma unroll
         for (int k = 0; k < kConv; ++k)
-            if (r - k >= first) xin[j][k] = a.o[(size_t) (r - k) * kWidth + threadIdx.x + j * kThreads];
+            if (r - k >= first) {
+                const size_t i = (size_t) (r - k) * kWidth + threadIdx.x + j * kThreads;
+                xin[j][k] = a.part[0] ? a.part[0][i] + a.part[1][i] : a.o[i];
+            }
     const int slot = pr % kConvRing;
     float res[kPer];
 #pragma unroll
@@ -677,38 +725,6 @@ __global__ void __launch_bounds__(kThreads) post_attn_kernel(PostAttn a) {
 }
 
 // ---- experts -----------------------------------------------------------------------------------------------------------
-
-__device__ __forceinline__ void st_release_sys(uint32_t* p, uint32_t v) {
-    asm volatile("st.release.sys.global.u32 [%0], %1;" ::"l"(p), "r"(v) : "memory");
-}
-__device__ __forceinline__ uint32_t ld_acquire_sys(const uint32_t* p) {
-    uint32_t v;
-    asm volatile("ld.acquire.sys.global.u32 %0, [%1];" : "=r"(v) : "l"(p) : "memory");
-    return v;
-}
-__device__ __forceinline__ uint64_t global_ns() {
-    uint64_t t;
-    asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
-    return t;
-}
-
-// The exchange's wait (Exchange): until the box reaches `want` (counts wrap). It reads the abort word only once it has
-// waited kXchPollNs, and gives up past kXchBoundNs, setting the word.
-constexpr uint64_t kXchPollNs = 1000000ull, kXchBoundNs = 2000000000ull;
-__device__ __noinline__ void exchange_wait(Exchange x, uint32_t want) {
-    const uint64_t t0 = global_ns();
-    while ((int32_t) (ld_acquire_sys(x.box) - want) < 0) {
-        const uint64_t waited = global_ns() - t0;
-        if (waited < kXchPollNs) continue;
-        volatile uint32_t* const word = x.abort;
-        if (*word != 0) return;
-        if (waited > kXchBoundNs) {
-            *word = 1;
-            __threadfence_system();
-            return;
-        }
-    }
-}
 
 // One thread: this card's count of the attention's exchange to the other card, then the wait for the other's.
 __global__ void attn_exchange_kernel(Exchange x) {
@@ -828,6 +844,9 @@ void post_attn(const PostAttn& a, int rows, void* stream) {
     if (rows <= 0) return;
     check_rows(rows, "post_attn");
     if (a.n_blocks + (a.boundary ? 1 : 0) + 1 > kMaxMix) throw std::runtime_error("inkling2 post_attn: blocks");
+    if (a.part[0] ? !a.part[1] : !a.o) throw std::runtime_error("inkling2 post_attn: the projection's rows");
+    if (a.xch.sent && (!a.part[0] || !a.xch.box || !a.xch.peer_box || !a.xch.abort))
+        throw std::runtime_error("inkling2 post_attn: the exchange's words");
     bk::launch_pdl(post_attn_kernel, dim3((unsigned) rows), dim3(kThreads), 0, (cudaStream_t) stream, a);
     check("post_attn");
 }

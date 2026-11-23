@@ -248,12 +248,29 @@ void decode_prepare(const AttnPrep& a, int rows, void* stream);
 /// set; a's q, r and sink are pa's outputs).
 void attention_window(const AttnPrep& pa, const AttnArgs& a, int rows, int64_t max_keys, void* scratch, void* stream);
 
+/// Tensor parallelism: the words of the cards' exchanges, a visit's attention heads' outputs (attention_decode's q8_peer)
+/// and then its experts' sums. Each card counts what it has sent (attn_combine, moe_combine) and tells the other card its
+/// count in that card's box; a card's wait (attn_exchange, its finish) passes once its box holds its own count, so the
+/// other card's share of the same exchange is in. A wait that passes its bound sets `abort` (mapped host memory, read by
+/// the host after each call) and falls through, as does every wait that has waited a moment once the word is set: the
+/// call ends with garbage rows and the host fails it.
+struct Exchange {
+    const uint32_t* sent = nullptr;   ///< the card's count of shares sent
+    const uint32_t* box = nullptr;    ///< the other card's count, written by it
+    uint32_t* peer_box = nullptr;     ///< the other card's box (a peer address)
+    uint32_t* abort = nullptr;
+};
+
 /// After the attention's output projection: its convolution over `o` (the ring for the positions before the window) plus
 /// the residual (the layer's input `hid`, unless the layer starts a block) into `resid`; then the MLP's input, the mix of
 /// the finished blocks (and `hid` when the layer starts a block) and `resid` scored by `query`, normed with `norm` (eps)
 /// into q8_1 at `q8` and fp32 at `norm_out`, or the mix as it is at `mix_out` when set (for a loop controller).
 struct PostAttn {
     const float* o = nullptr;
+    /// set (tensor parallelism): `o` is part[0][r] + part[1][r], card 0's heads' projection and card 1's, in that order on
+    /// both cards; o unread
+    const float* part[2] = {};
+    Exchange xch;                      ///< set (sent): part[] of the other card's is read once the exchange's wait passes
     const int32_t* pos = nullptr;
     const float* taps = nullptr;       ///< [kWidth][kConv], tap kConv-1 the current token
     float* ring = nullptr;             ///< the convolution's inputs [kConvRing][kWidth]
@@ -272,18 +289,6 @@ struct PostAttn {
 };
 void post_attn(const PostAttn& a, int rows, void* stream);
 
-/// Tensor parallelism: the words of the cards' exchanges, a visit's attention heads' outputs (attention_decode's q8_peer)
-/// and then its experts' sums. Each card counts what it has sent (attn_combine, moe_combine) and tells the other card its
-/// count in that card's box; a card's wait (attn_exchange, its finish) passes once its box holds its own count, so the
-/// other card's share of the same exchange is in. A wait that passes its bound sets `abort` (mapped host memory, read by
-/// the host after each call) and falls through, as does every wait that has waited a moment once the word is set: the
-/// call ends with garbage rows and the host fails it.
-struct Exchange {
-    const uint32_t* sent = nullptr;   ///< the card's count of shares sent
-    const uint32_t* box = nullptr;    ///< the other card's count, written by it
-    uint32_t* peer_box = nullptr;     ///< the other card's box (a peer address)
-    uint32_t* abort = nullptr;
-};
 /// The attention's exchange: the other card's heads' outputs are in this card's q8_1 rows once it returns (one block).
 void attn_exchange(const Exchange& x, void* stream);
 

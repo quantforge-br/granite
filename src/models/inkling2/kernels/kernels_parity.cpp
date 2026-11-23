@@ -1124,6 +1124,39 @@ void test_post_attn() {
             for (int r = 0; r < R; ++r) ring_ok = ring_ok && !std::memcmp(&nr[(size_t) (pos[r] % kConvRing) * E], &o[(size_t) r * E], E * 4);
             std::printf("%-34s %s\n", "  the ring", ring_ok ? "ok" : "FAIL");
             failures += !ring_ok;
+            {   // tensor parallelism: the projection as the two cards' sums, after an exchange with itself
+                const std::vector<float> p0 = randn((size_t) R * E, 0.3f), p1 = randn((size_t) R * E, 0.3f);
+                std::vector<float> o2(p0.size());
+                for (size_t i = 0; i < o2.size(); ++i) o2[i] = p0[i] + p1[i];
+                PostAttn whole = a, parts = a;
+                whole.o = dev(o2);
+                parts.o = nullptr;
+                parts.part[0] = dev(p0);
+                parts.part[1] = dev(p1);
+                const std::vector<uint32_t> words0 = {1, 0, 0};
+                uint32_t* words = dev(words0);
+                parts.xch.sent = words;
+                parts.xch.box = parts.xch.peer_box = words + 1;
+                parts.xch.abort = words + 2;
+                for (PostAttn* p : {&whole, &parts}) {
+                    p->ring = dev(ring);
+                    p->resid = zeros<float>((size_t) R * E);
+                    p->norm_out = zeros<float>((size_t) R * E);
+                    p->q8 = zeros<uint8_t>((size_t) R * E / 32 * 36);
+                    if (mix_only) p->mix_out = zeros<float>((size_t) R * E);
+                    post_attn(*p, R, nullptr);
+                }
+                float* const out_w = mix_only ? whole.mix_out : whole.norm_out;
+                float* const out_p = mix_only ? parts.mix_out : parts.norm_out;
+                same_bits("  two cards' sums: residual", host(parts.resid, (size_t) R * E).data(),
+                          host(whole.resid, (size_t) R * E).data(), (size_t) R * E * 4);
+                same_bits("  two cards' sums: output", host(out_p, (size_t) R * E).data(), host(out_w, (size_t) R * E).data(),
+                          (size_t) R * E * 4);
+                const std::vector<uint32_t> wd = host(words, 3);
+                const bool waited = wd[1] == 1 && wd[2] == 0;
+                std::printf("%-34s %s\n", "  two cards' sums: the exchange", waited ? "ok" : "FAIL");
+                failures += !waited;
+            }
             if (!boundary && !mix_only) {   // row 2 alone (its window rows before it read from a ring holding them)
                 std::vector<float> ring2 = ring;
                 for (int r = 0; r < 2; ++r) std::memcpy(&ring2[(size_t) (pos[r] % kConvRing) * E], &o[(size_t) r * E], E * 4);
