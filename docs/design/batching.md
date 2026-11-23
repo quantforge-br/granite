@@ -17,9 +17,9 @@ own conversation differs:
 
 ## The interface
 
-The interface exists today (`include/basalt/model/adapter.hpp`); the dense stack (Qwen3.8-27B) implements it and the shared
-serve engine (`src/program/serve/session_engine.cpp`) drives it. Every model batches through it: one batching path, no
-model-specific runtime or mode.
+The interface exists today (`include/basalt/model/adapter.hpp`); the shared serve engine
+(`src/program/serve/session_engine.cpp`) drives it. Every model batches through it: one batching path, no model-specific
+runtime or mode.
 
 - **Sessions are slots.** A model makes one `ModelSession` per slot (`LoadRequest::sessions`). A session owns its
   conversation's state: caches, rings, recurrent state, the drafter's context, its sampler and its last logits.
@@ -62,7 +62,7 @@ Shared code never names a model (`tools/check_model_layering.sh`).
 | The driver: `decode_batch` for any model (checks, segments, head rows, graph per composition, stream order, one sync, picks) | `model/batch_driver.hpp` (`BatchSession`) |
 | A batch window's segments (rows, per-row positions and tokens) and the graph cache keyed by composition | `model/batch_window.hpp` |
 | The device form of the segment table and a row's segment lookup, for any model's kernels | `kernels/window_segs.hpp` |
-| Segment-aware shared kernels: attention (`gqa_decode_attn_segs`), GDN recurrence (`dec_gdn_rec_seg`) | `kernels/gqa_attn.hpp`, `kernels/gdn_window.hpp` |
+| Segment-aware shared kernels: attention (`gqa_decode_attn_segs`) | `kernels/gqa_attn.hpp` |
 | The conformance check: solo windows against the same windows batched, bitwise | `model/batch_check.hpp`, `--diag-batch-check` |
 | Serve identity and throughput across slot counts against one slot | `tools/batch_identity.py` |
 
@@ -97,17 +97,7 @@ times the slots plus the shared scratch once, so more slots cost only their cach
 ## Models on the driver
 
 The goal is no separate batching paths: every model batches through the shared driver and the shared engine, for
-consistency. Qwen3.8-27B, Inkling 2 Mini, Hy4-flash and DeepSeek-V4.1-Flash are on it.
-
-- **Qwen3.8-27B** (the dense stack, `src/dense`) is on the driver. A window holds up to 16 rows (`kBatch`); its kernels read
-  their own segment tables (the attention's `GqaSeg` per segment, GDN's `BatchTable` through `dec_gdn_rec_seg_split`), which
-  carry each segment's cache and recurrent-state addresses beside its rows. `batch_reserve` settles a session (the last
-  window's GDN commit on its side stream; the driver readies every session before it waits on any, so the commits run side by
-  side) and prepares its draw; `batch_stage` packs the rows' tokens, rope positions (each session's offset) and the segment
-  table (`stage_batch`); `batch_forward` is the layer walk and the head over every row, each segment's logits and block-drafter
-  or MTP rows into its session (`batch_body`); `batch_take` its bookkeeping, `batch_draw` its sampler. The window scratch is the
-  model's, shared by every session. A layer split runs its two cards' graphs itself (`batch_captured` false: `forward_batch`
-  keeps each card's in its model's `BatchShared`). The block drafter's batched pass (`draft_batch`) stays the model's.
+consistency. Inkling 2 Mini, Hy4-flash and DeepSeek-V4.1-Flash are on it.
 
 ## Retrofits
 

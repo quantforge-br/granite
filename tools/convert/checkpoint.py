@@ -1,7 +1,6 @@
-"""What the checkpoint converters share (checkpoint_inkling2.py, checkpoint_qwen35.py, checkpoint_deepseek41.py,
-hy4flash_bf16.py): the safetensors files of a checkpoint directory, NVIDIA Model Optimizer's NVFP4 rows moved into
-Basalt's blocks, the routed-expert blob job, the GDN value-head reorder, and the model metadata and tokenizer as GGUF
-keys. Needs numpy.
+"""What the checkpoint converters share (checkpoint_inkling2.py, checkpoint_deepseek41.py, hy4flash_bf16.py): the
+safetensors files of a checkpoint directory, NVIDIA Model Optimizer's NVFP4 rows moved into Basalt's blocks, the
+routed-expert blob job, and the model metadata and tokenizer as GGUF keys. Needs numpy.
 """
 from __future__ import annotations
 
@@ -14,9 +13,6 @@ import numpy as np
 import model_sections as S
 
 UNUSED, NORMAL, CONTROL, USER_DEFINED = 5, 1, 3, 4
-# The pre-tokenizer split of the qwen35 vocabulary as Hugging Face tokenizers writes it.
-QWEN35_HF_SPLIT = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}"
-                   r"| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+")
 # The tensors a file beside the model-NNNNN-of-NNNNN shards may hold: the drafter, vision, the experts, the n-gram table.
 SKIP = re.compile(r"^(mtp\.|model\.visual\.|model\.language_model\.layers\.\d+\.(mlp\.experts\.|ple\.ple_embedding\.))")
 
@@ -153,31 +149,6 @@ def _expert_job(args):
 bounded_imap = S.bounded_imap
 
 
-# How a qwen35 checkpoint tensor becomes its GGUF tensor (checkpoint_qwen35.py).
-METHODS = {
-    "id": "as stored",
-    "norm": "bf16 + 1 in f32 (exact)",
-    "heads": "value-head rows in the GGUF order",
-    "negexp": "-exp(A_log), computed in f64 and rounded once to f32, value heads in the GGUF order",
-    "conv": "[C, 1, K] -> [C, K]",
-    "gconv": "[C, 1, K] -> [C, K], value channels in the GGUF head order",
-    "vrows": "rows after q and k in the GGUF value-head order",
-    "zrows": "rows in the GGUF value-head order",
-    "vcols": "columns in the GGUF value-head order",
-    "split": "the fused indexer projection split into q and k rows",
-}
-
-
-def _index(how: str, n: int, first: int) -> np.ndarray | None:
-    if how in ("heads", "negexp"):
-        return S.gdn_block_source()
-    if how in ("vrows", "gconv"):
-        return S.gdn_index(n, first)
-    if how in ("zrows", "vcols"):
-        return S.gdn_index(n, 0)
-    return None
-
-
 # ------------------------------------------------------------------ metadata and tokenizer
 def front_matter(readme: pathlib.Path) -> dict:
     """The simple `key: value` / `key:\\n- item` YAML block at the top of a model card."""
@@ -203,8 +174,7 @@ def f32(v) -> float:
     return float(np.float32(v))
 
 
-def tokenizer_kv(ck: Checkpoint, pre_name: str = "qwen35", split: str = QWEN35_HF_SPLIT,
-                 n_vocab: int | None = None) -> dict:
+def tokenizer_kv(ck: Checkpoint, pre_name: str, split: str, n_vocab: int | None = None) -> dict:
     """The tokenizer as GGUF metadata (llama.cpp's gpt2 conversion): ids without a token become `[PADn]` (unused),
     added tokens are control tokens when marked special or written `<|...|>`, other added tokens user-defined.
     `pre_name` is the pre-tokenizer the engine runs, `split` the one regex the checkpoint's tokenizer.json must carry

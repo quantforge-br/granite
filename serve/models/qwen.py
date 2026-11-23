@@ -1,4 +1,4 @@
-"""The Qwen dialect, every Qwen model's (the MoE Flash-Next and the dense hybrids): the model's Jinja chat template and
+"""The Qwen dialect, the plain one a server without a model file uses (the mock engine): the Jinja chat template and
 `<tool_call><function=...>` calls."""
 from __future__ import annotations
 

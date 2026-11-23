@@ -123,6 +123,10 @@ class TruncationTest(unittest.TestCase):
                 S.read_safetensors_header(p)
 
 
+# a pre-tokenizer split as Hugging Face tokenizers writes one; tokenizer_kv requires the checkpoint's to be this one
+SPLIT = r"[\p{L}\p{M}]+|\p{N}|\s+|[^\s\p{L}\p{M}\p{N}]+"
+
+
 class TokenizerKvTest(unittest.TestCase):
     def test_types_gaps_and_ids(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -130,7 +134,7 @@ class TokenizerKvTest(unittest.TestCase):
             vocab = {"a": 0, "b": 1, "ab": 2}
             tj = {"model": {"type": "BPE", "vocab": vocab, "merges": [["a", "b"]]},
                   "pre_tokenizer": {"type": "Sequence", "pretokenizers": [
-                      {"type": "Split", "pattern": {"Regex": C.QWEN35_HF_SPLIT}}, {"type": "ByteLevel"}]},
+                      {"type": "Split", "pattern": {"Regex": SPLIT}}, {"type": "ByteLevel"}]},
                   "added_tokens": [{"id": 4, "content": "<|end|>", "special": True},
                                    {"id": 5, "content": "<|fim|>", "special": False},
                                    {"id": 6, "content": "<think>", "special": False}]}
@@ -141,7 +145,7 @@ class TokenizerKvTest(unittest.TestCase):
             (d / "chat_template.jinja").write_text("{{ x }}")
             (d / "config.json").write_text(json.dumps({"text_config": {"vocab_size": 8}}))
             (d / "model-00001-of-00001.safetensors").write_bytes(struct.pack("<Q", 2) + b"{}")
-            kv = C.tokenizer_kv(C.Checkpoint(d))
+            kv = C.tokenizer_kv(C.Checkpoint(d), "test", SPLIT)
             self.assertEqual(kv["tokenizer.ggml.tokens"], ["a", "b", "ab", "[PAD3]", "<|end|>", "<|fim|>", "<think>", "[PAD7]"])
             self.assertEqual(kv["tokenizer.ggml.token_type"], [1, 1, 1, 5, 3, 3, 4, 5])
             self.assertEqual(kv["tokenizer.ggml.merges"], ["a b"])
@@ -150,7 +154,7 @@ class TokenizerKvTest(unittest.TestCase):
             tj["pre_tokenizer"]["pretokenizers"][0]["pattern"]["Regex"] = r"\s+"
             (d / "tokenizer.json").write_text(json.dumps(tj))
             with self.assertRaises(S.ConvertError):
-                C.tokenizer_kv(C.Checkpoint(d))
+                C.tokenizer_kv(C.Checkpoint(d), "test", SPLIT)
 
 
 def csf_encode(scales: np.ndarray):

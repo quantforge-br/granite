@@ -1,6 +1,6 @@
 """The Hy4-flash release pack from the BF16 GGUF (`convert.py --gguf Hy4-flash-BF16.gguf --nvfp4 ...`), for tools/convert/convert.py.
 
-  experts / experts.layout  the routed experts rounded once to NVFP4 (ggml type 40), the 27B pack's rounding: per matrix
+  experts / experts.layout  the routed experts rounded once to NVFP4 (ggml type 40): per matrix
                             the tensor scale amax / (6 x 448), per 16 values the UE4M3 scale of least squared error
                             near amax / 6; blobs [gate | up | down] plus the FP32 tail {s_gate, s_up, s_down, 0}
   gguf / dense / dense.index  every other tensor: BF16 projections as Q8_0 (Q6_K with --dense-q6k where rows are whole
@@ -30,7 +30,6 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 import checkpoint as C  # noqa: E402
-import checkpoint_qwen35 as Q  # noqa: E402
 import model_sections as S  # noqa: E402
 from arch.hy4flash import ENGRAM_SECTION, ENGRAM_TENSOR, F8_E4M3_RAW, Hy4Flash  # noqa: E402
 from model_file import SECTION_ALIGN, TENSOR_ALIGN, ModelFile, ModelWriter, Stream  # noqa: E402
@@ -56,6 +55,66 @@ class Hy4FlashBf16(Hy4Flash):
 
 
 ARCH = Hy4FlashBf16()
+
+
+# ------------------------------------------------------------------ NVFP4 and E4M3 rounding
+E4M3 = S.fp8_e4m3_table()
+E2M1 = np.array([0, .5, 1, 1.5, 2, 3, 4, 6, -0., -.5, -1, -1.5, -2, -3, -4, -6], np.float64)
+UE4M3 = E4M3[:127].astype(np.float32)     # the finite non-negative codes, ascending
+
+
+def e4m3_round(x: np.ndarray) -> np.ndarray:
+    """float64 values -> E4M3 codes, to nearest with ties to the even code, saturating at 448 (no -0)."""
+    c = ue4m3_round(np.abs(x))
+    return c | np.where((x < 0) & (c > 0), 0x80, 0).astype(np.uint8)
+
+
+def fp4q_global(amax: float) -> np.float32:
+    """The tensor scale of a matrix rounded to NVFP4: its largest |value| maps to E2M1 6 at the largest UE4M3 scale."""
+    return np.float32(amax) / np.float32(6.0 * 448.0) if amax > 0 else np.float32(1)
+
+
+def ue4m3_round(x: np.ndarray) -> np.ndarray:
+    """Non-negative float32 values -> UE4M3 codes, to nearest with ties to the even code, saturating at 448."""
+    x = np.minimum(x, np.float32(448))
+    i = np.clip(np.searchsorted(UE4M3, x), 1, 126)
+    lo, hi = UE4M3[i - 1], UE4M3[i]
+    up = (x - lo > hi - x) | ((x - lo == hi - x) & (i % 2 == 0))
+    return np.where(up, i, i - 1).astype(np.uint8)
+
+
+def e2m1_round(x: np.ndarray) -> np.ndarray:
+    """float32 values -> E2M1 codes, to nearest with ties to the even code, saturating (as nvfp4_planes.cu rounds)."""
+    a = np.abs(x)
+    c = ((a > 0.25).astype(np.uint8) + (a >= 0.75) + (a > 1.25) + (a >= 1.75) + (a > 2.5) + (a >= 3.5) + (a > 5.0)).astype(np.uint8)
+    return c | np.where((x < 0) & (c > 0), 8, 0).astype(np.uint8)
+
+
+FP4Q_STEPS = range(-8, 17)    # UE4M3 codes tried around amax / 6 per group: half to four times that scale
+
+
+def fp4q_rows(x: np.ndarray, gs: np.float32):
+    """Rows [rows, K] (float32) -> (E2M1 codes [rows, K / 2], UE4M3 scales [rows, K / 16]): each 16-value group takes the
+    scale of least squared error among the UE4M3 codes near amax / (6 gs) (the first such when tied, amax / 6 first)."""
+    rows, K = x.shape
+    g = x.reshape(rows, K // 16, 16)
+    c0 = ue4m3_round(np.abs(g).max(-1) / (np.float32(6) * gs)).astype(np.int32)
+    best_err = best_code = None
+    for d in sorted(FP4Q_STEPS, key=abs):
+        c = np.clip(c0 + d, 0, 126)
+        sd = UE4M3[c] * gs
+        inv = np.where(sd > 0, np.float32(1) / np.where(sd > 0, sd, 1), 0).astype(np.float32)
+        q = e2m1_round(g * inv[..., None])
+        err = ((E2M1[q].astype(np.float32) * sd[..., None] - g) ** 2).sum(-1)
+        if best_err is None:
+            best_err, best_code = err, c
+        else:
+            better = err < best_err
+            best_err, best_code = np.where(better, err, best_err), np.where(better, c, best_code)
+    sd = UE4M3[best_code] * gs
+    inv = np.where(sd > 0, np.float32(1) / np.where(sd > 0, sd, 1), 0).astype(np.float32)
+    q = e2m1_round(g * inv[..., None]).reshape(rows, K)
+    return (q[:, 0::2] | (q[:, 1::2] << 4)).astype(np.uint8), best_code.astype(np.uint8)
 
 
 # ------------------------------------------------------------------ reading and the rounding of one piece
@@ -104,8 +163,8 @@ def _expert_job(args):
             x = bf16_values(pread(path, off + e * nb, nb)).reshape(rows, cols)
             if not np.isfinite(x).all():
                 return f"expert {e}: a non-finite value"
-            gs = Q.fp4q_global(float(np.abs(x).max()))
-            codes, sc = Q.fp4q_rows(x, gs)
+            gs = fp4q_global(float(np.abs(x).max()))
+            codes, sc = fp4q_rows(x, gs)
             out.append(C.nvfp4_rows(codes, sc).tobytes())
             tail.append(gs)
         out.append(np.array(tail + [0.0], dtype="<f4").tobytes())
@@ -145,7 +204,7 @@ def engram_lut() -> np.ndarray:
     get the code of 0; the caller counts them)."""
     global _LUT
     if _LUT is None:
-        _LUT = Q.e4m3_round(bf16_grid()[0])
+        _LUT = e4m3_round(bf16_grid()[0])
     return _LUT
 
 

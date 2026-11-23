@@ -41,9 +41,6 @@ The router then needs one config entry. Nothing in the server names a model.
 - `--parallel` slots in one pass through the weights: derive the session from `model::BatchSession`, write its hooks and run
   the batch check, see [batched decoding](design/batching.md#adding-batching-to-a-model).
 - A model with its own fast path derives from `serve::Runtime` and `serve::Request`.
-- A dense model of GDN and gated attention layers (the Qwen3.5 family) needs only its pack read into `dense::Geometry` and
-  `dense::Weights` (`include/basalt/dense/model.hpp`): the shared dense stack runs the layers, the drafters (MTP layer or DFlash
-  2 block drafter), images and video, and gives the session engine its sessions. See `src/models/qwen35/`.
 - A Qwen chat model takes the shared pre-tokenizer, tool form and token names (`basalt/program/qwen_forms.hpp`) and the
   shared Qwen dialect (`serve/models/qwen.py`).
 - Kernels: shared kernels stay in `src/kernels/`. Every new kernel gets a parity test and a microbench line.

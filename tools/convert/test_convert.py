@@ -78,16 +78,6 @@ class Q6KTest(unittest.TestCase):
         self.assertLess(np.sqrt(((deq - x) ** 2).mean()), 0.02 * x.std())
         self.assertLess((deq == 0).mean(), 0.06)
 
-    def test_gdn_head_order(self):
-        src = S.gdn_block_source()
-        self.assertEqual(sorted(src), list(range(48)))
-        self.assertEqual(list(src[:4]), [0, 3, 6, 9])           # GGUF head r * 16 + k comes from checkpoint head k * 3 + r
-        self.assertEqual(src[16], 1)
-        idx = S.gdn_index(4096 + 6144, 4096)
-        np.testing.assert_array_equal(idx[:4096], np.arange(4096))
-        self.assertEqual(sorted(idx), list(range(4096 + 6144)))
-        self.assertEqual(idx[4096 + 128], 4096 + 3 * 128)
-
 
 class GgufStemTest(unittest.TestCase):
     """arch.gguf_stem: the file name alone, a trailing `.gguf` (any case) and a shard suffix (any case) of any digit

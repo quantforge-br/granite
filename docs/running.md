@@ -163,7 +163,7 @@ images a request may name: [image sources](configuration/image-sources.md). An i
 
 ## Video
 
-With image input on, Qwen3.8-Flash-Next and Qwen3.8-27B read video (DeepSeek, Hy4-flash and Inkling 2 Mini do not). A user message names a video as it names an image, from
+With image input on, Qwen3.8-Flash-Next reads video (DeepSeek, Hy4-flash and Inkling 2 Mini do not). A user message names a video as it names an image, from
 the same [sources](configuration/image-sources.md):
 
 | API | Part |
@@ -181,7 +181,7 @@ Decoding uses FFmpeg 6, 7, 8 or 9 from the machine ([platforms](platforms.md#ffm
 `video  on, FFmpeg 8 (...)`, or `video  off` with the reason, and then a video is refused with that reason. A video may be 1 GiB.
 
 Qwen3.8-Flash-Next's frames decode on the encoder's GPU with NVDEC (H.264, HEVC, AV1, VP9 and the older codecs FFmpeg's NVDEC takes); a stream NVDEC
-refuses decodes on the CPU, with the same pixels. Qwen3.8-27B's frames always decode on the CPU. With `dynamic` the expert cache lends NVDEC the memory for the decode when no
+refuses decodes on the CPU, with the same pixels. With `dynamic` the expert cache lends NVDEC the memory for the decode when no
 reply is running (tens of ms to lend and refill); beside a running reply the video decodes on the CPU, and the reply keeps going
 until the frames are encoded. Another question about the same video, in the same chat or a new one, starts from the video
 already read.

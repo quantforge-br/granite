@@ -81,14 +81,5 @@ int main() {
         check(m->parse_flag(argv[1], args, *o, code) && code == 0 && o->route.tail_skip == 3, "--route-tail-skip 3 is taken");
         check(m->finish_flags(*o).value_or(0) == 2, "--route-tail-skip without the pack's experts per token is refused");
     }
-    if (const model::ModelAdapter* d = model::find_adapter("qwen35")) {
-        const auto o = d->make_options();
-        std::vector<std::string> words = {"basalt", "--route-prior"};
-        std::vector<char*> argv;
-        for (auto& w : words) argv.push_back(w.data());
-        int i = 1, code = 0;
-        model::FlagArgs args((int) argv.size(), argv.data(), i);
-        check(!d->parse_flag(argv[1], args, *o, code), "a dense model does not take the routing flags");
-    }
     return failures ? 1 : 0;
 }

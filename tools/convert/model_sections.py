@@ -450,22 +450,3 @@ def q6_k(x: np.ndarray) -> bytes:
     return out.tobytes()
 
 
-# The GGUF lists the 48 value heads (128 wide) as (ratio r, key head k) = r * 16 + k, the checkpoint as k * 3 + r.
-# The GGUF's GDN qkv rows after the q and k parts (4096), its z rows and its out-projection columns follow that order.
-GDN_HEAD, GDN_V_HEADS, GDN_K_HEADS = 128, 48, 16
-GDN_QK_ROWS = 4096
-
-
-def gdn_block_source() -> np.ndarray:
-    j = np.arange(GDN_V_HEADS)
-    return (j % GDN_K_HEADS) * (GDN_V_HEADS // GDN_K_HEADS) + j // GDN_K_HEADS
-
-
-def gdn_index(n: int, first: int) -> np.ndarray:
-    """Checkpoint index of each of the GGUF's n positions: identity below `first`, head-block reordered above."""
-    idx = np.arange(n)
-    blocks = (n - first) // GDN_HEAD
-    idx[first:] = first + (gdn_block_source()[:blocks, None] * GDN_HEAD + np.arange(GDN_HEAD)).reshape(-1)
-    return idx
-
-

@@ -321,5 +321,15 @@ class Hy4FlashBf16Test(unittest.TestCase):
         self.assertEqual(m.section("experts")[1], 2 * N_EXPERT * (3 * ROWS * 72 + 16))
 
 
+class RoundingTest(unittest.TestCase):
+    def test_e2m1_rounding(self):
+        x = np.array([0.25, 0.26, 0.75, 1.25, 1.75, 2.5, 3.5, 5.0, 5.1, 100, -0.75, -0.1], np.float32)
+        np.testing.assert_array_equal(H.e2m1_round(x), [0, 1, 2, 2, 4, 4, 6, 6, 7, 7, 10, 0])
+
+    def test_e4m3_rounding(self):
+        x = np.array([0.0, -0.0, 1.0625, 1.1875, -1.0625, 448.0, 500.0, -1000.0, 2.0 ** -10, 3 * 2.0 ** -10])
+        np.testing.assert_array_equal(H.E4M3[H.e4m3_round(x)], [0, 0, 1.0, 1.25, -1.0, 448, 448, -448, 0, 2.0 ** -8])
+
+
 if __name__ == "__main__":
     unittest.main()

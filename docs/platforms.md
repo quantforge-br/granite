@@ -99,7 +99,7 @@ ctest --test-dir build -L cpu -j 8 --output-on-failure
 
 The executables land in `bin/` whatever the generator is (a Visual Studio generator would otherwise put them in `bin/Release`, away from `data/`).
 
-`-DBASALT_MODELS=deepseek41`, `qwen35`, `hy4flash` or `inkling2` builds one model ([building](building.md#building-only-some-models)); the option works the same here.
+`-DBASALT_MODELS=deepseek41`, `hy4flash` or `inkling2` builds one model ([building](building.md#building-only-some-models)); the option works the same here.
 
 If tests fail to create fixtures, point `TEMP` and `TMP` into the build tree. CUDA 13.2+ headers need `/Zc:preprocessor`; the CMakeLists
 passes it to nvcc's host compiler.

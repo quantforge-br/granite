@@ -146,16 +146,6 @@ Infernix (https://github.com/Wallawalla47/Infernix), Apache License 2.0
 By Ian Ranson and the Infernix contributors.
 ================================================================================
 
-The grouped NVFP4 expert GEMM in src/prefill/moe_fp4.cu adapts code from Infernix.
-The dense W4A4 product in src/prefill/fp4_dense.cu adapts Infernix's TMA NVFP4 GEMM (src/ops/linear/nvfp4/nvfp4_a4_tma.cuh,
-nvfp4_schedule.cuh; src/ops/common/mbarrier.cuh, mma.cuh): the mbarrier full/empty tensor-load pipeline, the producer warpgroup
-beside eight consumer warps, the 128 x 256 x 128 block-scaled MMA tile and the tiled activation-scale layout.
-
-The FP8 E4M3 prompt-chunk product in src/prefill/fp8_gemm.cu adapts Infernix's fp8_a8_tma_mma_kernel
-(src/ops/linear/fp8/fp8_a8_tma_mma.cuh, fp8_a8_mma_common.cuh, src/ops/common/mbarrier.cuh, mma.cuh): the TMA and
-mbarrier producer/consumer pipeline, the 128x256x128 tile with its warp layout and ping-ponged fragments, the
-block-scaled mma used as the full-rate e4m3 product, and the segmented outputs.
-
 The int8 prompt-attention kernel adapts ideas and code from Infernix (src/ops/qsa/qsa_prompt.cu): the
 per-warp 16-cell tiles with one merge, the k-step query ordering, and the exact int8 widening to FP16.
 The chunked gated delta rule in src/kernels/cuda/gdn_prompt.cu adapts the Infernix chunked formulation.
@@ -389,12 +379,11 @@ length, source frames, decoded pixels) and their limits, the frame count from th
 then the length, then a counting pass, and per-group timestamps with image positions per group
 (src/vision/video.cpp, serve/). Licensed under the Apache License, Version 2.0, reproduced above.
 
-The dense stack and the Qwen3.8-27B model (src/dense/, src/models/qwen35/, src/kernels/cuda/dense_ops.cu,
-src/kernels/cuda/gqa_attn.cu) follow ninfer's Qwen3.5 dense execution (commit 13ebb92f6f) as the reference
-design, not its code: the DFlash 2 block drafter's flow (target-layer feature taps, the projected context K/V
-window, the non-causal draft block, top-k candidates and the candidate-path selection that picks the
-proposed tokens), the gated attention and the GDN output gate. Licensed under the Apache License, Version 2.0,
-reproduced above.
+The dense kernels (src/kernels/cuda/dense_ops.cu, src/kernels/cuda/gqa_attn.cu) follow ninfer's Qwen3.5 dense
+execution (commit 13ebb92f6f) as the reference design, not its code: the DFlash 2 block drafter's flow
+(target-layer feature taps, the projected context K/V window, the non-causal draft block, top-k candidates and
+the candidate-path selection that picks the proposed tokens), the gated attention and the GDN output gate.
+Licensed under the Apache License, Version 2.0, reproduced above.
 
 ================================================================================
 DeepSeek-V4.1 chat encoding (https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017), in
