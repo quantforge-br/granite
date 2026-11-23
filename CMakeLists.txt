@@ -259,8 +259,8 @@ endif()
 # Defined in cmake/platform.cmake, included above with `warnings`.
 
 # ---- core (GPU runtime) ---------------------------------------------
-add_library(core STATIC src/core/device.cu src/core/ram_load.cpp src/core/vmm.cpp src/core/elastic_array.cpp src/core/graph.cpp src/core/weights.cpp src/core/loader.cpp
-                             src/core/host_plan.cpp src/core/checkpoint_transfer.cpp src/core/staged_copy.cpp src/core/prompt_stage.cpp)
+add_library(core STATIC src/core/device.cu src/core/ram_load.cpp src/core/vmm.cpp src/core/elastic_array.cpp src/core/graph.cpp src/core/loader.cpp
+                             src/core/checkpoint_transfer.cpp)
 target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # The selected runtime is PUBLIC because graph.cpp is a HOST translation unit that calls cudaGraphLaunch and
 # cudaEventQuery: the .cu sources get cudart through the CUDA language rules, a .cpp does not, and the

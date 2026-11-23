@@ -22,8 +22,8 @@ namespace basalt::kernels {
 /// f32 and only the summation order differs.
 ///
 /// THE WEIGHT LAYOUT IS THE MANIFEST'S: shape [n_in, n_out] with ne0 = n_in CONTIGUOUS, so row `o` is a
-/// contiguous run of `n_in` bf16 values.  That is the same convention `s_gemv` uses, and it is what
-/// `basalt::core::WeightRef::ne0/ne1` already report.
+/// contiguous run of `n_in` bf16 values.  That is the same convention `s_gemv` uses, and it is what the manifest's
+/// ne0/ne1 report.
 void bf16_gemv(const uint16_t* x, const uint16_t* w, float* y, int64_t n_in, int64_t n_out, void* stream);
 
 /// The row-split variant, for the same reason `s_gemv_split` exists: with one thread per output row the

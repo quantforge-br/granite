@@ -35,8 +35,7 @@ The router then needs one config entry. Nothing in the server names a model.
   `plan` instead when a cache or tier sizes itself from the memory they leave. `core/ram_load` allocates and pins the RAM tier:
   `plan` allocates it, the pass gives it its pages as it reads into it, and it is pinned once its reads have landed (in
   `attach`, or as a step of the plan, `LoadPlan::after_reads`, when the pass copies from it), so a start holds no RAM before
-  its bytes arrive; a tier sized before that pin leaves the VRAM the pin maps on its card free (`pin_mapping_bytes`);
-  a prompt split's stages take the shared `core::PromptStage` and its start lines (`basalt/core/prompt_stage.hpp`).
+  its bytes arrive; a tier sized before that pin leaves the VRAM the pin maps on its card free (`pin_mapping_bytes`).
 - Conversations: `save_cells` and `restore_cells` give the RAM and disk tiers what they need.
 - `--parallel` slots in one pass through the weights: derive the session from `model::BatchSession`, write its hooks and run
   the batch check, see [batched decoding](design/batching.md#adding-batching-to-a-model).
