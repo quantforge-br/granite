@@ -586,11 +586,11 @@ int main(int argc, char** argv) {
     int n = 0;
     if (cudaGetDeviceCount(&n) != cudaSuccess || n == 0) return 77;
     if (argc > 1 && std::strcmp(argv[1], "--bench") == 0) {
-        for (const Shape& sh : kShapes) bench_call(sh.name, sh.fmt, sh.rows, sh.K, false);
-        bench_call("FP4 gate+up SwiGLU", wg::Format::Nvfp4, 17408, 5120, true);
-        bench_call("FP4 head 248320x5120", wg::Format::Nvfp4, 248320, 5120, false);
-        bench_call("F8 head 248320x5120", wg::Format::F8, 248320, 5120, false);
-        bench_call("Q8 gate 17408x5120", wg::Format::Q8, 17408, 5120, false);
+        // the Inkling 2 drafter's block products (a layer: q, k and v as one call, out, gate and up, down)
+        bench_call("FP4 drafter qkv 5120x2304", wg::Format::Nvfp4, 5120, 2304, false);
+        bench_call("FP4 drafter out 2304x3072", wg::Format::Nvfp4, 2304, 3072, false);
+        bench_call("FP4 drafter gate+up 9216", wg::Format::Nvfp4, 9216, 2304, true);
+        bench_call("FP4 drafter down 2304x9216", wg::Format::Nvfp4, 2304, 9216, false);
         return 0;
     }
     for (const Shape& sh : kShapes) parity(sh);

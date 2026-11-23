@@ -188,6 +188,8 @@ __global__ void __launch_bounds__(Cfg<F, RS, NM, CH, ST>::kThreads / MW, 1) wgem
         live[t] = t * 8 + g < a.T;
         xcol[t] = a.act + (int64_t) (t * 8 + g) * a.K + 16 * c;
     }
+    // T * (thread + 1) < 2^31: a zero the compiler cannot prove
+    const E2m1Table e2m1 = e2m1_table((unsigned) (a.T * (int) (threadIdx.x + 1)) >> 31);
     int q = 0;   // chunks consumed
     for (int item = blockIdx.x; item < items; item += G) {
         const int tile = item / ks, slice = item % ks, mi = matrix_of(tile);
@@ -276,12 +278,12 @@ __global__ void __launch_bounds__(Cfg<F, RS, NM, CH, ST>::kThreads / MW, 1) wgem
                         const uint8_t* ss = sm + RS * C::CB + b * RS * 4;
                         const unsigned s0 = ss[(r0l & 31) * C::kScalePiece + (r0l >> 5) * 4 + c];
                         const unsigned s1 = ss[(r1l & 31) * C::kScalePiece + (r1l >> 5) * 4 + c];
-                        const unsigned sc0 = ue4m3x2_bf16x2(s0 | (s0 << 8)), sc1 = ue4m3x2_bf16x2(s1 | (s1 << 8));
+                        const unsigned sc0 = ue4m3_bf16x2(s0), sc1 = ue4m3_bf16x2(s1);
                         unsigned h0[8], h1[8];
-                        e2m1x8_bf16x2_scaled(w0.x, sc0, *reinterpret_cast<unsigned(*)[4]>(h0));
-                        e2m1x8_bf16x2_scaled(w0.y, sc0, *reinterpret_cast<unsigned(*)[4]>(h0 + 4));
-                        e2m1x8_bf16x2_scaled(w1.x, sc1, *reinterpret_cast<unsigned(*)[4]>(h1));
-                        e2m1x8_bf16x2_scaled(w1.y, sc1, *reinterpret_cast<unsigned(*)[4]>(h1 + 4));
+                        e2m1x8_bf16x2_scaled(w0.x, sc0, e2m1, *reinterpret_cast<unsigned(*)[4]>(h0));
+                        e2m1x8_bf16x2_scaled(w0.y, sc0, e2m1, *reinterpret_cast<unsigned(*)[4]>(h0 + 4));
+                        e2m1x8_bf16x2_scaled(w1.x, sc1, e2m1, *reinterpret_cast<unsigned(*)[4]>(h1));
+                        e2m1x8_bf16x2_scaled(w1.y, sc1, e2m1, *reinterpret_cast<unsigned(*)[4]>(h1 + 4));
 #pragma unroll
                         for (int s = 0; s < 4; ++s) {
                             a0[s] = h0[2 * s];

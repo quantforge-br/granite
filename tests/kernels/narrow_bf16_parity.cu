@@ -1,5 +1,5 @@
 // tests/kernels/narrow_bf16_parity.cu - the FP8 E4M3 and FP4 E2M1 conversions to bf16x2 (basalt/kernels/narrow_bf16.cuh)
-// against the host's values: every pair of E4M3 bytes, every pair of UE4M3 scale bytes (bit 7 ignored, 0x7f as 0), and
+// against the host's values: every pair of E4M3 bytes, every UE4M3 scale byte in both halves (bit 7 ignored, 0x7f as 0), and
 // every E2M1 byte at every UE4M3 scale byte in each byte of the word, bit for bit (a NaN only as a NaN); and bf16x2_mul_rn
 // against the host's rounding of the product on a sweep of bf16 pairs.  Exit 77 without a GPU.
 #include "basalt/kernels/narrow_bf16.cuh"
@@ -25,10 +25,10 @@ __global__ void e4m3(unsigned* got) {
     got[i] = bk::e4m3x2_bf16x2(i);
 }
 
-// i: two UE4M3 scale bytes
+// i: a UE4M3 scale byte (the low byte; the rest of the sweep repeats it)
 __global__ void ue4m3(unsigned* got) {
     const unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    got[i] = bk::ue4m3x2_bf16x2(i);
+    got[i] = bk::ue4m3_bf16x2(i & 0xffu);
 }
 
 // the word for i: byte k is the low byte of i plus 37 k, so every byte position sees all 256 values; the high byte of i
@@ -43,7 +43,7 @@ __global__ void e2m1(unsigned* got) {
     const unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned s = i >> 8;
     unsigned h[4];
-    bk::e2m1x8_bf16x2_scaled(e2m1_word(i), bk::e4m3x2_bf16x2(s | (s << 8)), h);
+    bk::e2m1x8_bf16x2_scaled(e2m1_word(i), bk::e4m3x2_bf16x2(s | (s << 8)), bk::e2m1_table(0), h);
     for (int k = 0; k < 4; ++k) got[4 * i + k] = h[k];
 }
 
@@ -123,7 +123,7 @@ int main() {
 
     if (!run(ue4m3, d, g, kN, "ue4m3")) return 1;
     for (unsigned i = 0; i < kN; ++i)
-        for (int half = 0; half < 2; ++half) check("ue4m3x2", i, half, g[i], ue4m3f((i >> (8 * half)) & 0xffu));
+        for (int half = 0; half < 2; ++half) check("ue4m3", i, half, g[i], ue4m3f(i & 0xffu));
 
     if (!run(e2m1, d, g, 4 * (size_t) kN, "e2m1")) return 1;
     for (unsigned i = 0; i < kN; ++i) {
