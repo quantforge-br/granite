@@ -538,6 +538,39 @@ int q80_segments_section(cudaStream_t s) {
         bad += !ok;
         std::printf("Q8_0 segments T=%d (6552 + 1056 + 1056 rows of %d): %lld of %zu differ from a call per range, %lld non-finite  %s\n",
                     T, N_IN, diff, yoff, nonfinite, ok ? "ok" : "FAIL");
+        // strided: a card's share of the query side (its twelve heads' q, r, gate and sink rows, the last range shorter
+        // than a 16-row tile) with every k and v row, in six segments each written where the calls above wrote it
+        for (int card = 0; card < 2; ++card) {
+            cudaMemset(ya, 0xff, ybytes);
+            const int r0[6] = {1536 * card, 3072 + 192 * card, 3456 + 1536 * card, 6528 + 12 * card, 6552, 7608};
+            const int no[6] = {1536, 192, 1536, 12, 1056, 1056};
+            const std::size_t base[6] = {0, 0, 0, 0, (std::size_t) T * 6552, (std::size_t) T * (6552 + 1056)};
+            k::Q80Segments st;
+            st.n = 6;
+            for (int i = 0; i < 6; ++i) {
+                const int in = i < 4 ? 0 : i - 3;
+                st.row0[i] = r0[i];
+                st.n_out[i] = no[i];
+                st.ld[i] = i < 4 ? 6552 : 0;
+                st.x[i] = dq + (std::size_t) in * 8 * qcol;
+                st.y[i] = ya + base[i] + (i < 4 ? r0[i] : 0);
+            }
+            k::native_q8_0_mmvq_segments(dw, st, N_IN, T, s);
+            if (!ck(cudaStreamSynchronize(s), "strided segments") ||
+                !ck(cudaMemcpy(a.data(), ya, yoff * 4, cudaMemcpyDeviceToHost), "read"))
+                return bad + 1;
+            long long sdiff = 0, n = 0;
+            for (int i = 0; i < 6; ++i)
+                for (int j = 0; j < T; ++j)
+                    for (int r = 0; r < no[i]; ++r) {
+                        const std::size_t at = base[i] + (std::size_t) j * (i < 4 ? 6552 : 1056) + (i < 4 ? r0[i] : 0) + r;
+                        sdiff += std::memcmp(&a[at], &b[at], 4) != 0;
+                        ++n;
+                    }
+            bad += sdiff != 0;
+            std::printf("Q8_0 strided segments T=%d card %d (6 ranges): %lld of %lld differ  %s\n", T, card, sdiff, n,
+                        sdiff == 0 ? "ok" : "FAIL");
+        }
     }
     cudaFree(dw); cudaFree(dq); cudaFree(dx); cudaFree(ya); cudaFree(yb);
     return bad;
