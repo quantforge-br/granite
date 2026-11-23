@@ -26,7 +26,7 @@ class Levels(unittest.TestCase):
                          ["info", "warn", "err", "err", "info", "warn"])
 
     def test_older_engine_markers(self):
-        self.assertEqual(self.read("basalt error: boom", "basalt warning: slow disk"), ["err", "warn"])
+        self.assertEqual(self.read("basalt: error: boom", "basalt: warning: slow disk"), ["err", "warn"])
 
     def test_words_decide_nothing(self):
         for text in ("basalt serve: no error, 0 failures", "basalt generate: failed over to the CPU path",
@@ -51,7 +51,7 @@ class Levels(unittest.TestCase):
     def test_engine_line_parts(self):
         e = engine_line("basalt mtp: warning: the draft head over 5 tokens")
         self.assertEqual((e.tag, e.level, e.text), ("basalt mtp", "warn", "the draft head over 5 tokens"))
-        self.assertEqual(engine_line("basalt error: x"), ("basalt", "err", "x"))
+        self.assertEqual(engine_line("basalt: error: x"), ("basalt", "err", "x"))
         self.assertIsNone(engine_line("CUDA error: x"))
         self.assertIsNone(engine_line("  chunk share 0.50: 12 ms"))
 

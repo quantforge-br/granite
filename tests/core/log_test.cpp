@@ -53,8 +53,6 @@ int main() {
     is(parsed("basalt load: cuda0 1 2"), "info|basalt load|cuda0 1 2", "parse: info");
     is(parsed("basalt: error: kernel: bad"), "error|basalt|kernel: bad", "parse: no area");
     is(parsed("basalt-bench: warning: NVML"), "warning|basalt-bench|NVML", "parse: a tool's tag");
-    is(parsed("basalt error: old form"), "error|basalt|old form", "parse: older error form");
-    is(parsed("basalt warning: old form"), "warning|basalt|old form", "parse: older warning form");
     is(parsed("basalt serve: no error here"), "info|basalt serve|no error here", "parse: the word error is no marker");
     is(parsed("CUDA error: out of memory"), "not a log line", "parse: a line of another writer");
     is(parsed("basalt (ms/window): x"), "not a log line", "parse: odd characters in the tag");

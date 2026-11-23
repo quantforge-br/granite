@@ -1587,7 +1587,7 @@ class StartFailureLog(unittest.TestCase):
         p = Path(d) / "engine.log"
         before = "basalt serve: an earlier start's line\n"
         p.write_text(before + "basalt serve: line 1\nbasalt generate: cannot open the pack\n"
-                     "basalt warning: slow disk\n\n", encoding="utf-8")
+                     "basalt: warning: slow disk\n\n", encoding="utf-8")
         self.assertEqual(start_last_line(str(p), len(before.encode())), "cannot open the pack")
         self.assertEqual(start_last_line(str(p), p.stat().st_size), "")   # nothing from this start
         self.assertEqual(start_last_line(None, 0), "")
@@ -1640,12 +1640,12 @@ class StartFailureLog(unittest.TestCase):
 
     def test_the_engines_own_error_is_the_message(self):
         fake = ("import sys\nsys.stderr.write('basalt generate: GPU 0\\n')\n"
-                "sys.stderr.write('basalt error: the experts need 40.0 GiB of RAM, 27.1 GiB is available; use "
+                "sys.stderr.write('basalt: error: the experts need 40.0 GiB of RAM, 27.1 GiB is available; use "
                 "--resident-experts or --mmap-experts\\n')\nsys.exit(1)\n")
         with tempfile.TemporaryDirectory() as d:
             script, log = Path(d) / "fake_engine.py", Path(d) / "engine.log"
             script.write_text(fake, encoding="utf-8")
-            log.write_text("basalt error: an earlier start\n", encoding="utf-8")
+            log.write_text("basalt: error: an earlier start\n", encoding="utf-8")
             real = subprocess.Popen
             with mock.patch.object(subprocess, "Popen",
                                    lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:]], **kw)), \
@@ -1657,9 +1657,9 @@ class StartFailureLog(unittest.TestCase):
 
     def test_error_lines(self):
         from serve.engine.progress import engine_error
-        self.assertEqual(engine_error("basalt error: x y"), "x y")
-        self.assertIsNone(engine_error("basalt error: "))
-        self.assertIsNone(engine_error("basalt warning: x"))
+        self.assertEqual(engine_error("basalt: error: x y"), "x y")
+        self.assertIsNone(engine_error("basalt: error: "))
+        self.assertIsNone(engine_error("basalt: warning: x"))
 
     def test_route_warnings_reach_the_start_output(self):
         from serve.engine.progress import engine_warning
@@ -1681,7 +1681,6 @@ class StartFailureLog(unittest.TestCase):
         self.assertIsNone(engine_error("basalt generate: no error here, nothing failed"))
         self.assertIsNone(engine_error("CUDA error: out of memory"))
         self.assertEqual(engine_warning("basalt serve: warning: model 60.0 GiB"), "model 60.0 GiB")
-        self.assertEqual(engine_warning("basalt warning: older form"), "older form")
         self.assertIsNone(engine_warning("basalt generate: WARNING: not a marker"))
         self.assertIsNone(engine_warning("basalt serve: warning: "))
         self.assertEqual(engine_ram_floor("basalt generate: RAM floor 4.0 GiB"), "4.0 GiB")
@@ -1727,8 +1726,8 @@ class LoadProgress(unittest.TestCase):
         self.assertEqual(load_total("basalt load: total 4096"), 4096)
         self.assertIsNone(load_total("basalt load: total many"))
         self.assertIsNone(load_total("basalt load: weights 1 2"))
-        self.assertEqual(engine_warning("basalt warning: model 60.0 GiB, free 40.0 GiB"), "model 60.0 GiB, free 40.0 GiB")
-        self.assertIsNone(engine_warning("basalt warning: "))
+        self.assertEqual(engine_warning("basalt: warning: model 60.0 GiB, free 40.0 GiB"), "model 60.0 GiB, free 40.0 GiB")
+        self.assertIsNone(engine_warning("basalt: warning: "))
         self.assertIsNone(engine_warning("basalt generate: WARNING: x"))
 
     def test_log_output_prints_only_the_result(self):
@@ -2045,7 +2044,7 @@ class LoadProgress(unittest.TestCase):
         from serve.engine.progress import narrate_start
         d = tempfile.mkdtemp()
         log = Path(d) / "engine.log"
-        log.write_text("basalt load: total 200\nbasalt warning: model 1.0 GiB, free VRAM + RAM 0.5 GiB: slow\n"
+        log.write_text("basalt load: total 200\nbasalt: warning: model 1.0 GiB, free VRAM + RAM 0.5 GiB: slow\n"
                        "basalt load: weights 0 200\nbasalt generate: expert arena: resident, 31.64 GiB\n"
                        "basalt load: weights 100 200\nbasalt load: weights 200 200\n"
                        "basalt generate: session is up (engine 1)\n", encoding="utf-8")

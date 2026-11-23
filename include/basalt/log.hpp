@@ -109,8 +109,7 @@ inline void raw(const char* fmt, ...) {
     va_end(ap);
 }
 
-/// A log line read back: its tag, level and text. Older engines wrote "basalt error: <text>" and
-/// "basalt warning: <text>"; both read as a line of tag "basalt". False for a line that is not an engine log line.
+/// A log line read back: its tag, level and text. False for a line that is not an engine log line.
 struct Parsed {
     Level level = Level::info;
     std::string tag;
@@ -119,13 +118,6 @@ struct Parsed {
 
 inline bool parse(const std::string& line, Parsed& out) {
     if (line.compare(0, 6, "basalt") != 0) return false;
-    for (const char* legacy : {"basalt error: ", "basalt warning: "}) {
-        const std::string head = legacy;
-        if (line.compare(0, head.size(), head) == 0) {
-            out = {head[7] == 'e' ? Level::error : Level::warning, "basalt", line.substr(head.size())};
-            return true;
-        }
-    }
     const size_t colon = line.find(": ");
     if (colon == std::string::npos) return false;
     for (size_t i = 6; i < colon; ++i) {

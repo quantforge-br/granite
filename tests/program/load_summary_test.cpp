@@ -42,7 +42,7 @@ int main() {
            "the end prints a done line with the duration");
         is(s.feed(ld(52.5, 52.5), 21.1), "", "a repeated final line prints nothing more");
         is(s.tick(40.0), "", "no periodic line once done");
-        is(s.feed("basalt error: out of memory on cuda0", 34.0), "basalt-bench: engine: out of memory on cuda0\n",
+        is(s.feed("basalt: error: out of memory on cuda0", 34.0), "basalt-bench: engine: out of memory on cuda0\n",
            "an error line is shown at once without its prefix");
         is(s.feed("basalt generate: error: the weight arena failed", 34.5), "basalt-bench: engine: the weight arena failed\n",
            "a line of any area marked error is shown the same way");
@@ -73,7 +73,7 @@ int main() {
         is(s.feed(ld(14.0, 52.0), 0.3), "", "a redraw closer than the interval is held back");
         is(s.tick(1.2), "\r\x1b[2Kbasalt-bench: loading weights 14.0/52.0 GiB \xC2\xB7 26% \xC2\xB7 1 s",
            "the clock redraws with time passing");
-        is(s.feed("basalt error: bad", 1.3), "\r\x1b[2Kbasalt-bench: engine: bad\n", "an error clears the line and prints its own");
+        is(s.feed("basalt: error: bad", 1.3), "\r\x1b[2Kbasalt-bench: engine: bad\n", "an error clears the line and prints its own");
         is(s.feed(ld(30.0, 52.0), 1.4), "\r\x1b[2Kbasalt-bench: loading weights 30.0/52.0 GiB \xC2\xB7 57% \xC2\xB7 1 s",
            "the line is drawn again after it");
         is(s.feed("basalt: warning: slow", 1.5), "\r\x1b[2Kbasalt-bench: engine: warning: slow\n", "so does a warning");

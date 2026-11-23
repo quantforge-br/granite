@@ -3,7 +3,7 @@
 Markers, one per kind of writer:
   engine   basalt <area>: <text>            info
            basalt <area>: warning: <text>   warning
-           basalt <area>: error: <text>     error      (older engines: "basalt warning: <text>", "basalt error: <text>")
+           basalt <area>: error: <text>     error
   server   [server] <text>                  info
            [server] warning: <text>         warning    (a startup block line reads `warning  <text>`)
            [server] error: <text>           error
@@ -18,7 +18,6 @@ from typing import NamedTuple
 INFO, WARN, ERR = "info", "warn", "err"
 _NAMES = {"warning": WARN, "error": ERR}
 ENGINE = re.compile(r"(?P<tag>basalt(?:-[a-z]+)?(?: [\w-]+)*):(?: (?P<lvl>warning|error):)? (?P<text>.*)", re.S)
-LEGACY = re.compile(r"basalt (?P<lvl>warning|error): (?P<text>.*)", re.S)
 SERVER = re.compile(r"\[server\] (?:(?P<lvl>warning|error)(?:: | {2,}))?")
 TRACEBACK = "Traceback (most recent call last):"
 CHAINED = ("During handling of the above exception", "The above exception was the direct cause")
@@ -32,9 +31,6 @@ class EngineLine(NamedTuple):
 
 def engine_line(line: str) -> EngineLine | None:
     """The parts of an engine log line, or None when the line is not one."""
-    m = LEGACY.fullmatch(line)
-    if m:
-        return EngineLine("basalt", _NAMES[m["lvl"]], m["text"])
     m = ENGINE.fullmatch(line)
     if m:
         return EngineLine(m["tag"], _NAMES.get(m["lvl"], INFO), m["text"])
