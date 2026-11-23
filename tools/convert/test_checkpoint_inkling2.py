@@ -21,7 +21,7 @@ import checkpoint_inkling2 as I  # noqa: E402
 import model_sections as S  # noqa: E402
 from gguf_reader import GGUFFile  # noqa: E402
 from model_file import ModelFile  # noqa: E402
-from test_checkpoint import basalt_values, modelopt_values, write_safetensors  # noqa: E402
+from test_checkpoint import granite_values, modelopt_values, write_safetensors  # noqa: E402
 
 H, NH, NKV, HD, DREL, FF, NE = 128, 2, 1, 32, 16, 64, 4
 LAYERS, LOCAL, CORE = 3, [0, 2], (1, 2)
@@ -271,9 +271,9 @@ class ConvertTest(unittest.TestCase):
         for e in range(NE):
             b = np.frombuffer(experts[off + e * blob:off + (e + 1) * blob], np.uint8)
             want = modelopt_values(codes[e], scales[e])
-            np.testing.assert_array_equal(basalt_values(b[:gu_bytes], H), want[0::2])          # gate: the even rows
-            np.testing.assert_array_equal(basalt_values(b[gu_bytes:2 * gu_bytes], H), want[1::2])
-            np.testing.assert_array_equal(basalt_values(b[2 * gu_bytes:blob - 16], FF), modelopt_values(codes2[e], scales2[e]))
+            np.testing.assert_array_equal(granite_values(b[:gu_bytes], H), want[0::2])          # gate: the even rows
+            np.testing.assert_array_equal(granite_values(b[gu_bytes:2 * gu_bytes], H), want[1::2])
+            np.testing.assert_array_equal(granite_values(b[2 * gu_bytes:blob - 16], FF), modelopt_values(codes2[e], scales2[e]))
             tail = np.frombuffer(b[blob - 16:].tobytes(), "<f4")
             self.assertEqual(tail.tolist(), [np.float32(amax[e]) / np.float32(den[0])] * 2 + [np.float32(amax2[e]) / np.float32(den2[0]), 0.0])
 

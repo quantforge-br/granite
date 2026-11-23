@@ -1,5 +1,5 @@
 """What the checkpoint converters share (checkpoint_inkling2.py): the safetensors files of a
-checkpoint directory, NVIDIA Model Optimizer's NVFP4 rows moved into Basalt's blocks, and the model metadata and
+checkpoint directory, NVIDIA Model Optimizer's NVFP4 rows moved into granite's blocks, and the model metadata and
 tokenizer as GGUF keys. Needs numpy.
 """
 from __future__ import annotations
@@ -76,8 +76,8 @@ class Checkpoint:
 
 # ------------------------------------------------------------------ routed experts
 def nvfp4_rows(codes: np.ndarray, scales: np.ndarray) -> np.ndarray:
-    """Model Optimizer's NVFP4 rows -> Basalt's blocks. `codes` [rows, cols/2]: value 2i in the low nibble of byte i,
-    2i+1 in the high one; `scales` [rows, cols/16] UE4M3. A Basalt block of 64 values is 4 scale bytes then 32 code
+    """Model Optimizer's NVFP4 rows -> granite's blocks. `codes` [rows, cols/2]: value 2i in the low nibble of byte i,
+    2i+1 in the high one; `scales` [rows, cols/16] UE4M3. A granite block of 64 values is 4 scale bytes then 32 code
     bytes where sub-block s keeps value j in the low nibble of byte 8 s + j and value j + 8 in its high nibble."""
     rows, cols = codes.shape[0], codes.shape[1] * 2
     v = np.empty((rows, cols), np.uint8)
