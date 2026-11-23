@@ -1,9 +1,9 @@
-# basalt: a local inference engine for one NVIDIA GPU.
+# granite: an Inkling 2 Mini inference engine for two RTX 3090s (sm_86), forked from basalt.
 cmake_minimum_required(VERSION 3.24)
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 120 CACHE STRING "CUDA architectures" FORCE)
 endif()
-project(basalt VERSION 0.5.6 LANGUAGES C CXX CUDA)
+project(granite VERSION 0.1.0 LANGUAGES C CXX CUDA)
 add_compile_definitions(BASALT_VERSION="${PROJECT_VERSION}")
 
 set(CMAKE_CXX_STANDARD 20)

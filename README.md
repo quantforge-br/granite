@@ -1,101 +1,65 @@
-<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/basalt-lockup-dark.png"><img src="assets/basalt-lockup-light.png" alt="Basalt" width="480"></picture></p>
+# granite
 
-Basalt is a local inference engine for large language models: **Qwen3.8-Flash-Next**, **DeepSeek-V4.1-Flash**, **Qwen3.8-27B**, **Hy4-flash** and **Inkling 2 Mini**. It runs
-on an NVIDIA Blackwell GPU (sm_120) on Linux and Windows x64, with what does not fit in VRAM (the experts of a mixture-of-experts model)
-in system RAM, and optionally on more GPUs. The server speaks the OpenAI and Anthropic APIs. Website: [basalt.jgulfo.com](https://basalt.jgulfo.com).
+granite is a local inference engine for **Inkling 2 Mini** (Thinking Machines Lab), tuned for one machine: two NVIDIA
+RTX 3090 (Ampere, sm_86) with peer-to-peer access over PCIe, on Linux. It is a fork of
+[Basalt](https://github.com/jesdga95/basalt) (upstream main `34f4c3bb`, v0.5.6), cut down to one model and one GPU
+generation. The server speaks the OpenAI and Anthropic APIs.
 
-<p align="center"><img src="docs/img/frontend.gif" alt="The Basalt web UI while a reply streams" width="720"></p>
+Status: the fork is in progress. The plan, in order:
 
-**Help wanted:** spare Blackwell compute for testing? See [Contributing](CONTRIBUTING.md#other-ways-to-help).
+1. Build for sm_86 only and run Inkling 2 Mini on one RTX 3090.
+2. Remove the other upstream models and the Blackwell-only code they need.
+3. Run each decode window on both cards at once (tensor parallel over P2P): each card holds half of every expert (and
+   later half of the attention heads), and the two partial sums are exchanged once per layer visit.
 
-<p align="center">
-  <a href="https://github.com/sponsors/jesdga95"><img src="assets/donate/github.svg" height="44" alt="Sponsor on GitHub"></a>
-  <a href="https://ko-fi.com/jesdga"><img src="assets/donate/kofi.svg" height="44" alt="Support on Ko-fi"></a>
-  <a href="https://paypal.me/jesdga"><img src="assets/donate/paypal.svg" height="44" alt="Donate on PayPal"></a>
-</p>
+## Hardware target
 
-## Requirements
+- 2x RTX 3090 (24 GiB, ~936 GB/s, 82 SMs, 6 MB L2), PCIe Gen4 x8/x8, P2P through a BAR1 P2P driver.
+- FP16/BF16 tensor-core math at full rate with FP32 accumulation (gpu-unlock) helps the prompt path; decode is bound by
+  memory bandwidth and uses int8 dot products.
+- CUDA 13.0 or newer, CMake 3.24+, GCC 13+, Python 3.10+.
 
-- Linux x86-64 with AVX2, or Windows 10 1903+ x64 ([platforms](docs/platforms.md)).
-- An NVIDIA Blackwell GPU (compute capability 12.0) with CUDA 13.
-- CMake 3.24+, GCC 13+ (Linux), Python 3.10+, and enough system RAM for the experts that do not fit in VRAM.
+## Model and quantization
+
+The default pack is `Inkling-2-Mini-NVFP4-DQ8.basalt` from
+[jesdga/Inkling-2-Mini-Basalt](https://huggingface.co/jesdga/Inkling-2-Mini-Basalt) (19.7 GB):
+
+- Routed experts of layers 0 to 19 in NVFP4, bit for bit the release's own: the model ships its experts in NVFP4 and
+  MXFP8, and no BF16 checkpoint exists.
+- Experts of layers 20 to 23, the attention projections and the head in Q8_0.
+- Mean KLD 0.00305 and top-1 97.76% against the release with its experts dequantized to BF16
+  ([precision](docs/precision/inkling2.md)).
+
+On Ampere, NVFP4 decodes like any 4-bit GGUF type (a 16-entry table to int8, then `dp4a` against 8-bit activations), so
+it costs the same per byte; it wins on quality because nothing is rounded twice. Requantized GGUFs of the same model
+lose more: ggml-org's IQ4_NL (the NVFP4 experts requantized to IQ4_NL) scores 0.0095 KLD and 95.5% top-1 against the
+BF16. Smaller GGUF mixes (GSQ-RCO IQ3_XS / IQ4_XS) read fewer bytes per token and are to be measured against the same
+gate.
 
 ## Quick start
 
-Prebuilt Linux and Windows archives are attached to each [release](https://github.com/jesdga95/basalt/releases) ([what they need](docs/platforms.md#release-archives)); otherwise build from source:
-
 ```sh
-git clone https://github.com/jesdga95/basalt && cd basalt
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j                  # bin/basalt, bin/basalt-bench, bin/basalt-probe, bin/basalt-vision
-                                        # Windows: add -G Ninja to the first line, from an x64 VS 2022 prompt ([platforms](docs/platforms.md#building-on-windows))
-                                        # one model only: -DBASALT_MODELS=qwen4exp, deepseek41, qwen35, hy4flash or inkling2 ([building](docs/building.md#building-only-some-models))
-pip install -r requirements.txt
-hf download jesdga/Qwen3.8-Flash-Next-Basalt Qwen3.8-FN-NVFP4-DQ6_K.basalt --local-dir models
+cmake --build build -j            # bin/granite, bin/granite-bench, bin/granite-probe, bin/granite-vision
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+hf download jesdga/Inkling-2-Mini-Basalt Inkling-2-Mini-NVFP4-DQ8.basalt --local-dir models
+bin/granite serve models/Inkling-2-Mini-NVFP4-DQ8.basalt --gpu 0
 ```
 
-Put the settings in `basalt_config.json`:
+The server listens on 127.0.0.1. The model guide: [Inkling 2 Mini](docs/models/inkling2.md). Every setting:
+[configuration](docs/configuration/index.md).
 
-```json
-{
-  "version": 2,
-  "models": [{ "model": "models/Qwen3.8-FN-NVFP4-DQ6_K.basalt", "gpu": "0,1", "kv": "int8" }],
-  "engine": { "resident-experts": true },
-  "server": { "port": 8080 }
-}
-```
-
-```sh
-bin/basalt serve --config basalt_config.json
-```
-
-The server listens on 127.0.0.1. Every setting: [configuration](docs/configuration/index.md). More examples:
-[example configurations](docs/configuration/examples.md).
-
-## Models
-
-| | Qwen3.8-Flash-Next | DeepSeek-V4.1-Flash | Qwen3.8-27B | Hy4-flash | Inkling 2 Mini |
-|---|---|---|---|---|---|
-| Packs | default `Qwen3.8-FN-NVFP4-DQ6_K`, [Hugging Face](https://huggingface.co/jesdga/Qwen3.8-Flash-Next-Basalt) | default `DeepSeek-V4.1-Flash-1017-UD-IQ1_M`, [Hugging Face](https://huggingface.co/jesdga/DeepSeek-V4.1-Flash-1017-Basalt) | `Qwen3.8-27B-QUASAR-NVFP4`, [Hugging Face](https://huggingface.co/jesdga/Qwen3.8-27B-Basalt) | `Hy4-flash-NVFP4`, [Hugging Face](https://huggingface.co/jesdga/Hy4-flash-Basalt) | `Inkling-2-Mini-NVFP4-DQ8`, [Hugging Face](https://huggingface.co/jesdga/Inkling-2-Mini-Basalt) |
-| Context | up to 262,144 (longer with YaRN) | up to 1,048,576 | up to 262,144 | up to 1,048,576 | up to 1,048,576 |
-| Drafting | MTP, on by default | DSpark, on by default | DFlash 2, on by default | DFly2, on by default | DSpark, on by default |
-| Images | yes | yes | yes | yes | yes |
-| Documents (PDF, text) | yes | yes | yes | yes | yes |
-| Guide | [guide](docs/models/qwen38-flash-next.md) | [guide](docs/models/deepseek41.md) | [guide](docs/models/qwen38-27b.md) | [guide](docs/models/hy4-flash.md) | [guide](docs/models/inkling2.md) |
-| Precision | [precision](docs/precision/qwen38-flash-next.md) | [precision](docs/precision/deepseek41.md) | [precision](docs/precision/qwen38-27b.md) | [precision](docs/precision/hy4-flash.md) | [precision](docs/precision/inkling2.md) |
-
-All models compared, with each one's context limit, flags and cards: [models](docs/models/index.md).
-
-## Video
-
-Qwen3.8-Flash-Next and Qwen3.8-27B read video; DeepSeek, Hy4-flash and Inkling 2 Mini do not. A video is named like an image in a chat message, and needs
-`--vision` and FFmpeg on the machine. Flash-Next decodes frames on the GPU with NVDEC; the 27B decodes them on the CPU.
-How a request names a video, and the limits: [video](docs/running.md#video).
-
-## Documentation
-
-- **Run:** [running](docs/running.md), [configuration](docs/configuration/index.md), [models and the router](docs/configuration/models.md),
-  [sampling](docs/configuration/sampling.md), [image sources](docs/configuration/image-sources.md),
-  [documents](docs/configuration/documents.md),
-  [diagnostics](docs/configuration/diagnostics.md), [basalt-probe](docs/probe.md), [platforms](docs/platforms.md).
-- **Models:** [models](docs/models/index.md), [Flash-Next](docs/models/qwen38-flash-next.md), [DeepSeek](docs/models/deepseek41.md),
-  [Qwen3.8-27B](docs/models/qwen38-27b.md), [Hy4-flash](docs/models/hy4-flash.md), [Inkling 2 Mini](docs/models/inkling2.md),
-  [the `.basalt` file](docs/model-file.md), [file format changes](docs/basalt-file-changelog.md).
-- **Quality:** [precision](docs/precision/index.md), [method](docs/precision/quality.md).
-- **Build and develop:** [building](docs/building.md), [adding a model](docs/adding-a-model.md), [community runs](docs/community.md),
-  [changelog](docs/changelog/index.md), [contributing](CONTRIBUTING.md).
+Names kept from Basalt: the C++ namespaces (`basalt::`), the headers under `include/basalt`, the `.basalt` pack format and
+the engine's log tags, so upstream packs load unchanged and upstream fixes can be cherry-picked.
 
 ## Credits
 
-- **Code:** [Strata](https://github.com/Niko1221/Strata), the project Basalt forks (MIT); [Infernix](https://github.com/Wallawalla47/Infernix)
-  (Ian Ranson and contributors, Apache-2.0), whose kernels are adapted; [ggml and llama.cpp](https://github.com/ggml-org/llama.cpp)
-  (MIT); and ideas from [NInfer](https://github.com/Neroued/ninfer). Licences: [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
-- **Models:** [Qwen](https://huggingface.co/Qwen), [DeepSeek](https://huggingface.co/deepseek-ai), [Tencent](https://huggingface.co/tencent) (Hy4-flash) and Thinking Machines Lab (Inkling 2 Mini), under the licences on their cards;
-  [Unsloth](https://huggingface.co/unsloth)'s GGUFs; [NVIDIA](https://huggingface.co/nvidia)'s NVFP4 checkpoints;
-  [QUASAR-QAT](https://huggingface.co/QUASAR-QAT/Qwen3.8-27B-QUASAR-NVFP4)'s NVFP4 27B (Apache-2.0); [z-lab](https://huggingface.co/z-lab/Qwen3.8-27B-DFlash2)'s DFlash 2 drafter.
-
-Thank you to everyone who has [contributed](https://github.com/jesdga95/basalt/graphs/contributors) or
-[sponsored](https://github.com/sponsors/jesdga95) the project.
+- **Code:** [Basalt](https://github.com/jesdga95/basalt) by Jesús Gulfo (MIT), which granite forks;
+  [Strata](https://github.com/Niko1221/Strata), the project Basalt forks (MIT);
+  [Infernix](https://github.com/Wallawalla47/Infernix) (Ian Ranson and contributors, Apache-2.0), whose kernels are
+  adapted; [ggml and llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT); and ideas from
+  [NInfer](https://github.com/Neroued/ninfer). Licences: [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
+- **Model:** Inkling 2 Mini by Thinking Machines Lab, under the licence on its card.
 
 ## License
 
