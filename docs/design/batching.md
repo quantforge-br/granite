@@ -90,7 +90,7 @@ times the slots plus the shared scratch once, so more slots cost only their cach
    returns false from `batch_captured`: the driver runs its forward directly every window and the model replays its own
    graphs of the stretches between. A session whose state the batch path does not cover yet returns false from
    `batch_ready`, and the batch's windows run in turn.
-4. Run the checks: `basalt --model FILE --batch 4 --tokens-file PROMPT --diag-batch-check` (every row of every composition
+4. Run the checks: `granite --model FILE --batch 4 --tokens-file PROMPT --diag-batch-check` (every row of every composition
    bitwise its solo window), then `tools/batch_identity.py ENGINE --model FILE --slots 1,2,4,8` (every slot's tokens, alone
    and together, equal to a one-slot engine's).
 
@@ -101,7 +101,7 @@ consistency. Inkling 2 Mini is on it.
 
 ## Retrofits
 
-How each model below went onto the driver: its state, the kernels that read it, its cap and what its sessions share.
+How Inkling 2 Mini went onto the driver: its state, the kernels that read it, its cap and what its sessions share.
 
 ### Inkling 2 Mini
 
@@ -113,8 +113,7 @@ How each model below went onto the driver: its state, the kernels that read it, 
   itself, `post_attn` (the attention output's convolution), `moe_finish` (the experts' sum's convolution), and `mix_norm`'s
   L2 read-ahead of older cells. Each takes a segment table (`Segments` in its args: per segment its first row and its caches);
   without one (n = 0) the call is one conversation's, as today.
-- **The fused small-window attention** (1 to 3 rows, one cluster kernel) stays solo-only; a batch takes the prepare, split
-  and combine kernels, which give the same bits.
+- **Attention:** solo windows and batches take the same prepare, split and combine kernels.
 - **Cap:** 8 rows, the products' column limit (`kDecodeRows`).
 - **On the driver:** `batch_stage` stages every row's token and position, `batch_forward` runs the visits with each
   segment's caches, then the head over every row into the shared batch logits, and commits each session's drafter context
@@ -131,8 +130,7 @@ rows.
 
 - **Experts on the card:** a window's cost is mostly fixed (launches, dense weights, attention); the union grows the expert
   reads only. Inkling's decode is far from the card's bandwidth at one row, so a batch is close to free.
-- **Experts in RAM:** a RAM expert costs a bus copy or a CPU product per distinct expert touched, and the CPU
-  cost grows with its rows. The union grows those directly, so a batch costs close to linear in its slots where most routed
+- **Experts in RAM:** a RAM expert costs a CPU product per distinct expert touched, and the cost grows with its rows. The union grows those directly, so a batch costs close to linear in its slots where most routed
   pairs land in RAM. Such a model still batches every round, through the same path.
 
 ## Lossless identity
@@ -147,7 +145,7 @@ rows.
   keeps exactly the greedy tokens, whatever drafts a smaller row share left in the window.
 - **Sampling:** each session draws with its own sampler, counter and history, so a seeded request draws the same alone or
   beside others.
-- **No new defaults:** KV formats (fp8, 4-bit) stay opt-in; batching changes no flag's default.
+- **No new defaults:** the fp8 KV format stays opt-in; batching changes no flag's default.
 
 ## Tests and bench
 
@@ -163,6 +161,5 @@ rows.
   at 2, 4 and 8 slots.
 - **Throughput:** the same tool's aggregate tokens per second (every slot's tokens over the wall time from the first slot's
   start to the last one's end) at 1, 2, 4 and 8 slots, drafting on and with `--spec 1`, main against the branch, the bench
-  fixtures (conv, struct, prose). Labelled with the cards and power (400 W RTX 5090, 180 W RTX 5060 Ti). Main's numbers are
-  the in-turn windows.
+  fixtures (conv, struct, prose). Labelled with the cards and their power limits. Main's numbers are the in-turn windows.
 - **CTest:** `model_layering` and the CPU tests without a GPU.
