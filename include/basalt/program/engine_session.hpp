@@ -66,7 +66,7 @@ std::string fixtures_for(const std::string& dir, const std::string& plan_answer)
 /// Why fixtures whose largest token id is `max_id` cannot run on a model of `n_vocab` tokens (the engine's INFO
 /// logit_bias): they were made with another tokenizer. Empty when they fit, or when the vocabulary is unknown (0).
 std::string fixture_vocab_refusal(int64_t max_id, int64_t n_vocab, const std::string& dir);
-/// The engine a benchmark program starts without --engine: the `basalt` executable beside the program (`self`, its
+/// The engine a benchmark program starts without --engine: the `granite` executable beside the program (`self`, its
 /// own path) when there is one, else `built`, where the build wrote it.
 std::string default_engine(const std::string& self, const std::string& built);
 /// The fixtures folder without --fixtures: `root`/data/bench (`root` the install's top) when there is one, else `built`.

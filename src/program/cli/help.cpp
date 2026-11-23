@@ -59,7 +59,7 @@ void usage() {
                  "  --vision             --serve takes images and videos, encoded in this process (it reads the model\n"
                  "                       file's vision/mmproj in place): ENC and ENCV requests borrow expert-cache slots\n"
                  "                       for the encoder and give them back refilled\n"
-                 "  --vision-external    --serve takes images whose embeddings come from basalt-vision --model FILE\n"
+                 "  --vision-external    --serve takes images whose embeddings come from granite-vision --model FILE\n"
                  "                       (GENI requests)\n"
                  "  --prompt-cache N     --serve: keep N conversation checkpoints between requests (default 6, ~118 MB\n"
                  "                       of RAM each; 0 = read every prompt from the start)\n"

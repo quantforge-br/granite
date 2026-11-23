@@ -136,7 +136,7 @@ class BenchFlags(unittest.TestCase):
 
     def test_help_lists_the_engine_flags(self):
         r = subprocess.run([str(BENCH), "--help", "--engine", str(ENGINE)], capture_output=True, text=True)
-        self.assertIn("Engine flags (passed to basalt):", r.stdout)
+        self.assertIn("Engine flags (passed to granite):", r.stdout)
         self.assertIn("--max-context", r.stdout)
 
 

@@ -295,9 +295,9 @@ void usage(const std::string& engine) {
         "engine\n"
         "  --model FILE       a .basalt model file\n"
         "  --gpu A,B,..|auto  the GPUs, as for the server and the engine (default: GPU 0 alone). Every\n"
-        "                     other --flag is an engine flag, passed on as given (same names as `basalt`; the engine\n"
+        "                     other --flag is an engine flag, passed on as given (same names as `granite`; the engine\n"
         "                     rejects a bad one at startup); --print-command shows the command and exits\n"
-        "  --engine BIN       engine binary (default: basalt beside this program, else the build's)\n"
+        "  --engine BIN       engine binary (default: granite beside this program, else the build's)\n"
         "  --set \"F V ...\"    FLAG VALUE pairs that replace or add engine arguments (repeatable)\n"
         "  --spec N           speculation window for the engine (--spec N, e.g. 7; also --spec after --); without it\n"
         "                     the engine default (speculation with the pack drafter, window 8); --spec 0 is a\n"
@@ -337,7 +337,7 @@ void usage(const std::string& engine) {
     // the engine's flags are defined once, in the engine: print its own help
     std::string bin = engine.empty() ? engine_default() : engine;
     if (!bin.empty() && fs::exists(bin)) {
-        std::printf("\nEngine flags (passed to basalt):\n");
+        std::printf("\nEngine flags (passed to granite):\n");
         std::fflush(stdout);
         if (const auto help = basalt::platform::capture_output({bin, "--help"}, true)) std::fputs(help->c_str(), stdout);
     }
@@ -1243,7 +1243,7 @@ int main(int argc, char** argv) {
 
     std::string rep;
     if (o.format == "md" && do_perf) {
-        rep += fmt("basalt-bench  build %s  power limit %s%s\n\n", BASALT_BENCH_GIT, power.c_str(), lossy.empty() ? "" : "  LOSSY");
+        rep += fmt("granite-bench  build %s  power limit %s%s\n\n", BASALT_BENCH_GIT, power.c_str(), lossy.empty() ? "" : "  LOSSY");
         std::vector<std::array<std::string, 4>> cells;
         cells.push_back({"test", "t/s", "accept %", "draft len"});
         for (const Row& r : rows) {
