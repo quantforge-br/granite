@@ -74,7 +74,7 @@ struct CommonOptions {
     int quality_window = 1;            ///< the widest window the gate scores on this model (0: as the request asks)
     int plan_spec = 0;                 ///< the verify window this start would run, for --gpu-plan (0: plain decode)
     /// Speculative decoding with a verify window of this many tokens (the last accepted token and spec-1 drafts);
-    /// 0 = plain decode.  `spec_oracle` drafts from a token file (the expected continuation, for the exactness test).
+    /// 0 = plain decode.
     int spec = 0;
     bool spec_given = false;           ///< --spec on the command line
     /// The suffix drafter (prompt lookup): when the text being written repeats an earlier stretch of the context (code
@@ -82,8 +82,6 @@ struct CommonOptions {
     /// of the drafter's drafts, where the draft policy expects it to pay (basalt/spec/draft_policy.hpp).  Read by the models
     /// that take --suffix-draft; 0 = the drafter only.
     int suffix_draft = 3;
-    std::string spec_oracle;
-    bool diag_teacher = false;         ///< --diag-teacher: --spec-oracle's tokens go on whatever the picks
     std::string diag_dump;                 ///< --diag-dump DIR: a model's per-layer tensors, off by default
     bool diag_serial_prompt = false;       ///< --diag-serial-prompt: an adapter model reads its prompt one decode step at a time
     std::string diag_logits;               ///< --diag-logits FILE: an adapter model writes the logits of each decoded row

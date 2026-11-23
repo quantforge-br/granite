@@ -192,7 +192,7 @@ bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t
 // Each --image's embedding block goes before the prompt token at its --image-at index.
 int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_t>& prompt, int64_t max_new,
                             const std::vector<int64_t>& stop_ids, const std::vector<std::string>& images,
-                            const std::vector<int64_t>& image_at, const std::vector<int64_t>& oracle, bool teacher) {
+                            const std::vector<int64_t>& image_at) {
     if (images.size() != image_at.size()) {
         basalt::log::error("granite generate", "every --image needs an --image-at");
         return 2;
@@ -228,12 +228,12 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
         return 1;
     }
     const auto t1 = Clock::now();
-    // A window holds the last pick and the drafts after it, from the drafter or from the expected continuation.
+    // A window holds the last pick and the drafter's drafts after it.
     const int cap = sess->max_window();
     std::vector<int32_t> window((size_t) cap), rows((size_t) cap), drafts((size_t) cap);
     std::vector<float> conf((size_t) cap);
     std::vector<float> diag_rows;
-    int64_t made = 0, windows = 0, offered = 0, accepted = 0, differ = 0;
+    int64_t made = 0, windows = 0, offered = 0, accepted = 0;
     std::vector<int64_t> offered_at((size_t) cap, 0), accepted_at((size_t) cap, 0);   // by draft position (1 = the first draft)
     double ms_draft = 0, ms_verify = 0;
     bool stop = false;
@@ -244,16 +244,10 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
     };
     emit(next);
     std::fflush(stdout);
-    if (teacher) next = (int32_t) oracle[0];
     while (!stop && made < max_new) {
         const auto w0 = Clock::now();
         int n_draft = 0;
-        if (!oracle.empty()) {
-            while (n_draft < cap - 1 && made + n_draft < (int64_t) oracle.size()) {
-                drafts[(size_t) n_draft] = (int32_t) oracle[(size_t) (made + n_draft)];
-                ++n_draft;
-            }
-        } else if (cap > 1) {
+        if (cap > 1) {
             basalt::model::Result dres = sess->draft_begin(next, pos, cap - 1);
             if (dres.ok()) dres = sess->draft_end(drafts.data(), conf.data(), cap - 1, n_draft, {});   // a fixed window verifies every draft
             if (dres.ok() && !basalt::core::diagnostics().draft_log.empty()) {   // --draft-log: the position, the anchor and the drafts of each window
@@ -299,20 +293,7 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
             ++offered_at[(size_t) k];
             accepted_at[(size_t) k] += k < a;
         }
-        if (g_diag_logits) std::fwrite(diag_rows.data(), sizeof(float), (size_t) (teacher ? T : a + 1) * (size_t) g_n_vocab, g_diag_logits);
-        if (teacher) {
-            // the expected text goes on whatever the picks: every row runs, and each pick that differs is counted
-            for (int i = 0; i < T && !stop && made < max_new; ++i) {
-                const int64_t at = made;
-                if (at < (int64_t) oracle.size() && oracle[(size_t) at] != rows[(size_t) i]) ++differ;
-                emit(rows[(size_t) i]);
-            }
-            std::fflush(stdout);
-            pos += T;
-            if (made >= (int64_t) oracle.size()) break;
-            next = (int32_t) oracle[(size_t) made - 1];
-            continue;
-        }
+        if (g_diag_logits) std::fwrite(diag_rows.data(), sizeof(float), (size_t) (a + 1) * (size_t) g_n_vocab, g_diag_logits);
         for (int i = 0; i <= a && !stop && made < max_new; ++i) emit(rows[(size_t) i]);
         std::fflush(stdout);
         pos += a + 1;
@@ -329,9 +310,9 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
         basalt::log::info("granite generate", "drafts accepted by position: %s", by.c_str());
     }
     if (cap > 1)
-        basalt::log::info("granite generate", "windows %lld of %.2f tokens: %lld of %lld drafts accepted, %lld picks differ from the oracle; draft %.2f ms, verify %.2f ms per window",
+        basalt::log::info("granite generate", "windows %lld of %.2f tokens: %lld of %lld drafts accepted; draft %.2f ms, verify %.2f ms per window",
                           (long long) windows, windows ? (double) (accepted + windows) / (double) windows : 0.0, (long long) accepted,
-                          (long long) offered, (long long) differ, windows ? ms_draft / (double) windows : 0.0, windows ? ms_verify / (double) windows : 0.0);
+                          (long long) offered, windows ? ms_draft / (double) windows : 0.0, windows ? ms_verify / (double) windows : 0.0);
     return 0;
 }
 
@@ -403,10 +384,7 @@ int run_session_model(basalt::program::CommonOptions& o, const basalt::model::Mo
             std::printf("batch check: %d windows compared, %d differ: %s\n", bc.compared, bc.differ, bc.differ ? "FAILED" : "PASSED");
             return bc.differ ? 1 : 0;
         }
-        std::vector<int64_t> oracle;
-        if (const auto code = cli::load_spec_oracle(o.spec_oracle, oracle)) return *code;
-        if (o.diag_teacher && oracle.empty()) return fatal_start_error("--diag-teacher needs --spec-oracle");
-        return adapter_generate(started.sessions.front().get(), o.tokens, o.max_new, stop, o.images, o.image_at, oracle, o.diag_teacher);
+        return adapter_generate(started.sessions.front().get(), o.tokens, o.max_new, stop, o.images, o.image_at);
     } catch (const std::exception& e) {
         return fatal_start_error(e.what());
     }

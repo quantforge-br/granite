@@ -42,17 +42,4 @@ std::optional<int> load_tokens_file(const char* path, std::vector<int64_t>& toke
     return std::nullopt;
 }
 
-std::optional<int> load_spec_oracle(const std::string& path, std::vector<int64_t>& oracle) {
-    if (!path.empty()) {
-        std::ifstream in(path);
-        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        std::string e;
-        if (!in || !parse_i64_list(text.c_str(), oracle, e)) {
-            basalt::log::error("granite generate", "cannot read --spec-oracle %s", path.c_str());
-            return 2;
-        }
-    }
-    return std::nullopt;
-}
-
 }  // namespace basalt::program::cli
