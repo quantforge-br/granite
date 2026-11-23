@@ -34,6 +34,8 @@ enum class Conv : uint8_t {
     Bf16ToF32,   ///< bf16 -> f32, exact
     Bf16ToQ8_0,  ///< bf16 -> ggml's block_q8_0 (34 bytes per 32 elements), rounded as quantize_bf16_q8_0
     Bf16ToQ4_0,  ///< bf16 -> ggml's block_q4_0 (18 bytes per 32 elements), rounded as quantize_bf16_q4_0
+    Q6KToQ8_0,   ///< ggml's block_q6_K -> block_q8_0 (eight 34-byte blocks per 210-byte one), as quantize_q6_k_q8_0
+    F32ToQ8_0,   ///< f32 -> ggml's block_q8_0 (34 bytes per 32 elements), rounded as quantize_bf16_q8_0
 };
 
 /// The bytes a converted range of `in` file bytes takes at its destination.
@@ -46,6 +48,11 @@ void quantize_bf16_q8_0(const uint16_t* bf16, uint64_t n, uint8_t* blocks);
 /// d = m / -8 stored as fp16 (m the value of the largest magnitude), q = min(15, trunc(x / d + 8.5)); values 0..15 of a
 /// block in the low nibbles, 16..31 in the high ones.
 void quantize_bf16_q4_0(const uint16_t* bf16, uint64_t n, uint8_t* blocks);
+/// `n` f32 values (little-endian bytes, a multiple of 32) -> ggml's block_q8_0, rounded as quantize_bf16_q8_0 rounds.
+void quantize_f32_q8_0(const uint8_t* f32, uint64_t n, uint8_t* blocks);
+/// `n` ggml block_q6_K blocks (256 values, 210 bytes each) -> 8 n block_q8_0: each value as ggml's dequantize_row_q6_K
+/// gives it, rounded as quantize_bf16_q8_0 rounds.
+void quantize_q6_k_q8_0(const uint8_t* q6k, uint64_t n, uint8_t* blocks);
 
 struct LoadItem {
     static constexpr uint64_t kOut = ~0ull;   ///< `count`: what the item adds to the bar is its destination bytes

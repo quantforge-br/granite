@@ -79,6 +79,8 @@ void convert(Conv conv, const uint8_t* src, uint64_t n, uint8_t* out) {
             }
             break;
         }
+        case Conv::Q6KToQ8_0: quantize_q6_k_q8_0(src, n / 210, out); break;
+        case Conv::F32ToQ8_0: quantize_f32_q8_0(src, n / 4, out); break;
     }
 }
 
@@ -90,6 +92,8 @@ uint64_t conv_unit(Conv c) {   // the bytes of one source element (of a block, f
         case Conv::Bf16ToF32: return 2;
         case Conv::Bf16ToQ8_0:
         case Conv::Bf16ToQ4_0: return 64;
+        case Conv::Q6KToQ8_0: return 210;
+        case Conv::F32ToQ8_0: return 128;
         default: return 1;
     }
 }
@@ -104,24 +108,70 @@ uint64_t conv_out_bytes(Conv conv, uint64_t in) {
         case Conv::Bf16ToF32: return in * 2;
         case Conv::Bf16ToQ8_0: return in / 64 * 34;
         case Conv::Bf16ToQ4_0: return in / 64 * 18;
+        case Conv::Q6KToQ8_0: return in / 210 * 272;
+        case Conv::F32ToQ8_0: return in / 128 * 34;
         default: return in;
     }
 }
 
+namespace {
+
+// 32 values -> one block_q8_0, as ggml's reference quantizer: d = amax / 127 stored as fp16, q = round(x / d)
+void quantize_q8_0_block(const float* x, uint8_t* o) {
+    float amax = 0.0f;
+    for (int i = 0; i < 32; ++i) amax = std::max(amax, std::fabs(x[i]));
+    const float d = amax / 127.0f;
+    const float id = d != 0.0f ? 1.0f / d : 0.0f;
+    const uint16_t dh = granite::kernels::f16_from_f32(d);
+    std::memcpy(o, &dh, 2);
+    for (int i = 0; i < 32; ++i) o[2 + i] = (uint8_t) (int8_t) std::round(x[i] * id);
+}
+
+}  // namespace
+
 void quantize_bf16_q8_0(const uint16_t* bf16, uint64_t n, uint8_t* blocks) {
     for (uint64_t b = 0; b < n / 32; ++b) {
-        float x[32], amax = 0.0f;
+        float x[32];
         for (int i = 0; i < 32; ++i) {
             const uint32_t u = (uint32_t) bf16[b * 32 + (uint64_t) i] << 16;
             std::memcpy(&x[i], &u, 4);
-            amax = std::max(amax, std::fabs(x[i]));
         }
-        const float d = amax / 127.0f;
-        const float id = d != 0.0f ? 1.0f / d : 0.0f;
-        uint8_t* o = blocks + b * 34;
-        const uint16_t dh = granite::kernels::f16_from_f32(d);
-        std::memcpy(o, &dh, 2);
-        for (int i = 0; i < 32; ++i) o[2 + i] = (uint8_t) (int8_t) std::round(x[i] * id);
+        quantize_q8_0_block(x, blocks + b * 34);
+    }
+}
+
+void quantize_f32_q8_0(const uint8_t* f32, uint64_t n, uint8_t* blocks) {
+    float x[32];
+    for (uint64_t b = 0; b < n / 32; ++b) {
+        std::memcpy(x, f32 + b * 128, 128);
+        quantize_q8_0_block(x, blocks + b * 34);
+    }
+}
+
+void quantize_q6_k_q8_0(const uint8_t* q6k, uint64_t n, uint8_t* blocks) {
+    // block_q6_K: ql[128] (low 4 bits), qh[64] (high 2 bits), int8 scales[16] (one per 16 values), fp16 d
+    for (uint64_t b = 0; b < n; ++b) {
+        const uint8_t* blk = q6k + b * 210;
+        uint16_t dh;
+        std::memcpy(&dh, blk + 208, 2);
+        const float d = granite::kernels::f32_from_f16(dh);
+        const uint8_t* ql = blk;
+        const uint8_t* qh = blk + 128;
+        const int8_t* sc = reinterpret_cast<const int8_t*>(blk + 192);
+        float y[256];
+        for (int h = 0; h < 2; ++h, ql += 64, qh += 32, sc += 8)   // dequantize_row_q6_K's two halves of 128
+            for (int l = 0; l < 32; ++l) {
+                const int is = l / 16;
+                const int q1 = (int) ((ql[l] & 0xF) | (((qh[l] >> 0) & 3) << 4)) - 32;
+                const int q2 = (int) ((ql[l + 32] & 0xF) | (((qh[l] >> 2) & 3) << 4)) - 32;
+                const int q3 = (int) ((ql[l] >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+                const int q4 = (int) ((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+                y[h * 128 + l + 0] = d * sc[is + 0] * q1;
+                y[h * 128 + l + 32] = d * sc[is + 2] * q2;
+                y[h * 128 + l + 64] = d * sc[is + 4] * q3;
+                y[h * 128 + l + 96] = d * sc[is + 6] * q4;
+            }
+        for (int k = 0; k < 8; ++k) quantize_q8_0_block(y + k * 32, blocks + (b * 8 + (uint64_t) k) * 34);
     }
 }
 
@@ -511,7 +561,7 @@ bool Loader::run(const LoadPlan& plan, std::string& err) {
     size_t early_ram = 0;        // the tasks of those RAM reads, the first of host_reads
     for (size_t i = 0; i < items.size(); ++i) {
         // a converted range is read in smaller pieces: its staging holds the raw bytes and what they become
-        const uint64_t step = items[i].conv == Conv::Copy ? kChunk : kChunk / 4;
+        const uint64_t step = items[i].conv == Conv::Copy ? kChunk : kChunk / 4 / conv_unit(items[i].conv) * conv_unit(items[i].conv);
         const bool from_file = items[i].from == nullptr;
         if (from_file && items[i].dev != nullptr) device_bytes += items[i].bytes;
         std::vector<Task>& tasks = !from_file ? rounds[1] : items[i].dev != nullptr ? rounds[0] : host_reads;

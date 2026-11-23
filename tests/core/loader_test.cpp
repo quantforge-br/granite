@@ -5,6 +5,7 @@
 #include "granite/core/loader.hpp"
 
 #include "granite/core/load_progress.hpp"
+#include "granite/ggml/ggml.h"
 
 #include "granite/kernels/f16_bits.hpp"
 #include "granite/platform/file.hpp"
@@ -291,6 +292,120 @@ void bf16_blocks(Conv conv) {
         Loader loader;
         std::string err;
         check(!loader.run(plan, err), q8 ? "a q8_0 range of partial blocks is refused" : "a q4_0 range of partial blocks is refused");
+    }
+    std::filesystem::remove(path);
+}
+
+// Q6_K -> Q8_0 over several of a conversion's pieces (210-byte source blocks, so the pieces are cut at whole blocks), to
+// host and to device memory: ggml's own Q6_K blocks of random weights, each value as ggml dequantizes it, rounded as
+// ggml's quantize_row_q8_0_ref
+void q6k_blocks() {
+    const uint64_t nb = 64000, n = nb * 256, off = 4098;   // four pieces, the last partial
+    std::vector<float> w(n);
+    std::mt19937 rng(14);
+    std::normal_distribution<float> g(0.f, 0.02f);
+    for (uint64_t i = 0; i < n; ++i) w[i] = i < 256 ? 0.f : g(rng);   // an all-zero block too
+    std::vector<uint8_t> q6(nb * 210);
+    ggml_quantize_chunk(GGML_TYPE_Q6_K, w.data(), q6.data(), 0, 1, (int64_t) n);
+    std::vector<float> y(n);
+    ggml_get_type_traits(GGML_TYPE_Q6_K)->to_float(q6.data(), y.data(), (int64_t) n);
+    std::vector<uint8_t> want(n / 32 * 34);
+    for (uint64_t b = 0; b < n / 32; ++b) {
+        float amax = 0.f;
+        for (int i = 0; i < 32; ++i) amax = std::max(amax, std::fabs(y[b * 32 + i]));
+        const float d = amax / 127.f, id = d ? 1.f / d : 0.f;
+        const uint16_t dh = granite::kernels::f16_from_f32(d);
+        std::memcpy(&want[b * 34], &dh, 2);
+        for (int i = 0; i < 32; ++i) want[b * 34 + 2 + i] = (uint8_t) (int8_t) roundf(y[b * 32 + i] * id);
+    }
+    const std::string path = (std::filesystem::current_path() / "loader_q6k_test.bin").string();
+    {
+        std::vector<uint8_t> pad(off, 0x5a);
+        std::FILE* fp = granite::platform::open_file_utf8(path, "wb");
+        std::fwrite(pad.data(), 1, pad.size(), fp);
+        std::fwrite(q6.data(), 1, q6.size(), fp);
+        std::fclose(fp);
+    }
+    check(conv_out_bytes(Conv::Q6KToQ8_0, q6.size()) == want.size(), "q6_k -> q8_0 output bytes");
+    for (const bool to_dev : {false, true}) {
+        if (to_dev && !has_device()) continue;
+        std::vector<uint8_t> got(want.size());
+        void* dev = nullptr;
+        if (to_dev && cudaMalloc(&dev, got.size()) != cudaSuccess) {
+            check(false, "q6_k block device buffer");
+            continue;
+        }
+        LoadPlan plan;
+        LoadItem it;
+        it.file = plan.file(path);
+        it.off = off;
+        it.bytes = q6.size();
+        if (to_dev) it.dev = dev;
+        else it.host = got.data();
+        it.conv = Conv::Q6KToQ8_0;
+        plan.add(it);
+        Loader loader;
+        std::string err;
+        check(loader.run(plan, err), "q6_k -> q8_0 run");
+        if (to_dev) {
+            cudaMemcpy(got.data(), dev, got.size(), cudaMemcpyDeviceToHost);
+            cudaFree(dev);
+        }
+        check(got == want, to_dev ? "q6_k -> q8_0 blocks on the device" : "q6_k -> q8_0 blocks in host memory");
+    }
+    std::filesystem::remove(path);
+}
+
+// f32 -> Q8_0 over several of a conversion's pieces, to host and to device memory, against ggml's quantize_row_q8_0_ref
+void f32_q8_blocks() {
+    const uint64_t n = (3ull << 20) + 96, off = 4098;   // elements, whole blocks; three 4 MiB pieces and a tail
+    std::vector<float> x(n);
+    std::mt19937 rng(32);
+    std::normal_distribution<float> g(0.f, 0.02f);
+    for (uint64_t i = 0; i < n; ++i) x[i] = i % 4096 < 32 ? 0.f : g(rng);   // all-zero blocks too
+    std::vector<uint8_t> want(n / 32 * 34);
+    for (uint64_t b = 0; b < n / 32; ++b) {
+        float amax = 0.f;
+        for (int i = 0; i < 32; ++i) amax = std::max(amax, std::fabs(x[b * 32 + i]));
+        const float d = amax / 127.f, id = d ? 1.f / d : 0.f;
+        const uint16_t dh = granite::kernels::f16_from_f32(d);
+        std::memcpy(&want[b * 34], &dh, 2);
+        for (int i = 0; i < 32; ++i) want[b * 34 + 2 + i] = (uint8_t) (int8_t) roundf(x[b * 32 + i] * id);
+    }
+    const std::string path = (std::filesystem::current_path() / "loader_f32_q8_test.bin").string();
+    {
+        std::vector<uint8_t> pad(off, 0x5a);
+        std::FILE* fp = granite::platform::open_file_utf8(path, "wb");
+        std::fwrite(pad.data(), 1, pad.size(), fp);
+        std::fwrite(x.data(), 4, x.size(), fp);
+        std::fclose(fp);
+    }
+    check(conv_out_bytes(Conv::F32ToQ8_0, n * 4) == want.size(), "f32 -> q8_0 output bytes");
+    for (const bool to_dev : {false, true}) {
+        if (to_dev && !has_device()) continue;
+        std::vector<uint8_t> got(want.size());
+        void* dev = nullptr;
+        if (to_dev && cudaMalloc(&dev, got.size()) != cudaSuccess) {
+            check(false, "f32 -> q8_0 device buffer");
+            continue;
+        }
+        LoadPlan plan;
+        LoadItem it;
+        it.file = plan.file(path);
+        it.off = off;
+        it.bytes = n * 4;
+        if (to_dev) it.dev = dev;
+        else it.host = got.data();
+        it.conv = Conv::F32ToQ8_0;
+        plan.add(it);
+        Loader loader;
+        std::string err;
+        check(loader.run(plan, err), "f32 -> q8_0 run");
+        if (to_dev) {
+            cudaMemcpy(got.data(), dev, got.size(), cudaMemcpyDeviceToHost);
+            cudaFree(dev);
+        }
+        check(got == want, to_dev ? "f32 -> q8_0 blocks on the device" : "f32 -> q8_0 blocks in host memory");
     }
     std::filesystem::remove(path);
 }
@@ -785,6 +900,8 @@ int main() {
     conversions(f);
     bf16_blocks(Conv::Bf16ToQ8_0);
     bf16_blocks(Conv::Bf16ToQ4_0);
+    q6k_blocks();
+    f32_q8_blocks();
     errors(f);
     host_aligned(f);
     adjacent_device_allocations();

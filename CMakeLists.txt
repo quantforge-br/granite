@@ -815,7 +815,7 @@ endforeach()
 target_include_directories(grammar_llama_schema_test PRIVATE src/program/grammar)
 
 add_executable(loader_test tests/core/loader_test.cpp)
-target_link_libraries(loader_test PRIVATE core ${_gpu_runtime_target})
+target_link_libraries(loader_test PRIVATE core ggml_quants ${_gpu_runtime_target})
 granite_cpu_test(NAME loader_test COMMAND loader_test)
 add_executable(load_progress_test tests/core/load_progress_test.cpp)
 target_link_libraries(load_progress_test PRIVATE platform warnings)
