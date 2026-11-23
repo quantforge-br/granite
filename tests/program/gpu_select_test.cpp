@@ -76,12 +76,12 @@ int main() {
         CHECK(!parse_gpu_spec("0,", s, err));
         CHECK(!parse_gpu_spec("-1", s, err));
     }
-    // A 5090 and a 5060 Ti, in nvidia-smi order.
+    // A 3090 Ti and a 3060, in nvidia-smi order.
     {
-        const std::vector<GpuCard> v = {card(0, "RTX 5090", 12, 0, 1792, 32), card(1, "RTX 5060 Ti", 12, 0, 448, 16)};
+        const std::vector<GpuCard> v = {card(0, "RTX 3090 Ti", 8, 6, 1008, 24), card(1, "RTX 3060", 8, 6, 360, 12)};
         GpuChoice c = pick("", v);
         CHECK_STR(cards(c), "0");
-        CHECK_STR(c.warning, "GPU 1 (RTX 5060 Ti) unused; use gpu 0,1 or gpu auto");
+        CHECK_STR(c.warning, "GPU 1 (RTX 3060) unused; use gpu 0,1 or gpu auto");
         c = pick("0,1", v);
         CHECK_STR(cards(c), "0,1");
         CHECK(c.warning.empty() && c.error.empty());
@@ -93,80 +93,71 @@ int main() {
         CHECK_STR(pick("2", v).error, "gpu 2: 2 GPUs are visible (0-1)");
         CHECK_STR(pick("0,0", v).error, "gpu 0,0: GPU 0 is listed twice");
         CHECK_STR(gpu_plan_json(v, pick("1,0", v)),
-                  "{\"devices\":\"1,0\",\"cards\":[{\"visible\":1,\"token\":\"1\",\"smi\":1,\"name\":\"RTX 5060 Ti\"},"
-                  "{\"visible\":0,\"token\":\"0\",\"smi\":0,\"name\":\"RTX 5090\"}],\"notes\":[],\"warning\":\"\",\"error\":\"\"}");
+                  "{\"devices\":\"1,0\",\"cards\":[{\"visible\":1,\"token\":\"1\",\"smi\":1,\"name\":\"RTX 3060\"},"
+                  "{\"visible\":0,\"token\":\"0\",\"smi\":0,\"name\":\"RTX 3090 Ti\"}],\"notes\":[],\"warning\":\"\",\"error\":\"\"}");
         CHECK_STR(gpu_plan_json({}, GpuChoice{}, "qwen4exp", "", 0, 8, 8192, "Qwen3.8-Flash-Next", "--route-tail-skip"),
                   "{\"arch\":\"qwen4exp\",\"model\":\"Qwen3.8-Flash-Next\",\"community_kv\":\"\",\"quality_flags\":\"\",\"quality_window\":\"0\","
                   "\"lossy\":\"--route-tail-skip\",\"spec\":8,\"max_context\":8192,\"devices\":\"\",\"cards\":[],\"notes\":[],"
                   "\"warning\":\"\",\"error\":\"\"}");
     }
-    // The same cards with the slower one first: auto still makes the 5090 main.
+    // The same cards with the slower one first: auto still makes the 3090 Ti main.
     {
-        const std::vector<GpuCard> v = {card(0, "RTX 5060 Ti", 12, 0, 448, 16), card(1, "RTX 5090", 12, 0, 1792, 32)};
+        const std::vector<GpuCard> v = {card(0, "RTX 3060", 8, 6, 360, 12), card(1, "RTX 3090 Ti", 8, 6, 1008, 24)};
         CHECK_STR(cards(pick("auto", v)), "1,0");
         CHECK_STR(cards(pick("", v)), "0");
     }
-    // Two equal 5090s: the lowest number is main.
+    // Two equal 3090s: the lowest number is main.
     {
-        const std::vector<GpuCard> v = {card(0, "RTX 5090", 12, 0, 1792, 32), card(1, "RTX 5090", 12, 0, 1792, 32)};
+        const std::vector<GpuCard> v = {card(0, "RTX 3090", 8, 6, 936, 24), card(1, "RTX 3090", 8, 6, 936, 24)};
         const GpuChoice c = pick("auto", v);
         CHECK_STR(cards(c), "0,1");
         CHECK(c.notes.empty());
         CHECK_STR(roles(v, c, 1), "main,expert tier");
     }
-    // Four mixed cards, one of them not Blackwell.
+    // Four mixed cards, one of them not sm_86.
     {
-        const std::vector<GpuCard> v = {card(0, "RTX 5070 Ti", 12, 0, 896, 16), card(1, "RTX 3090", 8, 6, 936, 24),
-                                        card(2, "RTX 5090", 12, 0, 1792, 32), card(3, "RTX 5060 Ti", 12, 0, 448, 16)};
+        const std::vector<GpuCard> v = {card(0, "RTX 3080", 8, 6, 760, 10), card(1, "RTX 5090", 12, 0, 1792, 32),
+                                        card(2, "RTX 3090 Ti", 8, 6, 1008, 24), card(3, "RTX 3060", 8, 6, 360, 12)};
         GpuChoice c = pick("auto", v);
         CHECK_STR(cards(c), "2,0,3");
         CHECK(c.notes.size() == 1);
-        if (c.notes.size() == 1) CHECK_STR(c.notes[0], "gpu auto: GPU 1 (RTX 3090) skipped, not sm_120");
+        if (c.notes.size() == 1) CHECK_STR(c.notes[0], "gpu auto: GPU 1 (RTX 5090) skipped, not sm_86");
         CHECK_STR(roles(v, c, 1), "main,expert tier,idle");
         CHECK_STR(roles(v, c, 3), "main,expert tier,expert tier");
         CHECK_STR(roles(v, c, 1, true), "main,prompt split,idle");
         CHECK_STR(roles(v, c, 1, true, true), "main,layer stage,idle");
         c = pick("", v);
         CHECK_STR(cards(c), "0");
-        CHECK_STR(c.warning, "GPU 2 (RTX 5090), GPU 3 (RTX 5060 Ti) unused; use gpu 0,2,3 or gpu auto");
-        CHECK_STR(pick("1", v).error, "gpu: GPU 1 (RTX 3090) is sm_86, not sm_120");
+        CHECK_STR(c.warning, "GPU 2 (RTX 3090 Ti), GPU 3 (RTX 3060) unused; use gpu 0,2,3 or gpu auto");
+        CHECK_STR(pick("1", v).error, "gpu: GPU 1 (RTX 5090) is sm_120, not sm_86");
         CHECK_STR(cards(pick("3,2,0", v)), "3,2,0");
     }
-    // An Ada (sm_89) card: never the main card; a second card only in a -DPEER_ADA=ON build
+    // An Ada (sm_89) card: neither the main card nor a second card.
     {
-        const std::vector<GpuCard> v = {card(0, "RTX 5080", 12, 0, 960, 16), card(1, "RTX 4060 Ti", 8, 9, 288, 16)};
-        CHECK_STR(pick("1,0", v).error, "gpu: GPU 1 (RTX 4060 Ti) is sm_89, not sm_120");
-#if defined(BASALT_PEER_ADA)
-        CHECK_STR(cards(pick("0,1", v)), "0,1");
-        CHECK_STR(cards(pick("auto", v)), "0,1");
-#else
-        CHECK_STR(pick("0,1", v).error, "gpu: GPU 1 (RTX 4060 Ti) is sm_89 (rebuild with -DPEER_ADA=ON to enable sm_89 peer support)");
+        const std::vector<GpuCard> v = {card(0, "RTX 3090", 8, 6, 936, 24), card(1, "RTX 4090", 8, 9, 1008, 24)};
+        CHECK_STR(pick("1,0", v).error, "gpu: GPU 1 (RTX 4090) is sm_89, not sm_86");
+        CHECK_STR(pick("0,1", v).error, "gpu: GPU 1 (RTX 4090) is sm_89, not sm_86");
         GpuChoice c = pick("auto", v);
         CHECK_STR(cards(c), "0");
         CHECK(c.notes.size() == 1);
-        if (c.notes.size() == 1) CHECK_STR(c.notes[0], "gpu auto: GPU 1 (RTX 4060 Ti) skipped, not sm_120");
-#endif
+        if (c.notes.size() == 1) CHECK_STR(c.notes[0], "gpu auto: GPU 1 (RTX 4090) skipped, not sm_86");
     }
     // A laptop's own card beside a desktop card in an enclosure: the desktop card's bandwidth makes it main; the
     // laptop card is the first visible, so it runs alone when nothing is set.
     {
-        const std::vector<GpuCard> v = {card(0, "RTX 5080 Laptop GPU", 12, 0, 896, 16), card(1, "RTX 5090", 12, 0, 1792, 32)};
+        const std::vector<GpuCard> v = {card(0, "RTX 3080 Laptop GPU", 8, 6, 448, 16), card(1, "RTX 3090", 8, 6, 936, 24)};
         CHECK_STR(cards(pick("auto", v)), "1,0");
         CHECK_STR(cards(pick("", v)), "0");
         CHECK(!pick("", v).warning.empty());
         // the same bandwidth: the larger card is main
-        const std::vector<GpuCard> w = {card(0, "RTX 5070 Ti Laptop GPU", 12, 0, 896, 12), card(1, "RTX 5080", 12, 0, 896, 16)};
+        const std::vector<GpuCard> w = {card(0, "RTX 3070 Ti Laptop GPU", 8, 6, 448, 8), card(1, "RTX 3080 Laptop GPU", 8, 6, 448, 16)};
         CHECK_STR(cards(pick("auto", w)), "1,0");
     }
-    // A first card Basalt cannot run: unset is an error that points at gpu N and auto.
+    // A first card granite cannot run: unset is an error that points at gpu N and auto.
     {
-        const std::vector<GpuCard> v = {card(0, "RTX 4090", 8, 9, 1008, 24), card(1, "RTX 5090", 12, 0, 1792, 32)};
+        const std::vector<GpuCard> v = {card(0, "RTX 4090", 8, 9, 1008, 24), card(1, "RTX 3090", 8, 6, 936, 24)};
         CHECK(!pick("", v).error.empty());
-#if defined(BASALT_PEER_ADA)
-        CHECK_STR(cards(pick("auto", v)), "1,0");   // the sm_89 card is a second card in a -DPEER_ADA=ON build
-#else
         CHECK_STR(cards(pick("auto", v)), "1");
-#endif
         CHECK(pick("auto", v).notes.size() == 1);
     }
     // No card list (no management library, no CUDA_VISIBLE_DEVICES): numbers pass, auto cannot run.

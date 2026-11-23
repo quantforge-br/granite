@@ -133,20 +133,11 @@ bool parse_gpu_spec(const std::string& text, GpuSpec& out, std::string& err) {
     return true;
 }
 
-// The main GPU runs the model's decode kernels (NVFP4 tensor cores, Blackwell instructions) — sm_120 only.
-// A peer GPU runs only the expert tier's standard CUDA kernels (Q8_1/Q2_0 rows, shared-memory rings,
-// doorbells), which a build with -DPEER_ADA=ON also compiles for sm_89 (Ada).
-bool gpu_main_supported(const GpuCard& c) { return c.cc_major == 0 || (c.cc_major == 12 && c.cc_minor == 0); }
-// sm_89 (Ada) is the one older architecture the peer kernels can be compiled for (when built with PEER_ADA);
-// a peer card of any other pre-Blackwell arch (or an sm_89 card without PEER_ADA) is rejected here
-// rather than failing later with 'no kernel image' at the first peer launch.
-bool gpu_peer_supported(const GpuCard& c) {
-#if defined(BASALT_PEER_ADA)
-    return c.cc_major == 0 || (c.cc_major == 12 && c.cc_minor == 0) || (c.cc_major == 8 && c.cc_minor == 9);
-#else
-    return c.cc_major == 0 || (c.cc_major == 12 && c.cc_minor == 0);
-#endif
-}
+// The kernels are built for compute capability 8.6 only (RTX 30-series Ampere), every card the same: another card is
+// refused here rather than failing later with 'no kernel image' at its first launch. A card NVML could not describe
+// (cc 0) passes; the device check at load still refuses it.
+bool gpu_main_supported(const GpuCard& c) { return c.cc_major == 0 || (c.cc_major == 8 && c.cc_minor == 6); }
+bool gpu_peer_supported(const GpuCard& c) { return gpu_main_supported(c); }
 
 std::string gpu_label(const std::vector<GpuCard>& visible, int index) {
     std::string s = "GPU " + std::to_string(index);
@@ -160,39 +151,32 @@ GpuChoice choose_gpus(const GpuSpec& spec, const std::vector<GpuCard>& visible, 
     const int n = (int) visible.size();
     auto unsupported_main = [&](int i) {
         return "gpu: " + gpu_label(visible, i) + " is sm_" + std::to_string(visible[(size_t) i].cc_major) +
-               std::to_string(visible[(size_t) i].cc_minor) + ", not sm_120";
+               std::to_string(visible[(size_t) i].cc_minor) + ", not sm_86";
     };
     if (spec.kind == GpuSpec::Kind::Auto) {
         if (!known) {
             c.error = "gpu auto: GPUs not listable (no NVML)";
             return c;
         }
-        // Main card: sm_120 only, the most memory bandwidth, then the most VRAM
-        std::vector<int> main_ok;
-        std::vector<int> peer_ok;
+        // Main card: the most memory bandwidth, then the most VRAM; then the other cards in order
+        std::vector<int> ok;
         for (int i = 0; i < n; ++i) {
-            if (gpu_main_supported(visible[(size_t) i])) main_ok.push_back(i);
-            else if (gpu_peer_supported(visible[(size_t) i])) peer_ok.push_back(i);
-            else c.notes.push_back("gpu auto: " + gpu_label(visible, i) + " skipped, not sm_120");
+            if (gpu_main_supported(visible[(size_t) i])) ok.push_back(i);
+            else c.notes.push_back("gpu auto: " + gpu_label(visible, i) + " skipped, not sm_86");
         }
-        if (main_ok.empty()) {
-            c.error = n == 0 ? "gpu auto: no GPU is visible" : "gpu auto: no sm_120 GPU visible";
+        if (ok.empty()) {
+            c.error = n == 0 ? "gpu auto: no GPU is visible" : "gpu auto: no sm_86 GPU visible";
             return c;
         }
-        int best = main_ok[0];
-        for (int i : main_ok) {
+        int best = ok[0];
+        for (int i : ok) {
             const GpuCard& a = visible[(size_t) i];
             const GpuCard& b = visible[(size_t) best];
             if (a.mem_gbps > b.mem_gbps || (a.mem_gbps == b.mem_gbps && a.vram > b.vram)) best = i;
         }
         c.cards.push_back(best);
-        // then the other sm_120 cards, then the sm_89 ones (a -DPEER_ADA=ON build) as expert tiers
-        for (int i : main_ok)
+        for (int i : ok)
             if (i != best) c.cards.push_back(i);
-        for (int i : peer_ok)
-            c.cards.push_back(i);
-        for (int i : peer_ok)
-            if (i != best) c.notes.push_back("gpu auto: " + gpu_label(visible, i) + " is not sm_120, using it as an expert-tier peer only");
         return c;
     }
     if (spec.kind == GpuSpec::Kind::Unset) {
@@ -215,7 +199,7 @@ GpuChoice choose_gpus(const GpuSpec& spec, const std::vector<GpuCard>& visible, 
         }
         return c;
     }
-    // Explicit list: the first card is the main (sm_120), the rest second cards (sm_120, or sm_89 with -DPEER_ADA=ON).
+    // Explicit list: the first card is the main, the rest second cards; all sm_86.
     for (size_t idx = 0; idx < spec.list.size(); ++idx) {
         const int i = spec.list[idx];
         if (known && i >= n) {
@@ -232,13 +216,6 @@ GpuChoice choose_gpus(const GpuSpec& spec, const std::vector<GpuCard>& visible, 
             return c;
         }
         if (known && idx > 0 && !gpu_peer_supported(visible[(size_t) i])) {
-#if !defined(BASALT_PEER_ADA)
-            if (visible[(size_t) i].cc_major == 8 && visible[(size_t) i].cc_minor == 9) {
-                c.error = "gpu: " + gpu_label(visible, i) + " is sm_89 (rebuild with -DPEER_ADA=ON to enable sm_89 peer support)";
-                c.cards.clear();
-                return c;
-            }
-#endif
             c.error = unsupported_main(i);
             c.cards.clear();
             return c;

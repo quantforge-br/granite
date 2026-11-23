@@ -20,12 +20,15 @@ static int g_fail = 0;
 
 static constexpr uint64_t GiB = 1ull << 30;
 
+// A card granite runs on (compute capability 8.6): the planner prices a card by its bandwidth and memory, the names only
+// label the cases.
 static GpuCard card(int smi, const char* name, double gbps, uint64_t gib) {
     GpuCard c;
     c.token = std::to_string(smi);
     c.smi = smi;
     c.name = name;
-    c.cc_major = 12;
+    c.cc_major = 8;
+    c.cc_minor = 6;
     c.mem_gbps = gbps;
     c.vram = gib * GiB;
     return c;
