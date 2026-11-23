@@ -727,18 +727,25 @@ public:
             if (i >= kv.size() || kv[i].format != cell_format() || kv[i].cells != positions || kv[i].heads != kKvHeads ||
                 kv[i].k.size() < run || kv[i].v.size() < run)
                 return {model::Status::Error, "inkling2: a parked conversation has other caches"};
-            const auto up = [&](void* dev, const core::ConversationBuffer& from) {
+            // on the card's stream: a copy from pageable memory may return before its bytes land, and the session's
+            // streams do not wait for the default one
+            const auto up = [&](void* dev, const core::ConversationBuffer& from, cudaStream_t st) {
                 return from.visit(0, run, [&](const uint8_t* p, size_t n, size_t at) {
-                    return cudaMemcpy((uint8_t*) dev + at, p, n, cudaMemcpyHostToDevice) == cudaSuccess;
+                    return cudaMemcpyAsync((uint8_t*) dev + at, p, n, cudaMemcpyHostToDevice, st) == cudaSuccess;
                 });
             };
-            if (!up(c.k, kv[i].k) || !up(c.v, kv[i].v)) return {model::Status::Error, "inkling2: writing a cache back failed"};
-            if (m_.cards() > 1 && (!up(vc1_[slot].k, kv[i].k) || !up(vc1_[slot].v, kv[i].v)))   // both cards hold the caches
-                return {model::Status::Error, "inkling2: writing a cache back to the second card failed"};
+            if (!up(c.k, kv[i].k, stream_) || !up(c.v, kv[i].v, stream_)) return {model::Status::Error, "inkling2: writing a cache back failed"};
+            if (m_.cards() > 1) {   // both cards hold the caches
+                OnCard on(m_.card_device(1));
+                if (!up(vc1_[slot].k, kv[i].k, stream1_) || !up(vc1_[slot].v, kv[i].v, stream1_))
+                    return {model::Status::Error, "inkling2: writing a cache back to the second card failed"};
+            }
             ++i;
         }
         if (dspark_.on() && !dspark_.restore_cells(kv, i, positions, stream_))   // DSPARK HOOK
             return {model::Status::Error, "inkling2: a parked conversation has no drafter cells"};
+        if (cudaStreamSynchronize(stream_) != cudaSuccess || (m_.cards() > 1 && cudaStreamSynchronize(stream1_) != cudaSuccess))
+            return {model::Status::Error, "inkling2: writing a cache back failed"};
         return {};
     }
 

@@ -760,15 +760,16 @@ bool DsparkHook::restore_cells(const std::vector<core::ConversationKv>& kv, size
         if (k.format != 3 || k.cells != positions || k.heads != kKvHeads || k.head_dim != kHeadDim ||
             k.k.size() != (size_t) positions * kKV * 2 || positions > c.cap)
             return false;
+        // on the session's stream: a copy from pageable memory may return before its bytes land
         const auto up = [&](uint16_t* dev, const core::ConversationBuffer& from) {
             return from.visit(0, from.size(), [&](const uint8_t* p, size_t n, size_t off) {
-                return cudaMemcpy((uint8_t*) dev + off, p, n, cudaMemcpyHostToDevice) == cudaSuccess;
+                return cudaMemcpyAsync((uint8_t*) dev + off, p, n, cudaMemcpyHostToDevice, (cudaStream_t) stream) == cudaSuccess;
             });
         };
         if (!up(c.k, k.k) || !up(c.v, k.v)) return false;
         ++at;
     }
-    return true;
+    return cudaStreamSynchronize((cudaStream_t) stream) == cudaSuccess;
 }
 
 // ---- flags ----------------------------------------------------------------------------------------------------------------
