@@ -1,7 +1,8 @@
 // tests/core/gguf_fixture.hpp - synthetic GGUF v3 files for the loader tests (no gguf-py, no model, no GPU).
 //
-// A file is a header, metadata (strings and integers only), a tensor directory whose offsets are 32-byte aligned
-// in the data section, and the tensors' payloads, each filled with a pattern the test can recognise.
+// A file is a header, metadata (strings, numbers, booleans and arrays of strings or i32), a tensor directory whose
+// offsets are 32-byte aligned in the data section, and the tensors' payloads: the bytes a test gives, or a pattern it
+// can recognise.
 #pragma once
 
 #include "granite/artifact/gguf_reader.hpp"
@@ -45,7 +46,8 @@ struct Tensor {
     std::string name;
     std::vector<uint64_t> shape;   ///< GGUF order: dim 0 varies fastest
     uint32_t type = 0;
-    uint8_t seed = 1;              ///< payload byte i is (seed * 131 + i * 7 + i / 4093) & 0xff
+    uint8_t seed = 1;              ///< payload byte i is (seed * 131 + i * 7 + i / 4093) & 0xff ...
+    std::vector<uint8_t> data;     ///< ... unless the payload is given here
 };
 
 inline uint8_t pattern(uint8_t seed, uint64_t i) { return (uint8_t) ((seed * 131u + i * 7u + i / 4093u) & 0xffu); }
@@ -107,6 +109,11 @@ inline Written write(const std::filesystem::path& path, const std::vector<Kv>& k
     b.resize((size_t) w.data_start, 0);
     for (size_t i = 0; i < ts.size(); ++i) {
         b.resize((size_t) (w.data_start + w.offsets[i]), 0);
+        if (!ts[i].data.empty()) {
+            if (ts[i].data.size() != bytes[i]) throw std::runtime_error("fixture: " + ts[i].name + "'s payload is not its type's size");
+            b.insert(b.end(), ts[i].data.begin(), ts[i].data.end());
+            continue;
+        }
         for (uint64_t j = 0; j < bytes[i]; ++j) b.push_back(pattern(ts[i].seed, j));
     }
     if (cut > b.size()) cut = b.size();
