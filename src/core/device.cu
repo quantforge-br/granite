@@ -207,7 +207,7 @@ DeviceInfo device_info(int ordinal) {
     int count = 0;
     check(cudaGetDeviceCount(&count), "cudaGetDeviceCount");
     if (count == 0) {
-        throw CudaError("no CUDA device is present; basalt needs an NVIDIA GPU of compute capability 12.0", -1);
+        throw CudaError("no CUDA device is present; granite needs an NVIDIA GPU of compute capability 8.6", -1);
     }
     if (ordinal < 0 || ordinal >= count) {
         throw CudaError("device ordinal " + std::to_string(ordinal) + " is out of range (have " +
