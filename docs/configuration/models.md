@@ -10,7 +10,7 @@ and starts the next.
   "models": [
     { "alias": "Flash-Next", "model": "flash-next.basalt", "gpu": "auto", "kv": "int8", "max-context": 262144, "parallel": 4,
       "slot-full-context": true, "vision": "dynamic" },
-    { "alias": "DeepSeek", "model": "deepseek.basalt", "gpu": "auto", "max-context": 1048576, "vision": "dynamic" }
+    { "alias": "Inkling", "model": "inkling2.basalt", "gpu": "auto", "max-context": 1048576, "vision": "dynamic" }
   ],
   "server": { "host": "127.0.0.1", "port": 8080 }
 }
@@ -36,7 +36,7 @@ Each entry is checked before anything loads, by the engine's own rules:
 | Value the model refuses (`max-context` past its maximum) | stops the start | stops the start |
 | Unknown name | stops the start | stops the start |
 
-`kv` takes each model's own values (`fp8` or `fp16` for DeepSeek); another value stops the start. Two aliases that are the same, or two entries sharing a cache
+`kv` takes each model's own values (`fp16` or `fp8` for Inkling 2 Mini); another value stops the start. Two aliases that are the same, or two entries sharing a cache
 directory, stop the start too.
 
 ## Requests and turns
@@ -63,4 +63,4 @@ Clients wait through a swap; they do not get a 503 for it. A streamed response s
 | Metrics | per model (`GET /metrics?model=NAME`) |
 
 `POST /v1/load` with `{"model": NAME}` swaps ahead of a request. `/health` and `/metrics` show the swap's progress. The console prints
-`[server] swap: Flash-Next -> DeepSeek, 2 waiting`.
+`[server] swap: Flash-Next -> Inkling, 2 waiting`.

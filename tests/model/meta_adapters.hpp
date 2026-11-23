@@ -3,7 +3,6 @@
 #pragma once
 
 #include "basalt/model/adapter.hpp"
-#include "models/deepseek41/meta.hpp"
 #include "models/inkling2/meta.hpp"
 
 #include <memory>
@@ -34,8 +33,6 @@ private:
 inline void register_meta_adapters() {
     if (model::find_adapter("inkling2") == nullptr)
         model::register_adapter(std::make_unique<MetaAdapter>("inkling2", models::inkling2::validate_meta, models::inkling2::describe_meta));
-    if (model::find_adapter("deepseek41") == nullptr)
-        model::register_adapter(std::make_unique<MetaAdapter>("deepseek41", models::deepseek41::validate_meta, models::deepseek41::describe_meta));
 }
 
 }  // namespace basalt::test

@@ -98,7 +98,7 @@ The engine's own figures, which the server asks for with `STATS` once the engine
 
 The header word reads `Thinking`, `Answering` or `Tool call` (`live.phase`) while exactly one request runs. The conversation cache
 figures come from the engine's `conversation cache:` lines and clear when the engine unloads, sleeps or restarts; a model that prints
-no line when it parks (DeepSeek) shows them after its first restore, without evictions.
+no line when it parks shows them after its first restore, without evictions.
 
 ## Conversations on disk: `--conversation-cache-disk-mib`
 
@@ -163,7 +163,7 @@ images a request may name: [image sources](configuration/image-sources.md). An i
 
 ## Video
 
-With image input on, Qwen3.8-Flash-Next reads video (DeepSeek, Hy4-flash and Inkling 2 Mini do not). A user message names a video as it names an image, from
+With image input on, Qwen3.8-Flash-Next reads video (Hy4-flash and Inkling 2 Mini do not). A user message names a video as it names an image, from
 the same [sources](configuration/image-sources.md):
 
 | API | Part |

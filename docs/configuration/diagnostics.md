@@ -42,9 +42,8 @@ Binary: **CLI** = `bin/basalt` one-shot (`--tokens IDS`), **serve** = `--serve` 
 | `--spec-corrupt N` | CLI | Replace every Nth draft with a wrong token, to test rejection. |
 | `--diag-batch-check` | CLI | With `--batch N` (2 or more) and a prompt: every session's windows alone against the same windows batched, bitwise ([batched decoding](../design/batching.md)). |
 | `--diag-tp-check` | CLI | Inkling 2 on two cards (tensor parallelism): after each prompt and decode call and each batch window, every cache and ring of the second card against the first's, bitwise; a difference fails the call. |
-| `--diag-teacher` | CLI | DeepSeek with `--spec-oracle`: teacher-forces the file's tokens and counts differing picks. |
-| `--diag-tier-frozen` | CLI, serve | DeepSeek: fixed placement (no copies or promotion). |
-| `--diag-drafter-gpu DEV` | CLI, serve | DeepSeek: the card the drafter runs on. |
+| `--diag-teacher` | CLI | Hy4-flash with `--spec-oracle`: teacher-forces the file's tokens and counts differing picks. |
+| `--diag-tier-frozen` | CLI, serve | Hy4-flash: fixed placement (no copies or promotion). |
 | `--force-zero-doorbell` | serve | Scheduling test on a card that cannot hold every expert. The output is wrong by design. |
 
 ## Experts and n-gram table

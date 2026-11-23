@@ -10,6 +10,7 @@ from serve.engine.mock import MockEngine
 from serve.frontend import openai_to_messages
 from serve.models import dialect_for
 from serve.models.inkling2 import END, END_TURN, HEADER, IMAGE, IMAGE_PAD, OWN_TOKENS, TEXT, THINK, TOOL_JSON, Inkling2, Inkling2Parser
+from serve.models.qwen import Qwen
 from serve.service import Service
 from serve.util.text import ByteTokenizer
 
@@ -83,6 +84,7 @@ class Reference(unittest.TestCase):
 
     def test_the_registry(self):
         self.assertIsInstance(dialect_for("inkling2"), Inkling2)
+        self.assertIsInstance(dialect_for(None), Qwen)              # no file: the mock engine's plain chat template
 
 
 class Controls(unittest.TestCase):

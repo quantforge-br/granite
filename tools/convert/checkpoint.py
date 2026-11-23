@@ -1,6 +1,6 @@
-"""What the checkpoint converters share (checkpoint_inkling2.py, checkpoint_deepseek41.py, hy4flash_bf16.py): the
-safetensors files of a checkpoint directory, NVIDIA Model Optimizer's NVFP4 rows moved into Basalt's blocks, the
-routed-expert blob job, and the model metadata and tokenizer as GGUF keys. Needs numpy.
+"""What the checkpoint converters share (checkpoint_inkling2.py, hy4flash_bf16.py): the safetensors files of a
+checkpoint directory, NVIDIA Model Optimizer's NVFP4 rows moved into Basalt's blocks, and the model metadata and
+tokenizer as GGUF keys. Needs numpy.
 """
 from __future__ import annotations
 
@@ -88,65 +88,6 @@ def nvfp4_rows(codes: np.ndarray, scales: np.ndarray) -> np.ndarray:
     out[..., :4] = scales.reshape(rows, cols // 64, 4)
     out[..., 4:] = (v[..., :8] | (v[..., 8:] << 4)).reshape(rows, cols // 64, 32)
     return out.reshape(-1)
-
-
-def csf_decode(fixed: np.ndarray, exceptions: np.ndarray) -> np.ndarray:
-    """A CSF stream pair (Model Optimizer's compressed block scales) -> the UE4M3 scale bytes [rows, cols] it holds.
-
-    fixed       uint8 [rows / 16, 16 + 8 cols]: per slab of 16 rows, the rows' base bytes, then each row's cols 4-bit
-                codes, two to a byte, low nibble first; a scale byte is base + code
-    exceptions  uint32: low 24 bits the flat position row * cols + col, high 8 bits the scale byte there"""
-    if fixed.ndim != 2 or fixed.shape[1] < 32 or fixed.shape[1] % 16:
-        raise S.ConvertError(f"a CSF fixed stream of shape {list(fixed.shape)}")
-    rows, cols = fixed.shape[0] * 16, (fixed.shape[1] // 16 - 1) * 2
-    base = fixed[:, :16].reshape(rows, 1).astype(np.int16)
-    if (base > 240).any():
-        raise S.ConvertError("a CSF base byte above 240")
-    packed = fixed[:, 16:].reshape(rows, cols // 2)
-    out = (base + np.stack((packed & 15, packed >> 4), axis=-1).reshape(rows, cols)).reshape(-1)
-    pos = exceptions & 0xFFFFFF
-    if pos.size and int(pos.max()) >= rows * cols:
-        raise S.ConvertError("a CSF exception past the end of its matrix")
-    out[pos] = exceptions >> 24
-    return out.astype(np.uint8).reshape(rows, cols)
-
-
-def _scales(ent) -> np.ndarray:
-    """An expert matrix's UE4M3 scale bytes: from the plain tensor, ent = (path, offset, shape), or from its CSF stream
-    pair, ent = ((path, offset, shape), (path, offset, count))."""
-    if len(ent) == 3:
-        p, off, shape = ent
-        return np.fromfile(p, dtype=np.uint8, count=shape[0] * shape[1], offset=off).reshape(shape)
-    (fp, fo, fshape), (ep, eo, n) = ent
-    fixed = np.fromfile(fp, dtype=np.uint8, count=fshape[0] * fshape[1], offset=fo).reshape(fshape)
-    return csf_decode(fixed, np.fromfile(ep, dtype="<u4", count=n, offset=eo))
-
-
-def _expert_job(args):
-    """Blobs of experts [s, s + n) of one layer: [gate | up | down] blocks, and for NVFP4 the FP32 scale tail."""
-    entries, n = args[0], args[1]
-    out = []
-    for e in range(n):
-        parts, tail = [], []
-        for (wp, wo, wshape), sent, (tp, to) in entries[e]:
-            w = np.fromfile(wp, dtype=np.uint8, count=wshape[0] * wshape[1], offset=wo).reshape(wshape)
-            try:
-                sc = _scales(sent)
-            except S.ConvertError as err:
-                return f"{err} (the matrix at {wp.name}+{wo})"
-            if (sc & 0x80).any() or (sc == 0x7F).any():
-                return f"a UE4M3 scale with the sign bit set or NaN at {wp.name}+{wo}"
-            tail.append(np.fromfile(tp, dtype="<f4", count=1, offset=to)[0])
-            parts.append(nvfp4_rows(w, sc))
-        t = np.array(tail + [0.0], dtype="<f4")
-        if not (np.isfinite(t).all() and (t[:3] > 0).all()):
-            return f"a weight_scale_2 that is not finite and positive: {t[:3].tolist()}"
-        out.append(np.concatenate(parts).tobytes())
-        out.append(t.tobytes())
-    return b"".join(out)
-
-
-bounded_imap = S.bounded_imap
 
 
 # ------------------------------------------------------------------ metadata and tokenizer

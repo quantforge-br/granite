@@ -77,7 +77,7 @@ frames decode on the CPU.
 
 - Portable host registrations stay within the visible adapters' DXGI non-local allowances, leaving driver headroom.
   Whole-expert slices retain their own device aliases; the unregistered tail is locked in the working set.
-  Qwen and DeepSeek's resident RAM tiers share CUDA host VMM when supported, with ordinary registration as the fallback.
+  The resident RAM tiers share CUDA host VMM when supported, with ordinary registration as the fallback.
   Allocation-backed pins stay in RAM across SLEEP/WAKE; the expert caches can still return their VRAM.
 - Large pages need "Lock pages in memory" (Administrators). Without it the engine uses 4 KiB pages and says so at start.
 - No shared arena files and no cgroup limits. `--ple-io direct` reads through the file cache.
@@ -99,7 +99,7 @@ ctest --test-dir build -L cpu -j 8 --output-on-failure
 
 The executables land in `bin/` whatever the generator is (a Visual Studio generator would otherwise put them in `bin/Release`, away from `data/`).
 
-`-DBASALT_MODELS=deepseek41`, `hy4flash` or `inkling2` builds one model ([building](building.md#building-only-some-models)); the option works the same here.
+`-DBASALT_MODELS=hy4flash` or `inkling2` builds one model ([building](building.md#building-only-some-models)); the option works the same here.
 
 If tests fail to create fixtures, point `TEMP` and `TMP` into the build tree. CUDA 13.2+ headers need `/Zc:preprocessor`; the CMakeLists
 passes it to nvcc's host compiler.

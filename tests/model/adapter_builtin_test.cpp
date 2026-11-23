@@ -1,6 +1,6 @@
-// tests/model/adapter_builtin_test.cpp - the program's own registration: every adapter the build holds, once each, DeepSeek's
-// load error and the flags each model reports as lossy. Linking the models needs the CUDA runtime, so this runs where
-// that is installed; no GPU work.
+// tests/model/adapter_builtin_test.cpp - the program's own registration: every adapter the build holds, once each, and the
+// flags each model reports as lossy. Linking the models needs the CUDA runtime, so this runs where that is installed; no GPU
+// work.
 #include "basalt/model/adapter.hpp"
 #include "basalt/model/flags.hpp"
 #include "basalt/models/builtin.hpp"
@@ -45,12 +45,6 @@ int main() {
     expect("inkling2", false);
 #endif
     check(model::adapter_names().size() == built, "registering twice keeps one adapter per name");
-    if (const model::ModelAdapter* ds = model::find_adapter("deepseek41")) {
-        model::Started started;
-        check(ds->start({}, started).status == model::Status::Error, "deepseek41 start without a path is an error");
-        const auto o = ds->make_options();
-        check(!ds->finish_flags(*o) && o->lossy.empty(), "deepseek41 with no flag is not lossy");
-    }
     // the flags as the command line gives them, through the model's own parser and finish_flags
     const auto lossy_of = [](const model::ModelAdapter& a, std::vector<std::string> words) {
         const auto o = a.make_options();
@@ -67,7 +61,7 @@ int main() {
     };
     // the routing flags of every mixture-of-experts model: the bare prior is the model's own; the tail skip needs the pack's
     // experts per token, so without a pack it is refused
-    for (const auto& [arch, bare] : {std::pair<const char*, const char*>{"deepseek41", "0.1"}, {"hy4flash", "0.01"}}) {
+    for (const auto& [arch, bare] : {std::pair<const char*, const char*>{"hy4flash", "0.01"}}) {
         const model::ModelAdapter* m = model::find_adapter(arch);
         if (m == nullptr) continue;
         const auto p = lossy_of(*m, {"--route-prior"});

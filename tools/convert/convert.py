@@ -1,23 +1,20 @@
 """Build the single .basalt model file from the source GGUF shards or a safetensors checkpoint.
 
-    python3 tools/convert/convert.py --gguf MODEL-00001-of-0000N.gguf --out MODEL.basalt [--mmproj MMPROJ.gguf] [--dspark FILE] \\
+    python3 tools/convert/convert.py --gguf MODEL-00001-of-0000N.gguf --out MODEL.basalt [--mmproj MMPROJ.gguf] \\
         [--name NAME] [--compat-bf16] [--no-vision] [--force]
     python3 tools/convert/convert.py --gguf MODEL-00001-of-0000N.gguf --sections-from BASE.basalt --out MODEL.basalt [--name NAME] [--force]
     python3 tools/convert/convert.py --gguf MODEL-00001-of-0000N.gguf --hf-dir HF_DIR --out MODEL.basalt [--name NAME] [--force]
     python3 tools/convert/convert.py --gguf Hy4-flash-BF16.gguf --nvfp4 --hf-dir HF_DIR --mmproj MMPROJ.gguf [--dfly FILE] --out MODEL.basalt \\
         [--dense-q6k] [--name NAME] [--workers N] [--force]
     python3 tools/convert/convert.py --verify PACK.basalt --gguf MODEL-00001-of-0000N.gguf
-    python3 tools/convert/convert.py --dspark FILE --into PACK.basalt --undo-dir DIR
-    python3 tools/convert/convert.py --sections-from DEEPSEEK.basalt --checkpoint DIR --out MODEL.basalt [--stream-shards] \\
-        [--name NAME] [--workers N] [--force]
+    python3 tools/convert/convert.py --dfly FILE --into PACK.basalt --undo-dir DIR
     python3 tools/convert/convert.py --checkpoint INKLING2_DIR --out MODEL.basalt [--name NAME] [--workers N] [--force]
 
 Inputs
   --gguf FILE        the model's GGUF: shard 1 of a split model (the others are found beside it) or --gguf per shard
-  --sections-from BASE.basalt  with --gguf: the drafter, DSpark and vision sections are copied from BASE byte for byte
-                     (BASE's vocabulary must be the GGUF's); replaces --mmproj and --dspark. A tensor with a section
-                     of its own (the Engram table) whose shard stops after its header is copied from BASE's section
-                     of the same tensor
+  --sections-from BASE.basalt  with --gguf: the drafter and vision sections are copied from BASE byte for byte (BASE's
+                     vocabulary must be the GGUF's); replaces --mmproj. A tensor with a section of its own (the Engram
+                     table) whose shard stops after its header is copied from BASE's section of the same tensor
   --mmproj FILE      the vision projector GGUF, stored whole as vision/mmproj (with --nvfp4: required unless --no-vision)
   --hf-dir DIR       hy_v4_flash only: the tencent/Hy4-flash directory (LICENSE and config.json are embedded, the
                      weights are not read); the pack is the GGUF's tensors as they are, with the next-n block as mtp/*
@@ -27,25 +24,15 @@ Inputs
   --verify PACK      read PACK back against its source --gguf: every section's SHA-256, and every source tensor's
                      bytes (type, shape and SHA-256) at the place the pack's index and layout name; writes nothing.
                      A pack made with --nvfp4 is checked by repeating its roundings
-  --dspark FILE      deepseek41 only: the DSpark drafter GGUF, stored whole as the dspark/gguf section
 
-From NVIDIA's DeepSeek-V4.1 NVFP4 checkpoint (a deepseek41 BASE; tools/convert/checkpoint_deepseek41.py)
-  --checkpoint DIR   config.json, model.safetensors.index.json and the shards. The routed experts (w1 gate, w3 up, w2
-                     down) keep their E2M1 codes and UE4M3 scales, moved into Basalt's blocks with the FP32 tail
-                     {s_gate, s_up, s_down, 0} from weight_scale_2; the FP8 projections become Q8_0 of their exact
-                     values (BF16 where BASE reads BF16); the MXFP4 Engram rows are kept. Tokenizer, metadata, vision
-                     and drafter are BASE's
-  --stream-shards    the shards may arrive while the conversion runs, in file order (another process downloads them), and
-                     each is deleted once its tensors are written: the disk holds the pack and a shard or two
-
-From Thinking Machines' Inkling 2 Mini release (no --sections-from; tools/convert/checkpoint_inkling2.py)
+From Thinking Machines' Inkling 2 Mini release (tools/convert/checkpoint_inkling2.py)
   --checkpoint DIR   a checkpoint of model type inkling2_loop: the release's safetensors (the model and its DSpark
                      drafter), config.json, hf_quant_config.json, the tokenizer files and the chat template. Everything
                      comes from DIR
 
-Adding the drafter to a deepseek41 pack that exists
-  --dspark FILE --into PACK.basalt --undo-dir DIR
-                     writes dspark/gguf and a new meta past the file's end and replaces the header in one write: no other
+Adding the drafter to a hy4flash pack that exists
+  --dfly FILE --into PACK.basalt --undo-dir DIR
+                     writes dfly and a new meta past the file's end and replaces the header in one write: no other
                      section moves or changes. DIR (new) keeps the old header and meta;
   --roll-back --into PACK.basalt --undo-dir DIR
                      puts them back and cuts the file to its old size.
@@ -79,7 +66,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent))   # for model_file, gguf_reader, tokenizer
 import arch as A  # noqa: E402
 import model_sections as S  # noqa: E402
-from model_file import SECTION_ALIGN, TENSOR_ALIGN, ModelFile, ModelWriter, Stream, append_section, undo_append  # noqa: E402
+from model_file import SECTION_ALIGN, TENSOR_ALIGN, ModelFile, ModelWriter, Stream, undo_append  # noqa: E402
 
 FINGERPRINT_BYTES = 64 << 20
 
@@ -105,51 +92,13 @@ def source_record(path: Path) -> dict:
     return {"path": path.name, "size": path.stat().st_size, "fingerprint_sha256_first_last_64mib_and_size": fingerprint(path)}
 
 
-def check_dspark(path: Path) -> None:
-    """Stops on what the engine's drafter cannot read: another architecture, or dense tensors no decode kernel reads."""
-    from gguf_reader import GGUFFile
-    if not path.is_file():
-        die(f"missing input: {path}")
-    try:
-        g = GGUFFile(path)
-    except (ValueError, KeyError, struct.error) as e:
-        die(f"{path}: {e}")
-    if g.metadata.get("general.architecture") != "dflash":
-        die(f"{path} is not a DSpark (dflash) drafter GGUF")
-    for t in g.tensors:
-        if t.name == "fc.weight" and t.type_name in ("BF16", "F16", "F32"):
-            die(f"{path}: {t.name} is {t.type_name}, which no decode kernel reads; take the Q8_0 drafter")
-
-
-def dspark_record(path: Path) -> dict:
-    return {"section": "dspark/gguf", "bytes": path.stat().st_size, "architecture": "dflash"}
-
-
-def add_dspark(a) -> None:
-    """--dspark with --into: the drafter joins a pack that exists, whose other sections stay where and as they are."""
+def roll_back(a) -> None:
+    """--roll-back with --into: the pack as it was before a section joined it."""
     pack = Path(a.into)
     if not pack.is_file():
         die(f"missing input: {pack}")
-    if a.roll_back:
-        undo_append(str(pack), a.undo_dir)
-        print(f"done: {pack} is back to {pack.stat().st_size} bytes")
-        return
-    dspark = Path(a.dspark)
-    check_dspark(dspark)
-    m = ModelFile(str(pack))
-    meta = json.loads(m.read("meta"))
-    if meta.get("arch") != "deepseek41":
-        die(f"{pack} is no deepseek41 pack")
-    meta["dspark"] = dspark_record(dspark)
-    meta["sources"].append(source_record(dspark))
-    try:
-        append_section(str(pack), "dspark/gguf", str(dspark), json.dumps(meta, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), a.undo_dir)
-    except (ValueError, FileExistsError) as e:
-        die(str(e))
-    m = ModelFile(str(pack))
-    if not m.verify("dspark/gguf") or not m.verify("meta"):
-        die(f"{pack}: the new sections do not read back as written; --roll-back puts the file back")
-    print(f"done: {pack} is {pack.stat().st_size} bytes, {len(m.names())} sections")
+    undo_append(str(pack), a.undo_dir)
+    print(f"done: {pack} is back to {pack.stat().st_size} bytes")
 
 
 def json_safe(v):
@@ -293,11 +242,6 @@ def convert(a) -> None:
     hf_dir = Path(a.hf_dir) if getattr(a, "hf_dir", None) else None
     if arch.needs_hf_dir != (hf_dir is not None):
         die(f"{arch.name} packs {'need' if arch.needs_hf_dir else 'take no'} --hf-dir")
-    dspark = Path(a.dspark) if getattr(a, "dspark", None) else None
-    if dspark is not None:
-        if not arch.dspark_ok:
-            die(f"{arch.name} packs take no --dspark drafter")
-        check_dspark(dspark)
     mmproj = Path(a.mmproj) if a.mmproj else None
     vision = mmproj is not None and not a.no_vision
     if vision:
@@ -309,9 +253,8 @@ def convert(a) -> None:
             die(f"{mmproj} is not a {arch.projector_type} projector GGUF")
     if a.sections_from:
         base = ModelFile(a.sections_from) if Path(a.sections_from).is_file() else die(f"missing input: {a.sections_from}")
-        if a.mmproj or a.no_vision or getattr(a, "dspark", None):
-            die("--sections-from supplies the drafter and vision sections; do not combine it with "
-                "--mmproj, --dspark or --no-vision")
+        if a.mmproj or a.no_vision:
+            die("--sections-from supplies the drafter and vision sections; do not combine it with --mmproj or --no-vision")
         base_meta = json.loads(base.read("meta"))
 
     err = None
@@ -389,7 +332,7 @@ def convert(a) -> None:
                                      "bytes": size, "offset": 0, "section": section}
             if base is not None:
                 for name in base.names():
-                    if name.startswith(("mtp/", "vision/", "dspark/")):
+                    if name.startswith(("mtp/", "vision/")):
                         off, size = base.section(name)
                         job.file(name, a.sections_from, off, size)
                         if w.entries[-1][3] != base.sections[name][2]:
@@ -403,10 +346,8 @@ def convert(a) -> None:
                 job.bytes("mtp/experts.layout", m_experts.layout_text())
             if vision:
                 job.file("vision/mmproj", mmproj)
-            if dspark is not None:
-                job.file("dspark/gguf", dspark)
 
-            sources = [source_record(p) for p in model.paths + ([mmproj] if vision else []) + ([dspark] if dspark else [])]
+            sources = [source_record(p) for p in model.paths + ([mmproj] if vision else [])]
             meta = {
                 "format": "basalt", "version": 2, "name": a.name,
                 "converter": {"tool": "tools/convert/convert.py"},
@@ -421,8 +362,6 @@ def convert(a) -> None:
                 "vision": base_meta.get("vision") if base is not None else None if not vision else {
                     "mmproj": "vision/mmproj", "mmproj_bytes": mmproj.stat().st_size, "extra": []},
                 **arch.meta_extra(kv, {n: t for n, _, _, _, t in tensors}, own),
-                **({"dspark": dspark_record(dspark)} if dspark else {}),
-                **({"dspark": base_meta["dspark"]} if base is not None and "dspark" in base_meta else {}),
             }
             if mtp_gguf is not None:
                 meta["mtp"] = {"source": "gguf", "layers": mtp_ids, "format": "as stored in the GGUF",
@@ -474,18 +413,6 @@ def convert_bf16(a) -> None:
     hy4flash_bf16.build(a, Job, DryWriter, fingerprint, source_record, source_tensors, export_tokenizer)
 
 
-def from_checkpoint(a) -> None:
-    """--checkpoint with --sections-from: a deepseek41 pack from NVIDIA's DeepSeek-V4.1 NVFP4 checkpoint, the drafter and
-    vision copied from the deepseek41 BASE (tools/convert/checkpoint_deepseek41.py)."""
-    src = Path(a.sections_from)
-    if not src.is_file():
-        die(f"missing input: {src}")
-    if json.loads(ModelFile(str(src)).read("meta")).get("arch") != "deepseek41":
-        die(f"{src} is no deepseek41 pack; --checkpoint with --sections-from takes a deepseek41 BASE")
-    import checkpoint_deepseek41 as D
-    D.build(a, Job, fingerprint, source_record)
-
-
 def checkpoint_model_type(d: Path) -> str | None:
     """The `model_type` of a checkpoint directory's config.json (None when it has none)."""
     cfg = d / "config.json"
@@ -497,20 +424,18 @@ def checkpoint_model_type(d: Path) -> str | None:
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sections-from", metavar="PACK.basalt",
-                    help="with --checkpoint or --gguf: the drafter and vision projector come from this .basalt; everything "
-                         "else from the checkpoint or the GGUF")
+                    help="with --gguf: the drafter and vision projector come from this .basalt; everything else from the GGUF")
     ap.add_argument("--gguf", action="append", metavar="FILE",
                     help="the model's GGUF: shard 1 of a split model (the others are found beside it), or repeat per shard")
     ap.add_argument("--mmproj", help="the vision projector GGUF, stored whole as vision/mmproj (with --nvfp4: required "
                                      "unless --no-vision)")
     ap.add_argument("--hf-dir", metavar="DIR", help="hy_v4_flash: the tencent/Hy4-flash directory (LICENSE, config.json)")
     ap.add_argument("--verify", metavar="PACK.basalt", help="read PACK back against its source --gguf and report; writes nothing")
-    ap.add_argument("--dspark", metavar="FILE", help="deepseek41: the DSpark drafter GGUF, stored whole as dspark/gguf")
     ap.add_argument("--dfly", metavar="FILE", help="hy4flash: the DFly2 drafter's safetensors (model.dfly_layers.*), stored whole as dfly")
     ap.add_argument("--nvfp4", action="store_true",
                     help="hy4flash: from the BF16 GGUF, the routed experts as NVFP4, projections Q8_0, the Engram table E4M3 (needs --hf-dir)")
     ap.add_argument("--dense-q6k", action="store_true", help="with --nvfp4: the attention, shared-expert and dense FFN projections as Q6_K")
-    ap.add_argument("--into", metavar="PACK.basalt", help="with --dspark or --dfly: add it to this pack, whose other sections stay as they are")
+    ap.add_argument("--into", metavar="PACK.basalt", help="with --dfly: add it to this pack, whose other sections stay as they are")
     ap.add_argument("--undo-dir", metavar="DIR", help="with --into: a new directory for what --roll-back restores")
     ap.add_argument("--roll-back", action="store_true", help="with --into and --undo-dir: restore the pack as it was")
     ap.add_argument("--out", help="the .basalt file to write")
@@ -518,48 +443,35 @@ def main():
     ap.add_argument("--compat-bf16", action="store_true",
                     help="convert small projections stored in another form to BF16 (rounds)")
     ap.add_argument("--no-vision", action="store_true")
-    ap.add_argument("--checkpoint", metavar="DIR",
-                    help="a safetensors checkpoint: with a deepseek41 --sections-from, its language model; alone, a whole "
-                         "inkling2 pack")
-    ap.add_argument("--stream-shards", action="store_true",
-                    help="with --checkpoint and a deepseek41 --sections-from: shards arrive in file order and are deleted once used")
+    ap.add_argument("--checkpoint", metavar="DIR", help="an Inkling 2 safetensors checkpoint (inkling2_loop): a whole inkling2 pack")
     ap.add_argument("--workers", type=int, default=16, help="with --checkpoint: converter processes")
     ap.add_argument("--force", action="store_true", help="overwrite --out")
     ap.add_argument("--dry-run", action="store_true",
                     help="with --gguf: print every section's offset and size and write nothing")
     a = ap.parse_args()
     if a.into or a.roll_back or a.undo_dir:
-        if not a.into or not a.undo_dir or bool(a.dspark) + bool(a.dfly) + a.roll_back != 1 or a.out or a.gguf or a.sections_from or a.checkpoint:
-            ap.error("--into takes --undo-dir and one of --dspark, --dfly or --roll-back, and nothing else")
+        if not a.into or not a.undo_dir or bool(a.dfly) + a.roll_back != 1 or a.out or a.gguf or a.sections_from or a.checkpoint:
+            ap.error("--into takes --undo-dir and one of --dfly or --roll-back, and nothing else")
         if a.dfly:
             from dfly_attach import add_dfly
             add_dfly(a, source_record)
         else:
-            add_dspark(a)
+            roll_back(a)
         return
     if a.dfly and not a.nvfp4:
         ap.error("--dfly takes --into and --undo-dir, or --nvfp4")
     if a.dense_q6k and not a.nvfp4:
         ap.error("--dense-q6k needs --nvfp4")
     if a.verify:
-        if not a.gguf or a.out or a.sections_from or a.checkpoint or a.dspark:
+        if not a.gguf or a.out or a.sections_from or a.checkpoint:
             ap.error("--verify takes --gguf and nothing else")
         import verify_pack
         sys.exit(0 if verify_pack.verify(a.verify, a.gguf[0], a.workers) else 1)
     if not a.out:
         ap.error("--out is required")
-    if a.dspark and (a.checkpoint or a.sections_from):
-        ap.error("--dspark goes with --gguf")
-    if a.sections_from and a.checkpoint:
-        if a.gguf or a.mmproj or a.dry_run:
-            ap.error("--checkpoint with --sections-from takes only --out, --name, --stream-shards, --workers and --force")
-        if not Path(a.checkpoint).is_dir():
-            ap.error(f"missing input: {a.checkpoint}")
-        from_checkpoint(a)
-        return
     if a.checkpoint:
-        if a.gguf or a.mmproj or a.stream_shards or a.dry_run:
-            ap.error("--checkpoint without --sections-from takes only --out, --name, --workers and --force")
+        if a.gguf or a.mmproj or a.sections_from or a.dry_run:
+            ap.error("--checkpoint takes only --out, --name, --workers and --force")
         if not Path(a.checkpoint).is_dir():
             ap.error(f"missing input: {a.checkpoint}")
         model_type = checkpoint_model_type(Path(a.checkpoint))
@@ -568,14 +480,12 @@ def main():
         import checkpoint_inkling2 as I
         I.build(a, Job, fingerprint, die)
         return
-    if a.stream_shards:
-        ap.error("--stream-shards needs --checkpoint and --sections-from")
     if not a.gguf:
         ap.error("--gguf is required")
     if not Path(a.gguf[0]).is_file():
         ap.error(f"missing input: {a.gguf[0]}")
     if a.nvfp4:
-        if a.sections_from or a.dspark:
+        if a.sections_from:
             ap.error("--nvfp4 takes --gguf, --hf-dir, --mmproj, --dfly, --dense-q6k, --name, --workers, --dry-run, --no-vision and --force")
         if source_architecture(Path(a.gguf[0])) != "hy_v4_flash" or not a.hf_dir:
             ap.error("--nvfp4 takes a hy_v4_flash BF16 GGUF and --hf-dir")

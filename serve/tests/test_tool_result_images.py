@@ -1,5 +1,5 @@
-"""Images in tool results through real handlers, on every API and every chat dialect: they reach the prompt in message
-order, under the same image-source policy as a user's images; what cannot be placed is refused and logged."""
+"""Images in tool results through real handlers, on every API: they reach the prompt in message order, under the same
+image-source policy as a user's images; what cannot be placed is refused and logged."""
 from __future__ import annotations
 
 import base64
@@ -18,8 +18,6 @@ from serve.engine.mock import MockEngine
 from serve.engine.vision import Vision
 from serve.frontend import ChatTemplate, anthropic_to_messages, images_of, mark_think_literals, openai_to_messages
 from serve.handler import serve
-from serve.models import deepseek41_encoding as enc
-from serve.models.deepseek41 import DeepSeek41, DeepseekTemplate
 from serve.service import Service
 from serve.util.text import ByteTokenizer
 
@@ -43,22 +41,7 @@ class Qwen:
     service_args = {}
 
 
-class DeepseekTokenizer(ByteTokenizer):
-    SPECIALS = ByteTokenizer.SPECIALS + [enc.IMAGE_PLACEHOLDER, enc.bos_token, enc.eos_token, enc.USER_SP_TOKEN,
-                                         enc.ASSISTANT_SP_TOKEN, enc.SYSTEM_SP_TOKEN]
-
-
-class Deepseek:
-    name = "deepseek41"
-    tok = DeepseekTokenizer()
-    pad = enc.IMAGE_PLACEHOLDER
-    quoted = pad + pad
-    result_open, result_close = "<tool_result>", "</tool_result>"
-    template = DeepseekTemplate()
-    service_args = {"dialect": DeepSeek41()}
-
-
-DIALECTS = [Qwen, Deepseek]
+DIALECTS = [Qwen]
 
 
 class RecordingVision(Vision):

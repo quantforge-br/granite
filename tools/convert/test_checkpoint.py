@@ -73,36 +73,6 @@ class Nvfp4RepackTest(unittest.TestCase):
         self.assertEqual(got.size, 5 * S.nvfp4_row_bytes(128))
         np.testing.assert_array_equal(basalt_values(got, 128), modelopt_values(codes, scales))
 
-    def test_expert_blob_and_tail(self):
-        rng = np.random.default_rng(1)
-        h, ff = 128, 64
-        with tempfile.TemporaryDirectory() as tmp:
-            p = Path(tmp) / "x.safetensors"
-            tens, want = {}, []
-            shapes = {"gate_proj": (ff, h), "up_proj": (ff, h), "down_proj": (h, ff)}
-            for i, (r, (rows, cols)) in enumerate(shapes.items()):
-                w = rng.integers(0, 256, size=(rows, cols // 2), dtype=np.uint8)
-                s = rng.integers(1, 0x7F, size=(rows, cols // 16), dtype=np.uint8)
-                tens[f"{r}.weight"] = ("U8", w.shape, w.tobytes())
-                tens[f"{r}.weight_scale"] = ("F8_E4M3", s.shape, s.tobytes())
-                tens[f"{r}.weight_scale_2"] = ("F32", (), np.float32(0.5 + i).tobytes())
-                want.append(C.nvfp4_rows(w, s).tobytes())
-            write_safetensors(p, tens)
-            head, base = S.read_safetensors_header(p)
-            ent = []
-            for r, (rows, cols) in shapes.items():
-                ent.append(((p, base + head[f"{r}.weight"]["data_offsets"][0], [rows, cols // 2]),
-                            (p, base + head[f"{r}.weight_scale"]["data_offsets"][0], [rows, cols // 16]),
-                            (p, base + head[f"{r}.weight_scale_2"]["data_offsets"][0])))
-            blob = C._expert_job(([ent, ent], 2))
-            one = b"".join(want) + np.array([0.5, 1.5, 2.5, 0], "<f4").tobytes()
-            self.assertEqual(blob, one + one)
-            # a scale byte with the sign bit set is refused
-            raw = bytearray(p.read_bytes())
-            raw[base + head["up_proj.weight_scale"]["data_offsets"][0]] |= 0x80
-            p.write_bytes(bytes(raw))
-            self.assertIsInstance(C._expert_job(([ent], 1)), str)
-
 
 class TruncationTest(unittest.TestCase):
     def test_short_file_is_refused(self):
@@ -155,53 +125,6 @@ class TokenizerKvTest(unittest.TestCase):
             (d / "tokenizer.json").write_text(json.dumps(tj))
             with self.assertRaises(S.ConvertError):
                 C.tokenizer_kv(C.Checkpoint(d), "test", SPLIT)
-
-
-def csf_encode(scales: np.ndarray):
-    """The CSF stream pair of scale bytes [rows, cols]: a row's base is the start of its fullest 16-wide window (at
-    most 240); a byte outside base..base+15 becomes an exception word."""
-    rows, cols = scales.shape
-    base = np.zeros(rows, np.int16)
-    for r in range(rows):
-        v = scales[r].astype(np.int16)
-        counts = [int(((v >= b) & (v <= b + 15)).sum()) for b in range(int(v.min()), int(v.max()) + 1)]
-        base[r] = min(int(v.min()) + int(np.argmax(counts)), 240)
-    code = scales.astype(np.int16) - base[:, None]
-    exc = (code < 0) | (code > 15)
-    code = np.where(exc, 0, code).astype(np.uint8)
-    packed = code[:, 0::2] | (code[:, 1::2] << 4)
-    fixed = np.concatenate([base.reshape(-1, 16).astype(np.uint8), packed.reshape(rows // 16, -1)], axis=1)
-    pos = np.flatnonzero(exc)
-    return fixed, (pos | scales.reshape(-1)[pos].astype(np.int64) << 24).astype(np.uint32)
-
-
-class CsfTest(unittest.TestCase):
-    def test_round_trip(self):
-        rng = np.random.default_rng(3)
-        scales = (rng.integers(0, 16, size=(48, 40)) + rng.integers(20, 90, size=(48, 1))).astype(np.uint8)
-        for r, c, b in ((5, 7, 0), (30, 0, 126), (47, 39, 1)):         # outside their rows' windows
-            scales[r, c] = b
-        fixed, exc = csf_encode(scales)
-        self.assertEqual((fixed.shape, exc.size), ((3, 16 + 8 * 40), 3))
-        np.testing.assert_array_equal(C.csf_decode(fixed, exc), scales)
-
-    def test_by_hand(self):
-        fixed = np.zeros((1, 32), np.uint8)                            # 16 rows of 2 scales
-        fixed[0, :16] = 40                                             # every row's base
-        fixed[0, 16] = 0x21                                            # row 0: codes 1, 2
-        fixed[0, 17] = 0xF0                                            # row 1: codes 0, 15
-        got = C.csf_decode(fixed, np.array([3 | 7 << 24], np.uint32))  # row 1, column 1 holds 7
-        self.assertEqual(got[:2].tolist(), [[41, 42], [40, 7]])
-        self.assertTrue((got[2:] == 40).all())
-
-    def test_bad_streams_are_refused(self):
-        fixed, exc = csf_encode(np.full((16, 4), 50, np.uint8))
-        high = fixed.copy()
-        high[0, 3] = 241
-        for f, x, want in ((high, exc, "above 240"), (fixed, np.array([16 * 4], np.uint32), "past the end"),
-                           (fixed[:, :-8], exc, "shape"), (fixed.reshape(-1), exc, "shape")):
-            with self.subTest(want=want), self.assertRaisesRegex(S.ConvertError, want):
-                C.csf_decode(f, x)
 
 
 if __name__ == "__main__":

@@ -97,7 +97,7 @@ times the slots plus the shared scratch once, so more slots cost only their cach
 ## Models on the driver
 
 The goal is no separate batching paths: every model batches through the shared driver and the shared engine, for
-consistency. Inkling 2 Mini, Hy4-flash and DeepSeek-V4.1-Flash are on it.
+consistency. Inkling 2 Mini and Hy4-flash are on it.
 
 ## Retrofits
 
@@ -142,30 +142,6 @@ How each model below went onto the driver: its state, the kernels that read it, 
 - **Experts:** one tier shared by every session. Most decode time goes to experts on the bus and in RAM, so the MoE caveat
   below decides whether more rows pay.
 
-### DeepSeek-V4.1-Flash
-
-- **State:** the window ring, the compressed KV rows and index keys of the kv-source layers, and the compressor's partial-group
-  state (`st_kv`, `st_sc`): order-dependent, so a segment's rows update its own state in order, like a recurrence. Engram as
-  Hy4.
-- **Kernels:** the compressor and the indexer take segments the way GDN does (`dec_gdn_rec_seg`: each segment from its own
-  state); the window and compressed attention take per-segment caches.
-- **On the driver:** the session derives `BatchSession`, `batch_rows` 8 (a decode window's `kMaxT`), `batch_captured` false
-  (the host places experts layer by layer, so the forward runs directly every window). Per segment: the attention through
-  that session's own ops (caches, ring, compressor state: the same call as its solo window of that many rows), the Engram
-  reads and projection, the DSpark feature rows. Every row: the mixes, norms, router, shared and routed experts and the
-  head. `draft_batch` runs each session's DSpark block in turn (one shared drafter) and holds its drafts for `draft_end`.
-- **Experts:** mostly in RAM and in the file on most machines. On two cards batching is slower than the windows in turn
-  were (the MoE caveat below): a batch's rows reach a wider union of RAM experts, and the 8-row cap trims each slot's
-  drafts. That is a limit of the hardware, accepted for one batching path. Two cards (400 W RTX 5090 + 180 W RTX 5060 Ti),
-  drafted, tiers unfrozen, 256 tokens a slot, aggregate tok/s, ABBA (main: windows in turn):
-
-| Slots | Main, in turn (A1 / A2) | Batched (B1 / B2) | Change |
-| --- | --- | --- | --- |
-| 1 | 89.3 / 87.0 | 87.0 / 92.8 | none: one slot runs its solo window, the same code |
-| 2 | 85.0 / 82.7 | 85.4 / 80.4 | -1.1% |
-| 4 | 71.5 / 70.0 | 63.8 / 62.1 | -11.0% |
-| 8 | 76.9 / 77.2 | 54.6 / 51.1 | -31.4% |
-
 ## The MoE caveat
 
 Rows from different conversations route independently. With k of E experts a row, R independent rows touch about
@@ -175,11 +151,9 @@ rows.
 
 - **Experts on the card:** a window's cost is mostly fixed (launches, dense weights, attention); the union grows the expert
   reads only. Inkling's decode is far from the card's bandwidth at one row, so a batch is close to free.
-- **Experts in RAM (Hy4, DeepSeek):** a RAM expert costs a bus copy or a CPU product per distinct expert touched, and the CPU
+- **Experts in RAM (Hy4):** a RAM expert costs a bus copy or a CPU product per distinct expert touched, and the CPU
   cost grows with its rows. The union grows those directly, so a batch costs close to linear in its slots where most routed
-  pairs land in RAM. Such a model still batches every round, through the same path: on DeepSeek with two cards four
-  slots batched took CPU lookups from 13.3% to 17.6% of routed pairs and tier drops from 5.0K to 38.8K a run, and runs
-  slower than its windows in turn did (the table under DeepSeek-V4.1-Flash).
+  pairs land in RAM. Such a model still batches every round, through the same path.
 
 ## Lossless identity
 

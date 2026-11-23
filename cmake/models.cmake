@@ -10,11 +10,6 @@ set(BASALT_BUILTIN_MODELS inkling2)
 # every newer model out.
 set(BASALT_MODELS "inkling2" CACHE STRING
     "Models to build: all, or a semicolon list from: ${BASALT_BUILTIN_MODELS}")
-# A folder configured before "all" holds the list that was then the default (0.4.x): it meant every model.
-if(BASALT_MODELS STREQUAL "qwen4exp;deepseek41;qwen35")
-  message(STATUS "basalt: BASALT_MODELS held 0.4's default list (every model then); it is now 'all'")
-  set(BASALT_MODELS "all" CACHE STRING "Models to build: all, or a semicolon list from: ${BASALT_BUILTIN_MODELS}" FORCE)
-endif()
 # The resolved list, as a normal variable over the cache entry for the rest of the configure.
 if(BASALT_MODELS STREQUAL "all")
   set(BASALT_MODELS ${BASALT_BUILTIN_MODELS})

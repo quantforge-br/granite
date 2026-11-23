@@ -4,7 +4,7 @@ FILE is a safetensors file holding the drafter's tensors (`model.dfly_layers.*`,
 tencent/Hy4-flash, or the side file extracted from the checkpoint. It is stored whole; meta.dfly2 records where each tensor
 lies (offsets from the start of the section), the drafter's settings from the pack's own meta.hf_config (config.json
 `dfly_*` keys) and the shapes the engine checks. Tensors of the file that are not the drafter's are left unread.
-Like --dspark: no other section moves, and --roll-back restores the pack bit for bit.
+No other section moves, and --roll-back restores the pack bit for bit.
 """
 from __future__ import annotations
 

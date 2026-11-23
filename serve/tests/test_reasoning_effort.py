@@ -1,5 +1,5 @@
 """Reasoning effort from llama.cpp-protocol clients: /props chat_template_caps, reasoning_budget, preserve_reasoning, and the
-effort vocabulary rendered by both models' templates. No engine, no pack."""
+effort vocabulary rendered by the chat template. No engine, no pack."""
 from __future__ import annotations
 
 import http.client
@@ -10,10 +10,11 @@ from pathlib import Path
 from serve.engine.mock import MockEngine
 from serve.frontend import ChatTemplate, anthropic_to_messages, openai_to_messages
 from serve.handler import serve
-from serve.models.deepseek41 import DeepSeek41, DeepseekTemplate
+from serve.models.inkling2 import Inkling2
 from serve.models.qwen import Qwen
 from serve.router import Router
 from serve.service import Service
+from serve.tests.test_inkling2_dialect import service as inkling2_service
 from serve.util.text import ByteTokenizer
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,12 +31,6 @@ def qwen_service():
     tok = ByteTokenizer()
     return Service(MockEngine(tok, "</think>ok", max_context=4096), tok, ChatTemplate.from_file(TEMPLATE),
                    model_name="qwen", dialect=Qwen())
-
-
-def deepseek_service():
-    tok = ByteTokenizer()
-    return Service(MockEngine(tok, "</think>ok", max_context=4096), tok, DeepseekTemplate(), model_name="ds",
-                   dialect=DeepSeek41())
 
 
 def harness_body(effort, caps=None, preserve=False):
@@ -60,7 +55,7 @@ def harness_body(effort, caps=None, preserve=False):
 
 class Caps(unittest.TestCase):
     def test_each_dialect_names_every_capability(self):
-        for dialect in (Qwen(), DeepSeek41()):
+        for dialect in (Qwen(), Inkling2()):
             self.assertEqual(set(dialect.caps), set(CAP_NAMES), dialect.name)
             self.assertTrue(all(isinstance(v, bool) for v in dialect.caps.values()))
 
@@ -70,15 +65,9 @@ class Caps(unittest.TestCase):
             self.assertIn(needle, source)
         self.assertTrue(all(Qwen.caps.values()))
 
-    def test_deepseek_caps_are_what_its_encoder_has(self):
-        from serve.models import deepseek41_encoding as enc
-        self.assertIn("drop_thinking", enc.encode_messages.__code__.co_varnames)
-        self.assertIn("reasoning_effort", enc.encode_messages.__code__.co_varnames)
-        self.assertTrue(all(DeepSeek41.caps.values()))
-
     def test_props_reports_the_shown_and_named_models_caps(self):
-        qwen, ds = qwen_service(), deepseek_service()
-        router = Router([qwen, ds])
+        qwen, ink = qwen_service(), inkling2_service()
+        router = Router([qwen, ink])
         httpd = serve(router, port=0)
         try:
             def props(path):
@@ -90,7 +79,7 @@ class Caps(unittest.TestCase):
                 finally:
                     c.close()
             self.assertEqual(props("/props?model=qwen")[1]["chat_template_caps"], Qwen.caps)
-            self.assertEqual(props("/props?model=ds")[1]["chat_template_caps"], DeepSeek41.caps)
+            self.assertEqual(props("/props?model=ink")[1]["chat_template_caps"], Inkling2.caps)
             self.assertEqual(props("/props")[1]["chat_template_caps"], Qwen.caps)
             self.assertEqual(props("/props?model=nope")[0], 404)
         finally:
@@ -205,14 +194,10 @@ class Budget(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.kw(chat_template_kwargs={"preserve_reasoning": "yes"})
 
-    def test_preserve_reaches_each_template(self):
-        for svc, kept, dropped in ((qwen_service(), True, False), (deepseek_service(), True, False)):
-            msgs = HISTORY
-            with self.subTest(model=svc.model):
-                yes = svc.render_prompt(msgs, None, {"preserve_reasoning": True})
-                no = svc.render_prompt(msgs, None, {"preserve_reasoning": False})
-                self.assertIn("THOUGHT-ONE", yes)
-                self.assertNotIn("THOUGHT-ONE", no)
+    def test_preserve_reaches_the_template(self):
+        svc = qwen_service()
+        self.assertIn("THOUGHT-ONE", svc.render_prompt(HISTORY, None, {"preserve_reasoning": True}))
+        self.assertNotIn("THOUGHT-ONE", svc.render_prompt(HISTORY, None, {"preserve_reasoning": False}))
 
 
 class Vocabulary(unittest.TestCase):
@@ -222,18 +207,17 @@ class Vocabulary(unittest.TestCase):
         msgs, tools, kw = openai_to_messages({"messages": HISTORY[:1], "reasoning_effort": effort})
         return svc.render_prompt(msgs, tools, kw)
 
-    def test_every_accepted_effort_renders_on_both_models(self):
-        for svc in (qwen_service(), deepseek_service()):
-            for effort in self.ACCEPTED:
-                with self.subTest(model=svc.model, effort=effort):
-                    self.assertTrue(self.render(svc, effort))
+    def test_every_accepted_effort_renders(self):
+        svc = qwen_service()
+        for effort in self.ACCEPTED:
+            with self.subTest(effort=effort):
+                self.assertTrue(self.render(svc, effort))
 
     def test_minimal_is_off_without_the_level(self):
-        for svc in (qwen_service(), deepseek_service()):
-            msgs, tools, kw = openai_to_messages({"messages": HISTORY[:1], "reasoning_effort": "minimal"})
-            self.assertEqual(svc.thinking_kwargs(kw), {"enable_thinking": False}, svc.model)
-            self.assertEqual(svc.render_prompt(msgs, tools, kw),
-                             svc.render_prompt(msgs, tools, {"enable_thinking": False}), svc.model)
+        svc = qwen_service()
+        msgs, tools, kw = openai_to_messages({"messages": HISTORY[:1], "reasoning_effort": "minimal"})
+        self.assertEqual(svc.thinking_kwargs(kw), {"enable_thinking": False})
+        self.assertEqual(svc.render_prompt(msgs, tools, kw), svc.render_prompt(msgs, tools, {"enable_thinking": False}))
 
     def test_qwen_levels(self):
         svc = qwen_service()
@@ -241,69 +225,55 @@ class Vocabulary(unittest.TestCase):
             self.assertIn(f"Reasoning effort is set to {word}", self.render(svc, effort), effort)
         self.assertNotIn("Reasoning effort is set to", self.render(svc, "medium"))     # medium is the model's own
 
-    def test_deepseek_levels(self):
-        svc = deepseek_service()
-        for effort, n in (("low", 50), ("medium", 75), ("high", 75), ("xhigh", 100), ("max", 100), ("40", 40)):
-            self.assertIn(f"Reasoning Effort: {n} ", self.render(svc, effort), effort)
-        self.assertNotIn("Reasoning Effort", self.render(svc, "none"))
-        self.assertEqual(self.render(svc, "medium"), self.render(svc, "high"))      # medium is the model's own, high
-
-    def test_a_number_is_deepseeks_alone(self):
+    def test_qwen_takes_no_number(self):
         with self.assertRaises(ValueError):
             self.render(qwen_service(), "40")
         with self.assertRaises(ValueError):
             openai_to_messages({"messages": HISTORY, "reasoning_effort": "huge"})
 
     def test_anthropic_and_responses_efforts_render(self):
-        for svc in (qwen_service(), deepseek_service()):
-            for effort in ("low", "medium", "high", "xhigh", "max"):
-                msgs, tools, kw = anthropic_to_messages({"messages": HISTORY[:1], "output_config": {"effort": effort}})
-                self.assertTrue(svc.render_prompt(msgs, tools, kw), (svc.model, effort))
+        svc = qwen_service()
+        for effort in ("low", "medium", "high", "xhigh", "max"):
+            msgs, tools, kw = anthropic_to_messages({"messages": HISTORY[:1], "output_config": {"effort": effort}})
+            self.assertTrue(svc.render_prompt(msgs, tools, kw), effort)
 
 
 class HarnessReplay(unittest.TestCase):
     """The body quecto-harness sends, with and without the caps /props reports, renders the effort it asked for."""
-    WANT = {"qwen": {"xhigh": "effort is set to xhigh", "high": "effort is set to xhigh", "medium": "",
-                     "low": "effort is set to low"},
-            "ds": {"xhigh": "Reasoning Effort: 100 ", "high": "Reasoning Effort: 75 ", "medium": "Reasoning Effort: 75 ",
-                   "low": "Reasoning Effort: 50 "}}
+    WANT = {"xhigh": "effort is set to xhigh", "high": "effort is set to xhigh", "medium": "", "low": "effort is set to low"}
 
     def prompt(self, svc, body):
         msgs, tools, kw = openai_to_messages(body)
         return svc.render_prompt(msgs, tools, kw)
 
     def test_efforts_with_and_without_caps(self):
-        for svc in (qwen_service(), deepseek_service()):
-            caps = svc.dialect.caps
-            for with_caps in (None, caps):
-                for effort in ("low", "medium", "high", "xhigh"):
-                    with self.subTest(model=svc.model, effort=effort, caps=with_caps is not None):
-                        body = harness_body(effort, with_caps)
-                        # without caps the harness sends 2048 / 8192 / -1 tokens: low, medium, the highest
-                        sent = effort if with_caps else {"low": "low", "medium": "medium", "high": "xhigh", "xhigh": "xhigh"}[effort]
-                        want = self.WANT[svc.model][sent]
-                        prompt = self.prompt(svc, body)
-                        self.assertIn(want, prompt)
-                        if not want:                                    # Qwen's medium: no effort sentence
-                            self.assertNotIn("effort is set to", prompt)
+        svc = qwen_service()
+        for with_caps in (None, svc.dialect.caps):
+            for effort in ("low", "medium", "high", "xhigh"):
+                with self.subTest(effort=effort, caps=with_caps is not None):
+                    body = harness_body(effort, with_caps)
+                    # without caps the harness sends 2048 / 8192 / -1 tokens: low, medium, the highest
+                    sent = effort if with_caps else {"low": "low", "medium": "medium", "high": "xhigh", "xhigh": "xhigh"}[effort]
+                    want = self.WANT[sent]
+                    prompt = self.prompt(svc, body)
+                    self.assertIn(want, prompt)
+                    if not want:                                    # Qwen's medium: no effort sentence
+                        self.assertNotIn("effort is set to", prompt)
 
     def test_off_with_and_without_caps(self):
-        for svc in (qwen_service(), deepseek_service()):
-            for with_caps in (None, svc.dialect.caps):
-                with self.subTest(model=svc.model, caps=with_caps is not None):
-                    msgs, tools, kw = openai_to_messages(harness_body("off", with_caps))
-                    self.assertEqual(kw.get("enable_thinking"), False)
-                    self.assertNotIn("reasoning_effort", kw)
-                    prompt = svc.render_prompt(msgs, tools, kw)
-                    self.assertNotIn("Reasoning Effort", prompt)
-                    self.assertNotIn("effort is set", prompt)
+        svc = qwen_service()
+        for with_caps in (None, svc.dialect.caps):
+            with self.subTest(caps=with_caps is not None):
+                msgs, tools, kw = openai_to_messages(harness_body("off", with_caps))
+                self.assertEqual(kw.get("enable_thinking"), False)
+                self.assertNotIn("reasoning_effort", kw)
+                self.assertNotIn("effort is set", svc.render_prompt(msgs, tools, kw))
 
     def test_preserve_follows_the_caps(self):
-        for svc in (qwen_service(), deepseek_service()):
-            with self.subTest(model=svc.model):
-                self.assertIn("THOUGHT-ONE", self.prompt(svc, harness_body("xhigh", svc.dialect.caps, preserve=True)))
-                self.assertNotIn("THOUGHT-ONE", self.prompt(svc, harness_body("xhigh", svc.dialect.caps, preserve=False)))
-                self.assertEqual(svc.dialect.caps["supports_preserve_reasoning"], True)
+        svc = qwen_service()
+        self.assertIn("THOUGHT-ONE", self.prompt(svc, harness_body("xhigh", svc.dialect.caps, preserve=True)))
+        self.assertNotIn("THOUGHT-ONE", self.prompt(svc, harness_body("xhigh", svc.dialect.caps, preserve=False)))
+        self.assertEqual(svc.dialect.caps["supports_preserve_reasoning"], True)
 
 
 if __name__ == "__main__":

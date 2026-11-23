@@ -1,7 +1,6 @@
 # GPUs
 
-Flash-Next uses every mechanism on this page. DeepSeek takes up to four second cards as expert tiers and nothing else, each
-holding the experts of its own block of layers ([DeepSeek memory](../models/deepseek41.md#memory)).
+Flash-Next uses every mechanism on this page.
 Inkling 2 Mini runs two alike cards with peer access as one tensor-parallel pair, half of every expert on each
 ([Inkling 2 Mini](../models/inkling2.md#two-cards)).
 
@@ -118,7 +117,6 @@ kernel. What such a peer does and does not do:
 - It reads its experts' share of a prompt chunk, under the slower-card rule above (chunks up to 2,559 rows).
 - It does not run the main card's work: the dense weights, the KV cache, the drafter, TMA and the FP4 tensor-core
   expert kernels stay on the Blackwell card. An NVFP4 pack's FP4 experts are main-card only.
-- DeepSeek does not take an older peer: its peer-tier kernels are built for sm_120 only, and the start says so.
 - Layer split, overlapped windows and tensor parallel need matched Blackwell cards; an unlike pair always uses the
   expert tier, as before.
 

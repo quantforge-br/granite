@@ -28,8 +28,6 @@ class Arch:
     projector_type = ""
     # needs the model's Hugging Face directory (--hf-dir) for its license text and config.json
     needs_hf_dir = False
-    # takes a DSpark drafter GGUF (--dspark) as the dspark/gguf section
-    dspark_ok = False
     # the model's sampling defaults, for a GGUF that does not carry them (llama.cpp's general.sampling.* keys)
     sampling_kv: dict = {}
 
@@ -72,5 +70,5 @@ def register(arch: Arch, *names: str) -> None:
 
 def for_architecture(name) -> Arch:
     """The rules for `general.architecture`; KeyError for an architecture without them."""
-    from . import deepseek41, hy4flash  # noqa: F401  (register themselves)
+    from . import hy4flash  # noqa: F401  (registers itself)
     return REGISTRY[name]

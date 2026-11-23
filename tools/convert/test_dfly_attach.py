@@ -68,7 +68,7 @@ class DflyAttachTest(unittest.TestCase):
         sec = m.read("dfly")
         for name, t in rec["tensors"].items():
             self.assertEqual(sec[t["offset"]:t["offset"] + t["bytes"]], bf16(6, self.names.index(dfly_attach.PREFIX + name)))
-        convert.add_dspark(type("A", (), dict(into=str(self.pack), dspark=None, undo_dir=str(self.t / "undo"), roll_back=True))())
+        convert.roll_back(type("A", (), dict(into=str(self.pack), undo_dir=str(self.t / "undo")))())
         self.assertEqual(sorted(ModelFile(str(self.pack)).names()), sorted(before.names()))
 
     def test_the_released_config_keeps_the_dfly_keys_at_its_top_level(self):

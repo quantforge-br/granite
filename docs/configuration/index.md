@@ -30,7 +30,7 @@ A config file is one JSON object. `models` lists the models; `engine` applies to
   `engine` (an engine flag) the same places, `model entry` a model entry only.
 - Keys are flag names without dashes. Switches are `true`. A repeatable option (`allowed-host`, `cors-origin`, `image-url-host`,
   `image-dir`) takes a list. `model` paths are relative to the file.
-- A row that names its models (Flash-Next only, DeepSeek only, ...) stops the start in a model entry or on the command line of another model; in the top-level `engine` it is left out for that model, with a start line ([checks at start](models.md#checks-at-start)).
+- A row that names its models (Flash-Next only, ...) stops the start in a model entry or on the command line of another model; in the top-level `engine` it is left out for that model, with a start line ([checks at start](models.md#checks-at-start)).
 - Precedence: command line, then config file, then defaults; `--model` and `--alias` do not go with `--config` (its entries name the models).
   A wrong block or an unknown name stops the start. `api-key` cannot be in a file.
 - The defaults are the fastest settings that need no knowledge of the machine. The keys that change output or memory (8,192 context,
@@ -91,7 +91,7 @@ Command line `--name`; the Where column says which config block takes it.
 | Setting | Where | Type, values | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `max-context` | engine | tokens | 8192 | Longest context. Shared by `parallel` slots. The KV cache grows with it. |
-| `kv` | engine | Flash-Next: `fp16`, `int8`, `q4_0`, `k8v4`; DeepSeek: `fp8`, `fp16`; Inkling 2 Mini: `fp16`, `fp8` | Flash-Next `fp16`, DeepSeek `fp8`, Inkling 2 Mini `fp16` | KV storage. Flash-Next: `int8` halves VRAM; `q4_0` is 4-bit after rotation; `k8v4` keeps K int8 and V 4-bit (816 bytes per cell against `int8`'s 1,056); not with `kv-resident`. DeepSeek: `fp8` rounds as the model's reference (FP8 window rows, FP4 compressed rows and index keys, 920 bytes per position); `fp16` keeps the unrounded values (3,200 bytes per position). Inkling 2 Mini: `fp8` halves the full-attention caches (E4M3, unit scale; [guide](../models/inkling2.md#memory)). A model refuses the other's values. |
+| `kv` | engine | Flash-Next: `fp16`, `int8`, `q4_0`, `k8v4`; Inkling 2 Mini: `fp16`, `fp8` | Flash-Next `fp16`, Inkling 2 Mini `fp16` | KV storage. Flash-Next: `int8` halves VRAM; `q4_0` is 4-bit after rotation; `k8v4` keeps K int8 and V 4-bit (816 bytes per cell against `int8`'s 1,056); not with `kv-resident`. Inkling 2 Mini: `fp8` halves the full-attention caches (E4M3, unit scale; [guide](../models/inkling2.md#memory)). A model refuses the other's values. |
 | `kv-resident` | engine | cells (Flash-Next: min 20,480) or `0` | 0 | Flash-Next only. Keep N cells of KV in VRAM and the rest in pinned RAM. Flash-Next: with `parallel` and `kv` `int8`, every slot streams its own K/V this way. |
 | `rope-scaling` | engine | `none`, `linear`, `yarn` | model's, else `none` | Flash-Next only. Extend past the trained length. Fixed for the run, and it changes every position's rotation, short prompts too. |
 | `rope-scale` | engine | number | model's, else 1 | Flash-Next only. Factor for `linear` and `yarn`. |
@@ -127,7 +127,6 @@ Command line `--name`; the Where column says which config block takes it.
 | `prefill` | engine | `auto`, `auto:N` (N = 8192, 16384 or 32768), or tokens | `auto` | Flash-Next only. Prompt chunk size. |
 | `prefill-cpu-share` | engine | 0 to 1 | 0.6 | Flash-Next only. Share of streamed prompt experts the CPU computes. Fixed, so output is the same run to run. |
 | `short-read` | engine | tokens | 64 (`0` = off) | Flash-Next only. A fresh part of at most N tokens is read through decode windows. |
-| `no-prompt-skip` | engine | switch | off | DeepSeek only. Run every row through every layer. Slower; the same math. [precision](../precision/deepseek41.md#prompt-skip) |
 | `no-peer-prefill` | engine | switch | off | Flash-Next only. The peer card computes none of the prompt rows; the prompt stays on the main card. |
 
 ## Drafting
@@ -137,7 +136,6 @@ Unless `relaxed-drafting` is on, output is exactly plain decoding's.
 | Setting | Where | Type, values | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `spec` | engine | integer | 8 (MTP), 6 (DSpark), 8 (Inkling 2 Mini's DSpark), else 0 | Verify windows of at most N tokens. `0` or `1` turns it off. |
-| `draft-experts` | engine | 32, 64, 96, 128, or 0 | 32 | DeepSeek only. Experts each drafter stage keeps (`0` = all 128). |
 | `suffix-draft` | engine | tokens | 3 (`0` = the drafter only) | Flash-Next only. Prompt lookup: fill a window from an earlier repeat of at least N tokens. Its index takes host RAM by `max-context`: 64 MiB per slot at 262,144 tokens. |
 | `mtp-max-t` | engine | integer | 0 (= `spec`) | Flash-Next only. Caps the MTP's own windows. |
 | `mtp-window` | engine | cells | 32768 (`0` = all) | Flash-Next only. The drafter attends to the last N cells. |
