@@ -62,6 +62,7 @@ const char* name_of(int t) {
         case 17: return "IQ2_XS";
         case 18: return "IQ3_XXS";
         case 20: return "IQ4_NL";
+        case 39: return "MXFP4";
         case 21: return "IQ3_S";
         case 22: return "IQ2_S";
         case 23: return "IQ4_XS";
@@ -75,7 +76,7 @@ const char* name_of(int t) {
         default: return "?";
     }
 }
-int block_values(int t) { return t == 20 || t == 7 || t == 8 ? 32 : t == 42 || t == 40 ? 64 : 256; }
+int block_values(int t) { return t == 20 || t == 39 || t == 7 || t == 8 ? 32 : t == 42 || t == 40 ? 64 : 256; }
 // A UE4M3 sub-block scale byte.  Profile 0: exponent 1..4 (small blocks).  Profile 1: exponent 6..14, block values in
 // the hundreds as the packs' are (their tails are 1e-5..1e-4).  Profile 2: profile 1 with the odd bytes mixed in: 0x7F
 // (the NaN code, decoded as 0), the sign bit set (ignored), zero and subnormals.
@@ -119,6 +120,10 @@ std::vector<uint8_t> random_rows(int t, int64_t rows, int64_t n, std::mt19937& r
             // NVFP4: four UE4M3 sub-block scales (profiles in nvfp4_scale_byte)
             const int prof = g_nv_profile >= 0 ? g_nv_profile : (int) (rng() % 3);
             for (int j = 0; j < 4; ++j) w[o + j] = nvfp4_scale_byte(prof, rng);
+        } else if (t == 39) {
+            // MXFP4: one E8M0 scale byte, 2^-13 .. 2^-6 (the doubled codes reach 12 times that), now and then one
+            // of the two denormal codes
+            w[o] = (uint8_t) (rng() % 16 == 0 ? rng() % 2 : 115 + rng() % 8);
         } else if (t == 29) {
             // IQ1_M: the fp16 scale is the top nibbles of the four scale words (bytes 48..55); nibble 3 carries the
             // sign and the exponent's top bits: 0x1 / 0x2 (or 0x9 / 0xA) keeps it in 2^-11 .. 2^-3
@@ -553,7 +558,7 @@ int main(int argc, char** argv) {
         check_mmvq(t, 1024, 5, s, rng);
     }
     for (int gu : {16, 17, 18, 21, 22, 23, 29, 42}) {
-        for (int dt : {20, 42}) check_grouped(gu, dt, 2560, 640, s, rng);   // the model's shape
+        for (int dt : {20, 39, 42}) check_grouped(gu, dt, 2560, 640, s, rng);   // the model's shape
         check_grouped(gu, 23, 1024, 512, s, rng);                           // IQ4_XS down needs n_ff % 256 == 0
     }
     for (auto [gu, dt] : {std::pair<int, int>{12, 7}, {12, 8}, {13, 8}, {13, 7}, {8, 8},
@@ -561,6 +566,11 @@ int main(int argc, char** argv) {
         check_grouped(gu, dt, 2560, 640, s, rng);
         check_grouped(gu, dt, 1024, 512, s, rng);
     }
+    // the GSQ files' layers: their gate/up formats over IQ4_NL, MXFP4 and Q2_0 down, at Inkling 2 Mini's n_ff 1152
+    // and at 576, a card's half of an expert under tensor parallelism
+    for (int gu : {17, 18, 21, 22, 23})
+        for (int dt : {20, 39, 42})
+            for (int64_t ff : {1152, 576}) check_grouped(gu, dt, 2304, ff, s, rng);
     check_grouped(40, 40, 2560, 640, s, rng);                               // NVFP4: its own pair, with the scale tail
     check_grouped(40, 40, 1024, 512, s, rng);
     check_mmvq_mma(s, rng);

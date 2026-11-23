@@ -93,6 +93,12 @@ static inline ggml_fp16_t ggml_compute_fp32_to_fp16(float f) {
     return (sign >> 16) | (shl1_w > UINT32_C(0xFF000000) ? UINT16_C(0x7E00) : nonsign);
 }
 
+// E8M0 scale times 0.5 (kvalues_fp4 being doubled): 2^(x-128), the two smallest codes as denormals. 255 (NaN in
+// the format) reads as 2^127, as in ggml.
+static inline float ggml_e8m0_to_fp32_half(uint8_t x) {
+    return fp32_from_bits(x < 2 ? UINT32_C(0x00200000) << x : (uint32_t) (x - 1) << 23);
+}
+
 #define GGML_COMPUTE_FP16_TO_FP32(x) ggml_compute_fp16_to_fp32(x)
 #define GGML_COMPUTE_FP32_TO_FP16(x) ggml_compute_fp32_to_fp16(x)
 

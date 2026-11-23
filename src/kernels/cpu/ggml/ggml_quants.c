@@ -1331,6 +1331,49 @@ void dequantize_row_iq4_nl(const block_iq4_nl * GGML_RESTRICT x, float * GGML_RE
     }
 }
 
+// ggml's quantize_row_mxfp4_ref, for synthetic test weights: the scale from the block's largest magnitude, each value's
+// nearest E2M1 code under it.
+static inline int best_index_mxfp4(float x, float e) {
+    int best_index = 0;
+    float best_err = fabsf(kvalues_fp4[0]*e - x);
+    for (int i = 1; i < 16; i++) {
+        const float err = fabsf(kvalues_fp4[i]*e - x);
+        if (err < best_err) {
+            best_index = i;
+            best_err = err;
+        }
+    }
+    return best_index;
+}
+
+void quantize_row_mxfp4_ref(const float * GGML_RESTRICT x, block_mxfp4 * GGML_RESTRICT y, int64_t k) {
+    assert(k % QK_MXFP4 == 0);
+    const int64_t nb = k / QK_MXFP4;
+    for (int64_t i = 0; i < nb; i++) {
+        float amax = 0.0f;
+        for (int j = 0; j < QK_MXFP4; j++) amax = fmaxf(amax, fabsf(x[i*QK_MXFP4 + j]));
+        const uint8_t e = amax > 0.0f ? (uint8_t) (floorf(log2f(amax)) - 2 + 127) : 0;
+        const float d = ggml_e8m0_to_fp32_half(e);
+        y[i].e = e;
+        for (int j = 0; j < QK_MXFP4/2; ++j) {
+            y[i].qs[j] = (uint8_t) (best_index_mxfp4(x[i*QK_MXFP4 + j], d) |
+                                    best_index_mxfp4(x[i*QK_MXFP4 + QK_MXFP4/2 + j], d) << 4);
+        }
+    }
+}
+
+void dequantize_row_mxfp4(const block_mxfp4 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
+    assert(k % QK_MXFP4 == 0);
+    const int64_t nb = k / QK_MXFP4;
+    for (int64_t i = 0; i < nb; i++) {
+        const float d = ggml_e8m0_to_fp32_half(x[i].e);
+        for (int j = 0; j < QK_MXFP4/2; ++j) {
+            y[i*QK_MXFP4 + j + 0]          = kvalues_fp4[x[i].qs[j] & 0xf] * d;
+            y[i*QK_MXFP4 + j + QK_MXFP4/2] = kvalues_fp4[x[i].qs[j] >>  4] * d;
+        }
+    }
+}
+
 void dequantize_row_iq4_xs(const block_iq4_xs * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
     assert(k % QK_K == 0);
     const int64_t nb = k / QK_K;
@@ -1502,6 +1545,7 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
     TYPE(GGML_TYPE_IQ4_XS, "iq4_xs", QK_K, block_iq4_xs, dequantize_row_iq4_xs, NULL),
     TYPE(GGML_TYPE_IQ1_S, "iq1_s", QK_K, block_iq1_s, dequantize_row_iq1_s, NULL),
     TYPE(GGML_TYPE_IQ1_M, "iq1_m", QK_K, block_iq1_m, dequantize_row_iq1_m, NULL),
+    TYPE(GGML_TYPE_MXFP4, "mxfp4", QK_MXFP4, block_mxfp4, dequantize_row_mxfp4, quantize_row_mxfp4_ref),
     TYPE(GGML_TYPE_NVFP4, "nvfp4", QK_NVFP4, block_nvfp4, dequantize_row_nvfp4, quantize_row_nvfp4_ref),
 #undef TYPE
 };

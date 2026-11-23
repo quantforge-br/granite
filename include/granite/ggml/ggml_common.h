@@ -71,6 +71,9 @@ typedef half2 ggml_half2;
 #define QI_NVFP4 (QK_NVFP4 / (4 * QR_NVFP4))
 #define QR_NVFP4 2
 
+#define QI_MXFP4 (QK_MXFP4 / (4 * QR_MXFP4))
+#define QR_MXFP4 2
+
 
 #define QI4_0 (QK4_0 / (4 * QR4_0))
 #define QR4_0 2
@@ -154,6 +157,15 @@ typedef struct {
     uint8_t qs[QK_NVFP4 / 2];             // E2M1 codes, 4 bits each
 } block_nvfp4;
 static_assert(sizeof(block_nvfp4) == QK_NVFP4 / QK_NVFP4_SUB + QK_NVFP4 / 2, "wrong nvfp4 block size/padding");
+
+// MXFP4: 32 values with one E8M0 scale (2^(e-127)); byte j holds value j (low nibble) and value j + 16 (high).
+// 17 bytes, so a block's codes are only byte aligned.
+#define QK_MXFP4 32
+typedef struct {
+    uint8_t e;                // E8M0 scale
+    uint8_t qs[QK_MXFP4 / 2]; // E2M1 codes, 4 bits each
+} block_mxfp4;
+static_assert(sizeof(block_mxfp4) == sizeof(uint8_t) + QK_MXFP4 / 2, "wrong mxfp4 block size/padding");
 
 #define QK4_0 32
 typedef struct {
