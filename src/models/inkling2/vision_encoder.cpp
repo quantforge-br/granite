@@ -20,11 +20,14 @@ ImageEncoder::~ImageEncoder() { drop(); }
 size_t ImageEncoder::weights_bytes() const { return enc_ ? enc_->weights_bytes() : 0; }
 size_t ImageEncoder::region_bytes() const { return enc_ ? enc_->arena_bytes(kMaxCells) : 0; }
 
-bool ImageEncoder::stage(const core::FileRange& section, int n_embd, std::string& err) {
-    if (section.empty() || section.bytes == 0) { err = "--vision needs the pack's vision/mmproj section"; return false; }
+bool ImageEncoder::stage(const core::FileRange& projector, int n_embd, std::string& err) {
+    if (projector.empty()) {
+        err = "--vision needs a vision projector: the model file has none (vision/mmproj); --mmproj FILE gives one";
+        return false;
+    }
     vision::Mmproj mp;
     auto e = std::make_unique<vision::CudaEncoder>();
-    if (!mp.open(section, err, kProjector) || !e->stage(mp, true, err) || !e->create(err)) return false;
+    if (!mp.open(projector, err, kProjector) || !e->stage(mp, true, err) || !e->create(err)) return false;
     if (mp.hp().proj != n_embd) { err = "the vision projector's width differs from the model's"; return false; }
     mp.release();
     enc_ = std::move(e);

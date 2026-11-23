@@ -45,7 +45,9 @@ experts in RAM run it as they run the pack. What loads:
 - The tokenizer and chat template come from the file's metadata, the sampling defaults from its `general.sampling.*` keys.
 
 Anything else is refused at load, naming the tensor or layer and the type it found. The file carries no vision encoder
-(`--vision` is refused) and no DSpark drafter: drafting is off unless `--drafter FILE` gives one ([drafting](#drafting)).
+and no DSpark drafter: `--vision` needs `--mmproj FILE`, and drafting is off unless `--drafter FILE` gives one
+([drafting](#drafting)). Unsloth's `mmproj-BF16.gguf` holds the pack's projector tensors byte for byte, so it encodes a
+picture to the pack's rows (`inkling2_vision_parity` on either).
 
 Unsloth's `Inkling-2-Mini-UD-Q4_K_XL.gguf` (17.6 GB, SHA-256
 `e64276656f072e9b2197a61723667cbdb71da66a716ffd966e572c21088f3cd3`) loads to the pack's bytes on the card except the token

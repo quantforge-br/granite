@@ -82,6 +82,7 @@ struct LoadRequest {
     int64_t max_context = 0;          ///< --max-context, or the default every model shares
     int sessions = 1;                 ///< sessions the model will be asked for (--batch)
     bool vision = false;              ///< --vision: requests may carry images (each slot keeps buffers for one)
+    std::string mmproj;               ///< --mmproj: the vision projector's file (empty: the model file's own section)
     std::string expert_profile;       ///< the routing order of the experts (empty: the file's own order)
     int expert_cache = 0;             ///< VRAM expert slots over all layers (0 or -1: from the free memory)
     int pool_workers = 0;             ///< CPU pool workers (0: the start-up pick, kernels::cpu::start_pool_workers)

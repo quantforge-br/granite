@@ -260,7 +260,8 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
     if (req.vision) {
         size_t before = 0, after = 0, total_b = 0;
         cudaMemGetInfo(&before, &total_b);
-        if (!vis_.stage(pack_.vision, g.n_embd, err)) return fail("vision: " + err);
+        const core::FileRange projector = req.mmproj.empty() ? pack_.vision : core::FileRange(req.mmproj);
+        if (!vis_.stage(projector, g.n_embd, err)) return fail("vision: " + err);
         cudaMemGetInfo(&after, &total_b);
         vision_modules = std::min<uint64_t>(before > after ? before - after : 0, kCardSpare / 4);
         vis_.set_lender({[this](uint64_t bytes, std::string& e) { return lend_room(bytes, e); }, [this] { refill(); }});

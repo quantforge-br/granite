@@ -342,6 +342,7 @@ int run_session_model(granite::program::CommonOptions& o, const granite::model::
         lreq.max_context = o.max_context;
         lreq.sessions = std::max(o.batch, 1);
         lreq.vision = o.vision;
+        lreq.mmproj = o.mmproj;
         lreq.expert_profile = o.expert_profile;
         const std::string key = profile_key(model_file.meta(), adapter->arch());
         {   // what the engine ships for this pack must be there; --expert-profile stands in for the main one

@@ -15,7 +15,7 @@
 
 namespace granite::models::inkling2 {
 
-/// --vision (dynamic): the projector of the pack's `vision/mmproj` section staged once in page-locked RAM. It holds no VRAM
+/// --vision (dynamic): the projector (the pack's `vision/mmproj` section or --mmproj) staged once in page-locked RAM. It holds no VRAM
 /// at rest: a request's pictures get a device region (the weights and the work buffers), its room lent by the model (the
 /// lender), and `release` gives the region back and the lender its room.
 class ImageEncoder {
@@ -32,9 +32,10 @@ public:
     ImageEncoder(const ImageEncoder&) = delete;
     ImageEncoder& operator=(const ImageEncoder&) = delete;
 
-    /// Stages the projector, makes the stream and product handle, and encodes one picture of the largest size in a temporary
-    /// region (the product library loads its kernels on first use): call before the caches are sized.
-    bool stage(const core::FileRange& section, int n_embd, std::string& err);
+    /// Stages the projector (the pack's vision/mmproj section or a whole projector file), makes the stream and product
+    /// handle, and encodes one picture of the largest size in a temporary region (the product library loads its kernels on
+    /// first use): call before the caches are sized.
+    bool stage(const core::FileRange& projector, int n_embd, std::string& err);
     bool staged() const { return enc_ != nullptr; }
     /// The model's lender, set once after `stage` (the warm-up's region takes free memory, before the caches are sized).
     void set_lender(Lender lender) { lender_ = std::move(lender); }

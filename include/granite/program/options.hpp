@@ -94,9 +94,11 @@ struct CommonOptions {
     /// --vision-external).
     bool vision = false;
     /// --vision (not --vision-external): the image encoder runs in this process on the model's GPU.  It reads the
-    /// model file's `vision/mmproj` section in place; its weights stay in pinned host memory; each ENC command borrows
-    /// expert-cache slots, encodes in them and refills them.
+    /// model file's `vision/mmproj` section, or the --mmproj file, in place; its weights stay in pinned host memory; each
+    /// ENC command borrows expert-cache slots, encodes in them and refills them.
     bool vision_in_engine = false;
+    /// --mmproj FILE: the vision projector GGUF for --vision (empty: the model file's `vision/mmproj` section).
+    std::string mmproj;
     /// --serve: how many conversation checkpoints to keep between requests (0 = every request reads its whole prompt
     /// again).  One is the GDN recurrence of the 36 layers, the QSA indexer tails and the PLE history (~118 MB of host
     /// RAM); the KV cache itself is positional and stays where it is.
