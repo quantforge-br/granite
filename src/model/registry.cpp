@@ -21,6 +21,12 @@ std::map<std::string, std::unique_ptr<ModelAdapter>>& table() {
     return t;
 }
 
+// A GGUF's architecture name -> the adapter's own (ModelAdapter::gguf_arch).
+std::map<std::string, std::string>& gguf_names() {
+    static std::map<std::string, std::string> t;
+    return t;
+}
+
 // GRANITE_KNOWN_MODELS (every model granite ships) and GRANITE_BUILT_MODELS (the ones this build holds) are comma lists
 // that cmake/models.cmake bakes in.
 std::vector<std::string> models_of(const std::string& csv) {
@@ -38,11 +44,14 @@ bool contains(const std::vector<std::string>& v, const std::string& s) { return 
 
 void register_adapter(std::unique_ptr<ModelAdapter> a) {
     const std::string name = a->arch();
+    if (const char* g = a->gguf_arch()) gguf_names()[g] = name;
     table()[name] = std::move(a);
 }
 
 const ModelAdapter* find_adapter(const std::string& arch) {
-    const auto it = table().find(arch);
+    auto it = table().find(arch);
+    if (it == table().end())
+        if (const auto g = gguf_names().find(arch); g != gguf_names().end()) it = table().find(g->second);
     return it == table().end() ? nullptr : it->second.get();
 }
 

@@ -18,6 +18,7 @@ namespace {
 class Adapter final : public model::ModelAdapter {
 public:
     const char* arch() const override { return kArch; }
+    const char* gguf_arch() const override { return kGgufArch; }
     std::string validate(const GgufFile& g) const override { return validate_meta(g); }
     model::ModelDesc describe(const GgufFile& g) const override { return describe_meta(g); }
     std::unique_ptr<model::LoadedModel> make_model() const override { return std::make_unique<InklingModel>(); }

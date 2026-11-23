@@ -37,8 +37,9 @@ namespace {
 using Clock = std::chrono::steady_clock;
 namespace cli = granite::program::cli;
 
-// The name of the engine's expert profile for a model (data/profiles/<key>.prof).
-std::string profile_key(const granite::core::Json& meta) {
+// The name of the engine's expert profile for a model (data/profiles/<key>.prof): the adapter's architecture `name` and
+// the file's counts.
+std::string profile_key(const granite::core::Json& meta, const std::string& name) {
     using T = granite::core::Json::Type;
     const granite::core::Json* kv = meta.get("gguf_kv");
     const granite::core::Json* arch = kv ? kv->get("general.architecture") : nullptr;
@@ -57,7 +58,7 @@ std::string profile_key(const granite::core::Json& meta) {
     const granite::core::Json* nl = kv->get(prefix + ".block_count");
     const granite::core::Json* ne = kv->get(prefix + ".expert_count");
     if (nl == nullptr || ne == nullptr || nl->type != T::Int || ne->type != T::Int || nl->neg || ne->neg) return {};
-    return arch->s + "-" + std::to_string(nl->u64()) + "x" + std::to_string(ne->u64());
+    return name + "-" + std::to_string(nl->u64()) + "x" + std::to_string(ne->u64());
 }
 
 int fatal_start_error(const std::string& text) {
@@ -342,7 +343,7 @@ int run_session_model(granite::program::CommonOptions& o, const granite::model::
         lreq.sessions = std::max(o.batch, 1);
         lreq.vision = o.vision;
         lreq.expert_profile = o.expert_profile;
-        const std::string key = profile_key(model_file.meta());
+        const std::string key = profile_key(model_file.meta(), adapter->arch());
         {   // what the engine ships for this pack must be there; --expert-profile stands in for the main one
             std::vector<std::string> need;
             for (const std::string& name : adapter->shipped_profiles(key)) {

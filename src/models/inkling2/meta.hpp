@@ -10,19 +10,28 @@
 namespace granite::models::inkling2 {
 
 inline constexpr const char* kArch = "inkling2";
+/// llama.cpp's name for the model: its GGUFs' general.architecture and key prefix.
+inline constexpr const char* kGgufArch = "inkling2_loop";
+
+/// The prefix of the file's model keys: the GGUF's architecture name, or the pack's.
+inline std::string key_prefix(const GgufFile& g) {
+    const MetaValue* arch = g.get("general.architecture");
+    return arch != nullptr && arch->s == kGgufArch ? kGgufArch : kArch;
+}
 
 inline uint64_t key_u(const GgufFile& g, const char* suffix) {
-    const MetaValue* v = g.get(std::string(kArch) + "." + suffix);
+    const MetaValue* v = g.get(key_prefix(g) + "." + suffix);
     return v ? v->u : 0;
 }
 
 inline std::string validate_meta(const GgufFile& g) {
     const MetaValue* arch = g.get("general.architecture");
     if (!arch) return "missing general.architecture";
-    if (arch->s != kArch) return "architecture is '" + arch->s + "', this adapter requires '" + kArch + "'";
+    if (arch->s != kArch && arch->s != kGgufArch)
+        return "architecture is '" + arch->s + "', this adapter requires '" + kArch + "' (or llama.cpp's '" + kGgufArch + "')";
     for (const char* k : {"block_count", "embedding_length", "expert_count", "expert_used_count", "expert_feed_forward_length",
                           "loop.start", "loop.end", "loop.count", "attention.sliding_window"})
-        if (key_u(g, k) == 0) return std::string("missing or zero ") + kArch + "." + k;
+        if (key_u(g, k) == 0) return "missing or zero " + key_prefix(g) + "." + k;
     return {};
 }
 

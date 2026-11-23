@@ -298,6 +298,9 @@ public:
     virtual ~ModelAdapter() = default;
     /// Architecture name: the pack `meta.arch` and the GGUF `general.architecture`.
     virtual const char* arch() const = 0;
+    /// The `general.architecture` of llama.cpp's GGUF of this model when it is another name (find_adapter answers to
+    /// it too); null when there is none.
+    virtual const char* gguf_arch() const { return nullptr; }
     /// Refuses a file that is not this model; empty string when it is.
     virtual std::string validate(const GgufFile& meta) const = 0;
     /// Geometry from the file's metadata.
@@ -366,7 +369,7 @@ public:
 /// Registry of adapters by architecture name. Registration is explicit (`models::register_builtin_models()`
 /// from the program's main), so linking order never decides what exists.
 void register_adapter(std::unique_ptr<ModelAdapter> a);
-/// Null when no adapter has that architecture.
+/// Null when no adapter has that architecture (its own name or its GGUF's).
 const ModelAdapter* find_adapter(const std::string& arch);
 std::vector<std::string> adapter_names();
 /// The most expert cards any registered model takes: a card plan before a model is known.
