@@ -42,8 +42,8 @@ mmproj GGUFs (`--drafter FILE`, `--mmproj FILE`).
 On Ampere, NVFP4 decodes like any 4-bit GGUF type (a 16-entry table to int8, then `dp4a` against 8-bit activations), so
 it costs the same per byte; it wins on quality because nothing is rounded twice. Requantized GGUFs of the same model
 lose more: ggml-org's IQ4_NL (the NVFP4 experts requantized to IQ4_NL) scores 0.0095 KLD and 95.5% top-1 against the
-BF16. Smaller GGUF mixes (GSQ-RCO IQ3_XS / IQ4_XS) read fewer bytes per token and are to be measured against the same
-gate.
+BF16. The smaller GSQ-RCO IQ4_XS and IQ3_XS mixes load too, but lose more (KLD 0.018 and 0.056) and on one RTX 3090
+decode 2 to 14 % slower than the pack: they are optional files ([GGUF](docs/models/inkling2.md#gguf)).
 
 ## Quick start
 

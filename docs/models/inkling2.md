@@ -39,9 +39,10 @@ The engine and the server also open llama.cpp's `inkling2_loop` GGUF of one file
 experts in RAM run it as they run the pack. What loads:
 
 - Routed experts: llama.cpp's fused gate and up tensor and its down tensor, in a type both the decode and the prompt kernels
-  run; NVFP4 with its per-expert scales.
-- Projections and the head: Q8_0 as stored, or BF16 rounded to Q8_0 as it loads (the pack's rounding). Token embedding
-  Q8_0 or BF16. Loop controllers stored as F32 load as BF16, the values they hold.
+  run; NVFP4 with its per-expert scales, Q8_0, the IQ formats, Q2_0 and MXFP4.
+- Projections and the head: Q8_0 as stored, or BF16, F32 or Q6_K rounded to Q8_0 as it loads (ggml's reference rounding,
+  the pack's). Token embedding Q8_0 or BF16, or Q6_K rounded to Q8_0. Loop controllers stored as F32 load as BF16, the
+  values they hold.
 - The tokenizer and chat template come from the file's metadata, the sampling defaults from its `general.sampling.*` keys.
 
 Anything else is refused at load, naming the tensor or layer and the type it found. The file carries no vision encoder
@@ -55,6 +56,33 @@ embedding, Q8_0 of the pack's BF16 values (KLD 0.00309 against 0.00289, [precisi
 `inkling2_gguf_parity` checks it tensor by tensor when both files are in `models/`.
 From start to the first token on one RTX 3090 at 270 W it takes 9.4 s, the pack 9.3 s, or 8.7 s with the pack's converted
 tensors still in the page cache.
+
+abenzerps' [GSQ-RCO GGUFs](https://huggingface.co/abenzerps/Inkling-2-Mini-GSQ-RCO-GGUF) requantize the experts below the
+release's 4 bits and load too, but they are optional files, not the default: they lose more and decode slower.
+
+- `Inkling-2-Mini-GSQ-RCO-IQ4_XS.gguf` (13,843,362,720 bytes, SHA-256
+  `aabee5f8a2e8efe6272dc1f56322e9ad49f26c35b39e8744601e9eab73cdc487`): gate and up IQ3_XXS, IQ3_S or IQ4_XS, down IQ4_NL or
+  MXFP4; KLD 0.0183, top-1 94.3 %.
+- `Inkling-2-Mini-GSQ-RCO-IQ3_XS.gguf` (10,582,605,984 bytes, SHA-256
+  `1b5e8fba0e27aba527a23896fb87849793e39a9c664de6ca9816e042dd259dca`): gate and up IQ2_XS, IQ2_S or IQ3_XXS, down Q2_0,
+  IQ4_NL or MXFP4, a Q6_K head and token embedding; KLD 0.0558, top-1 90.1 %.
+
+`granite-bench` at `d3a1d552`, CUDA1 alone at 270 W, A-B-C-C-B-A order. The GGUFs draft with Unsloth's
+`dspark-Inkling-2-Mini-Q8_0_Old.gguf`, which loads to the pack's drafter. Each decode row is the tokens over the decode time
+of six runs (seeds 1 to 3, twice each); plain decode is conversation and prose, seed 1, twice:
+
+| | Pack | IQ4_XS | IQ3_XS |
+| --- | ---: | ---: | ---: |
+| Decode: conversation | 170 tok/s | 151 tok/s | 149 tok/s |
+| Decode: struct | 314 tok/s | 270 tok/s | 273 tok/s |
+| Decode: prose | 136 tok/s | 126 tok/s | 132 tok/s |
+| Plain decode (`--spec 0`) | 8.0 to 8.1 ms a token | 8.6 to 8.7 ms a token | 8.4 to 8.5 ms a token |
+
+Drafts are accepted at about the pack's rates (conversation 61, 64 and 60 %, struct 97, 96 and 93 %). The time goes to
+the expert kernels: under nsys a gate and up visit takes 37 to 41 µs in the IQ formats against NVFP4's 33 µs with half to
+two thirds of its bytes, and a down visit 26 µs in MXFP4 and 40 µs in IQ4_NL against 20. At this model's 2,304 and 1,152
+these types take the decode kernels' general forms, which count K at run time, while NVFP4 has its own. Tensor parallel
+(`--gpu 1,0`, one run each), plain conversation takes 7.0 ms a token in IQ4_XS and 6.9 in IQ3_XS, the pack 6.1.
 
 ## Architecture
 

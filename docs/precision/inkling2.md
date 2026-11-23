@@ -73,10 +73,16 @@ The base: the official release with its routed experts dequantized to BF16 (llam
 | 100 chunks, one RTX 3090, against a base made the same way on that machine | 0.00289 | 97.76% | 7.0758 (base 7.0655) |
 | the same, tensor parallel on two RTX 3090s | 0.00286 | 97.79% | 7.0719 (base 7.0655) |
 | the same, Unsloth's UD-Q4_K_XL GGUF ([GGUF](../models/inkling2.md#gguf)): the pack's bytes with a Q8_0 token embedding | 0.00309 | 97.68% | 7.0762 (base 7.0655) |
+| the same, abenzerps' GSQ-RCO IQ4_XS GGUF: experts requantized to IQ3_XXS to IQ4_XS gate/up, IQ4_NL and MXFP4 down | 0.01828 | 94.32% | 7.1738 (base 7.0655) |
+| the same, GSQ-RCO IQ3_XS: IQ2_XS to IQ3_XXS gate/up, Q2_0, IQ4_NL and MXFP4 down, Q6_K head | 0.05581 | 90.13% | 7.3359 (base 7.0655) |
 | upstream, 100 chunks, `--kv fp16` | 0.00305 | 97.76% | 7.0695 (base 7.0633 over the scored rows) |
 | upstream, 20 chunks (the quick gate) | 0.00264 | 97.80% | 7.6642 (base 7.6534) |
 | upstream, 90 chunks, RTX 5060 Ti alone, 1,047 experts in RAM on the CPU | 0.00298 | 97.70% | |
 | upstream, the same 90 chunks, the whole model on the card | 0.00304 | 97.76% | |
+
+llama.cpp's `llama-perplexity` (253671d) scores the GSQ-RCO files 0.01819 and 0.05577, top-1 94.40% and 90.09%, against
+the same base: what they lose is in the files' weights, not in granite's kernels. Tensor parallel on two RTX 3090s,
+granite scores them 0.01807 and 0.05556, top-1 94.31% and 90.01%.
 
 The upstream rows are Basalt's before the fork, with the FP4 prompt path: an RTX 5090 at 400 W with the whole model on the
 card unless the row says otherwise. On the 5060 Ti the CPU computes the experts in RAM (a Ryzen 9 9950X, AVX-512).
