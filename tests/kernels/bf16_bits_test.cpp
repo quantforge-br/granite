@@ -11,7 +11,13 @@
 //   3. every NaN input gives a quiet NaN of the same sign.
 //
 // And the round trip over all 65,536 bf16 patterns: a non-NaN bf16 survives f32 and back unchanged.
+//
+// Then `f16_bits.hpp`'s edge cases against numpy's float16: a private encoder that tested `if (exp >= 31)` conflated an
+// f32 inf/NaN (raw exponent 255) with a FINITE value too large for fp16, so every finite overflow came back as a NaN
+// instead of saturating to inf; the matching decoder flushed fp16 SUBNORMALS to zero (0x0001 as 0.0, not 2^-24).  An
+// O(1) fixture cannot see either.
 #include "basalt/kernels/bf16_bits.hpp"
+#include "basalt/kernels/f16_bits.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -74,7 +80,43 @@ int main() {
     }
     std::printf("  bf16 -> f32 -> bf16 over 65536 patterns: %llu wrong\n", trip_bad);
 
-    const bool ok = vs_ggml == 0 && vs_previous == 0 && nan_lost == 0 && trip_bad == 0 && previous_masked > 0;
+    // the exact values, asserted against what numpy's float16 says
+    struct F16Case { float in; uint16_t want; const char* what; };
+    const F16Case cases[] = {
+        {1e30f, 0x7C00u, "1e30 -> +inf (finite overflow)"},
+        {-1e30f, 0xFC00u, "-1e30 -> -inf"},
+        {65536.0f, 0x7C00u, "65536 -> +inf (just past fp16 max)"},
+        // FLT_MAX is 3.4028235e38, so `1e45f` is not even a legal literal; 3e38 is the largest finite
+        // f32 that still overflows fp16, which is what this case is for.
+        {3.0e38f, 0x7C00u, "3e38 (near FLT_MAX) -> +inf"},
+        {65504.0f, 0x7BFFu, "65504 -> the largest finite fp16, NOT inf"},
+        // The boundary, checked against numpy: 65520.0 is the exact tie between 65504 and the
+        // "next" fp16 (65536 = inf) and rounds to EVEN, i.e. to inf; 65519.996 is below it and stays
+        // finite.  The first version of this table asserted inf for 65519.996 - the FIXTURE was wrong and
+        // the kernel was right, which is why the expected bits are quoted from numpy rather than reasoned.
+        {65519.996f, 0x7BFFu, "65519.996 -> just below the boundary, still finite"},
+        {65520.0f, 0x7C00u, "65520.0 -> the exact tie, rounds to even = inf"},
+        {5.9604645e-8f, 0x0001u, "2^-24 -> the smallest subnormal, NOT zero"},
+        {1.0f, 0x3C00u, "1.0"},
+        {0.0f, 0x0000u, "0.0"},
+    };
+    int fp16_bad = 0;
+    for (const F16Case& c : cases) {
+        const uint16_t got = basalt::kernels::f16_from_f32(c.in);
+        if (got != c.want) {
+            std::printf("    *** %s: want 0x%04X got 0x%04X\n", c.what, c.want, got);
+            ++fp16_bad;
+        }
+    }
+    // and the reverse direction on the pattern that was flushed
+    const float sub = basalt::kernels::f32_from_f16(0x0001u);
+    const bool sub_ok = sub == 5.9604645e-8f;
+    std::printf("  f32 -> f16 overflow saturates, not NaN: %d of %d wrong\n", fp16_bad,
+                (int) (sizeof cases / sizeof cases[0]));
+    std::printf("  f16 -> f32 keeps subnormals: 0x0001 -> %.9g (want 2^-24)\n", (double) sub);
+
+    const bool ok = vs_ggml == 0 && vs_previous == 0 && nan_lost == 0 && trip_bad == 0 && previous_masked > 0 &&
+                    fp16_bad == 0 && sub_ok;
     std::printf("\nbf16_bits_test %s\n", ok ? "OK" : "FAILED");
     return ok ? 0 : 1;
 }

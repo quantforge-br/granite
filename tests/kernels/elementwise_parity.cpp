@@ -12,7 +12,6 @@
 //      instead of decaying, so the sign is checked as a property and not assumed.
 //   3. `silu` IS COMPUTED IN DOUBLE then cast, because the Python reference's numpy does.  f32 `expf` differs in the
 //      last bits, and the test measures that rather than asserting it away.
-#include "basalt/kernels/dequant_bf16.hpp"
 #include "basalt/kernels/elementwise.hpp"
 #include "basalt/kernels/f16_bits.hpp"
 
@@ -410,10 +409,9 @@ int main(int argc, char** argv) {
         if (mismatches || guards || fma_diff == 0) ++bad;
     }
 
-    // ---- THE f32 -> bf16 CONVERSIONS KEEP A NaN A NaN.  `f32_to_bf16_bulk` (the header's `bf16_from_f32`
-    // on the device) and the prompt path's dequantizer (its own `f2bf`) against ggml_compute_fp32_to_bf16's rule;
-    // before the fix 0x7FFFFFFF came back as -0 and 0x7F800001 as +inf.  `bf16_bits_test` covers every f32 on
-    // the host; this is the same header compiled by nvcc, plus the second copy in dequant_bf16.cu.
+    // ---- THE f32 -> bf16 CONVERSION KEEPS A NaN A NaN.  `f32_to_bf16_bulk` (the header's `bf16_from_f32` on the
+    // device) against ggml_compute_fp32_to_bf16's rule; before the fix 0x7FFFFFFF came back as -0 and 0x7F800001 as
+    // +inf.  `bf16_bits_test` covers every f32 on the host; this is the same header compiled by nvcc.
     {
         auto ggml_bf16 = [](uint32_t u) -> uint16_t {
             if ((u & 0x7fffffffu) > 0x7f800000u) return (uint16_t) ((u >> 16) | 64);
@@ -435,37 +433,9 @@ int main(int argc, char** argv) {
         check(cudaMemcpy(got.data(), dy, n * 2, cudaMemcpyDeviceToHost), "bf16 cy");
         int wrong = 0;
         for (size_t i = 0; i < n; ++i) wrong += got[i] != ggml_bf16(bits[i]);
-
-        // A Q8_0 block (type 8) whose fp16 scale is a NaN: every dequantized value is NaN * q, a NaN, and it must
-        // still be one in BF16.  A second block with an ordinary scale checks the finite path did not move.
-        std::vector<uint8_t> blk(2 * 34, 0);
-        blk[0] = 0x00; blk[1] = 0x7E;                        // fp16 quiet NaN
-        blk[34] = 0x00; blk[35] = 0x3C;                      // fp16 1.0
-        for (int j = 0; j < 32; ++j) {
-            blk[(size_t) (2 + j)] = (uint8_t) (int8_t) (j - 16);
-            blk[(size_t) (36 + j)] = (uint8_t) (int8_t) (3 * j - 50);
-        }
-        uint8_t* db = nullptr;
-        uint16_t* dq = nullptr;
-        check(cudaMalloc(&db, blk.size()), "q8 blk");
-        check(cudaMalloc(&dq, 64 * 2), "q8 out");
-        check(cudaMemcpy(db, blk.data(), blk.size(), cudaMemcpyHostToDevice), "q8 cblk");
-        basalt::kernels::dequant_bf16(8, db, 0, 2, 32, dq, nullptr);
-        check(cudaDeviceSynchronize(), "dequant_bf16");
-        std::vector<uint16_t> q(64);
-        check(cudaMemcpy(q.data(), dq, 64 * 2, cudaMemcpyDeviceToHost), "q8 cout");
-        int dq_wrong = 0;
-        for (int j = 0; j < 32; ++j) {
-            if (!((q[(size_t) j] & 0x7FFFu) > 0x7F80u)) ++dq_wrong;           // row 0: NaN scale -> NaN
-            const float v = (float) (3 * j - 50);                                // row 1: d = 1.0 -> the integer
-            uint32_t vb;
-            std::memcpy(&vb, &v, 4);
-            if (q[(size_t) (32 + j)] != ggml_bf16(vb)) ++dq_wrong;
-        }
-        std::printf("  f32 -> bf16 (NaN kept): bulk %d of %zu differ from ggml, dequant_bf16 %d of 64 wrong\n",
-                    wrong, n, dq_wrong);
-        if (wrong || dq_wrong) ++bad;
-        cudaFree(dx); cudaFree(dy); cudaFree(db); cudaFree(dq);
+        std::printf("  f32 -> bf16 (NaN kept): bulk %d of %zu differ from ggml\n", wrong, n);
+        if (wrong) ++bad;
+        cudaFree(dx); cudaFree(dy);
     }
 
     // ---- the window's inputs out of mapped pinned host memory: three arrays in one launch against three launches, at

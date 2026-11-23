@@ -276,31 +276,22 @@ target_link_libraries(basalt-device PRIVATE core)
 # Naive first, each with a parity test against a reference that was itself validated against ggml.  The
 # kernels link `artifact` for the scalar dequantizers, because using the VALIDATED scalar path as the
 # reference is the whole point - a kernel checked against another copy of itself proves nothing.
-add_library(kernels STATIC src/kernels/cuda/quantize_act.cu
-                        src/kernels/cuda/sampler.cu
+add_library(kernels STATIC src/kernels/cuda/sampler.cu
                         src/kernels/cuda/logprobs.cu
                         src/kernels/cuda/elementwise.cu
                         src/kernels/cuda/bf16_gemv.cu
                         src/kernels/cuda/native_mmvq.cu
-                        src/kernels/cuda/q80_screen.cu
                         src/kernels/cuda/native_bf16.cu
-                        src/kernels/cuda/dequant_bf16.cu
-                        src/kernels/cuda/wait_abort.cu
                         src/kernels/cuda/iq_kernels.cu
-                        src/kernels/cuda/gdn_commit.cu
-                        src/kernels/cuda/gdn_prompt.cu
                         src/kernels/cuda/dense_ops.cu
                         src/kernels/cuda/gqa_attn.cu
                         src/kernels/cuda/nvfp4_planes.cu
-                        src/kernels/cuda/mhc.cu
-                        src/kernels/cuda/mhc_plain.cu
                         src/kernels/cuda/router.cu
                         src/kernels/cuda/row_norm.cu
                         src/ngram/ple_reader.cpp)
 target_link_libraries(kernels PUBLIC core artifact)
 # Match the pinned llama.cpp CUDA arithmetic contract for these kernels only.
 set_source_files_properties(src/kernels/cuda/native_mmvq.cu src/kernels/cuda/native_bf16.cu
-    src/kernels/cuda/q80_screen.cu
     PROPERTIES COMPILE_OPTIONS "--use_fast_math")
 
 # ---- engine -----------------------------------------------------
@@ -637,12 +628,6 @@ add_executable(mmvq_multi_parity tests/kernels/mmvq_multi_parity.cpp)
 target_include_directories(mmvq_multi_parity PRIVATE ${_gpu_include_directories})
 target_link_libraries(mmvq_multi_parity PRIVATE kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME mmvq_multi_parity COMMAND mmvq_multi_parity)
-# the draft head screen (q80_screen) against native_mmvq's one-column logits and their argmax, and against a CPU reference
-# (synthetic at the real width, GPU, no model; --bench adds the microbench)
-add_executable(q80_screen_parity tests/kernels/q80_screen_parity.cpp)
-target_include_directories(q80_screen_parity PRIVATE ${_gpu_include_directories})
-target_link_libraries(q80_screen_parity PRIVATE kernels ${_gpu_runtime_target})
-basalt_gpu_test(NAME q80_screen_parity COMMAND q80_screen_parity)
 # the IQ kernels that decode a weight part once for every column/entry, bitwise vs the per-column ones
 # (GPU, synthetic, no model; --bench adds old/new timings)
 add_executable(iq_multi_parity tests/kernels/iq_multi_parity.cpp)
@@ -662,11 +647,6 @@ target_include_directories(logprobs_parity PRIVATE ${_gpu_include_directories})
 target_link_libraries(logprobs_parity PRIVATE kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME logprobs_parity COMMAND logprobs_parity)
 
-add_executable(quantize_act_parity tests/kernels/quantize_act_parity.cpp)
-target_include_directories(quantize_act_parity PRIVATE ${_gpu_include_directories})
-target_link_libraries(quantize_act_parity PRIVATE kernels ${_gpu_runtime_target})
-basalt_gpu_test(NAME quantize_act_parity COMMAND quantize_act_parity --selftest)
-
 add_executable(elementwise_parity tests/kernels/elementwise_parity.cpp)
 target_include_directories(elementwise_parity PRIVATE ${_gpu_include_directories})
 target_link_libraries(elementwise_parity PRIVATE kernels ${_gpu_runtime_target})
@@ -676,10 +656,6 @@ add_executable(bf16_gemv_parity tests/kernels/bf16_gemv_parity.cpp)
 target_include_directories(bf16_gemv_parity PRIVATE ${_gpu_include_directories})
 target_link_libraries(bf16_gemv_parity PRIVATE kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME bf16_gemv_parity COMMAND bf16_gemv_parity --selftest)
-
-add_executable(dequant_f16_parity tests/kernels/dequant_f16_parity.cpp)
-target_include_directories(dequant_f16_parity PRIVATE ${_gpu_include_directories})
-target_link_libraries(dequant_f16_parity PRIVATE kernels artifact ${_gpu_runtime_target})
 
 # working-set lock of a host region (CPU only).
 add_executable(platform_memory_test tests/platform/memory_test.cpp)
@@ -1084,13 +1060,6 @@ if(BUILD_TESTING)
   basalt_gpu_test(NAME native_expert_parity_nvfp4 COMMAND native_expert_parity --synthetic nvfp4/nvfp4 nvfp4/nvfp4)
   set_tests_properties(native_expert_parity_nvfp4 PROPERTIES TIMEOUT 120)
 endif()
-# real-weight checks: test programs, not part of a release
-if(BUILD_TESTING)
-  add_executable(q5_projection_parity tests/kernels/q5_projection_parity.cpp)
-  target_include_directories(q5_projection_parity PRIVATE ${_gpu_include_directories})
-  target_link_libraries(q5_projection_parity PRIVATE kernels artifact ggml_quants ${_gpu_runtime_target})
-endif()
-
 if(BUILD_TESTING)
   # Both programs test a Linux-only surface: the cgroup quota files and the Linux affinity backend's headers.
   # Neither exists on Windows, so neither is built or run there.
@@ -1104,11 +1073,6 @@ if(BUILD_TESTING)
     basalt_cpu_test(NAME pool_affinity_test COMMAND pool_affinity_test)
   endif()
   # one expert applied to several tokens, bitwise vs the single-token kernel (synthetic, CPU only).
-  # the device dequantizers vs the artifact's CPU dequantizers on the real shards (not a ctest: needs
-  # the full model; run it by hand)
-  add_executable(dequant_bf16_test tests/kernels/dequant_bf16_test.cpp)
-  target_link_libraries(dequant_bf16_test PRIVATE kernels artifact ${_gpu_runtime_target})
-
   # the CPU expert kernels on each instruction set side by side (timing; the parity checks are native_expert_parity)
   add_executable(avx_bench tests/kernels/cpu/avx_bench.cpp)
   target_link_libraries(avx_bench PRIVATE kernels_cpu)
