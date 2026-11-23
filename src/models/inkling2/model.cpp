@@ -709,16 +709,23 @@ bool InklingModel::place_down_halves(std::string& err) {
 
 void InklingModel::plan_cards(const model::LoadRequest& req) {
     const int peer = req.peer_devices[0];
-    int ab = 0, ba = 0;
-    cudaDeviceCanAccessPeer(&ab, device_, peer);
-    cudaDeviceCanAccessPeer(&ba, peer, device_);
+    // each card stores into the other's receive buffers: peer access on both ways (enabled here, as the program's own
+    // enable may have been refused or skipped)
+    const auto reach = [](int from, int to) {
+        int can = 0;
+        if (cudaDeviceCanAccessPeer(&can, from, to) != cudaSuccess || !can || cudaSetDevice(from) != cudaSuccess) return false;
+        const cudaError_t e = cudaDeviceEnablePeerAccess(to, 0);
+        return e == cudaSuccess || e == cudaErrorPeerAccessAlreadyEnabled;
+    };
+    const bool linked = reach(device_, peer) && reach(peer, device_);
     cudaDeviceProp p0{}, p1{};
-    cudaGetDeviceProperties(&p0, device_);
-    cudaGetDeviceProperties(&p1, peer);
+    const bool props = cudaGetDeviceProperties(&p0, device_) == cudaSuccess && cudaGetDeviceProperties(&p1, peer) == cudaSuccess;
     (void) cudaGetLastError();
+    cudaSetDevice(device_);
     // both cards must reach the same bits: the prompt's kernels split their work by the card's SM count and shared memory
     std::string why;
-    if (!ab || !ba) why = "no peer access between them";
+    if (!linked) why = "no peer access between them";
+    else if (!props) why = "their properties cannot be read";
     else if (p0.multiProcessorCount != p1.multiProcessorCount || p0.sharedMemPerBlockOptin != p1.sharedMemPerBlockOptin)
         why = "their SM counts or shared memory differ";
     else if (req.expert_cache > 0) why = "--expert-cache is a one-card diagnostic";
