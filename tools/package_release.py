@@ -23,8 +23,8 @@ TOOLS = ("tools/tokenizer.py", "tools/model_file.py", "tools/migrations/config_v
          "tools/migrations/pack_to_granite.py")
 FILES = ("requirements.txt", "LICENSE", "THIRD_PARTY_LICENSES", "README.md")
 TREES = ("serve", "data/profiles", "data/bench", "docs")
-# docs/img, docs/community and docs/assets are web-only; docs/archive is upstream's history
-SKIP_DIRS = {"__pycache__", "tests", "img", "community", "assets", "archive"}
+# docs/community is web-only; docs/archive is upstream's history
+SKIP_DIRS = {"__pycache__", "tests", "community", "archive"}
 SKIP_SUFFIXES = (".pyc",)
 
 
