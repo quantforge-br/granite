@@ -13,7 +13,6 @@
 #include "basalt/kernels/row_norm.hpp"
 #include "basalt/models/inkling2/kernels.hpp"
 #include "basalt/models/inkling2/prompt_kernels.hpp"
-#include "basalt/prefill/moe_fp4.hpp"
 #include "basalt/prefill/moe_mmq.hpp"
 #include "models/inkling2/dspark.hpp"
 #include "models/inkling2/walk.hpp"
@@ -29,7 +28,6 @@ namespace {
 
 namespace bk = basalt::kernels;
 namespace mmq = basalt::prefill::mmq;
-namespace fp4 = basalt::prefill::fp4;
 
 constexpr int kChunk = kPromptChunk;       // rows of one chunk forward
 constexpr int kTypeBF16 = 30;
@@ -57,9 +55,6 @@ struct Bufs {
     float *msg = nullptr, *mix = nullptr, *hid = nullptr, *nrm = nullptr;
     float *yq = nullptr, *yk = nullptr, *yv = nullptr, *q = nullptr, *r = nullptr, *sink = nullptr, *attn = nullptr, *o = nullptr;
     void* xq = nullptr;          // the experts' q8_1 rows (their input, then H)
-    void *a4h = nullptr, *a4x = nullptr;   // NVFP4 experts (inside xq): H's FP4 tiles, the input's FP4 token planes
-    float *gsh = nullptr, *gsx = nullptr;  // their token scales
-    int32_t *tile_off = nullptr, *blk_off = nullptr;
     float *gu = nullptr, *h = nullptr, *moe = nullptr;   // gu also holds the experts' outputs, h the sum
     void* xqd = nullptr;         // a dense product's q8_1 rows
     float* rlog = nullptr;
@@ -96,11 +91,6 @@ void carve(Carve& c, Bufs& b, const Geometry& g) {
     b.gu = x.take<float>(P * 2 * (size_t) g.n_ff_exp);
     b.h = x.take<float>(P * (size_t) g.n_ff_exp);
     b.moe = b.h;
-    // the NVFP4 experts' FP4 planes take xq's place (an NVFP4 layer has no q8_1 rows)
-    const size_t a4h = fp4::a4_bytes((int64_t) P, 2 * g.n_ff_exp, (int) g.n_expert), a4x = fp4::token_bytes((int64_t) R, 2 * (int64_t) E);
-    if (a4h + 256 + a4x > mmq::q8_bytes((int64_t) P, (int64_t) E)) throw std::logic_error("inkling2 prompt: the FP4 planes outgrow xq");
-    b.a4h = b.xq;
-    b.a4x = b.xq ? (uint8_t*) b.xq + ((a4h + 255) & ~(size_t) 255) : nullptr;
     // the experts' input rows are rounded from nrm while it is read, so they end before it
     if (c.base && (uint8_t*) b.xq + mmq::q8_bytes((int64_t) P, (int64_t) E) > (uint8_t*) b.nrm)
         throw std::logic_error("inkling2 prompt: the experts' input rows overlap the MLP's normed rows");
@@ -121,10 +111,6 @@ void carve(Carve& c, Bufs& b, const Geometry& g) {
     b.tokd = c.take<int32_t>(R);
     b.ident = c.take<int32_t>(P);
     b.dbounds = c.take<int32_t>(2);
-    b.gsh = c.take<float>(fp4::scale_count((int64_t) P, (int) g.n_expert));
-    b.gsx = c.take<float>(R);
-    b.tile_off = c.take<int32_t>((size_t) g.n_expert + 1);
-    b.blk_off = c.take<int32_t>((size_t) g.n_expert + 1);
 }
 
 // One card's side of the prompt path: its chunk buffers, products and stream (the first card's: the reading session's).
@@ -529,10 +515,6 @@ private:
             cudaMemsetAsync(w.experts + (uint64_t) g_.n_expert * w.expert_stride, 0, kSlotGuard, strm());   // spill.hpp
         }
         moe_sort(b().ids, rows, k, g_.n_expert, b().sort_scr, b().bounds, b().tok, b().dst, b().exp, strm());
-        if (w.gu_type == kTypeNvfp4 && w.d_type == kTypeNvfp4 && fp4_shape()) {
-            experts_fp4(w, rows);
-            return;
-        }
         mmq::quantize(b().nrm, b().tok, b().xq, w.gu_type, E, E, pairs, strm());
         mmq::Product p;
         p.w = w.experts;
@@ -571,58 +553,6 @@ private:
         d.ld_dst = E;
         lane().mmq.run(d, strm());
         moe_combine(b().gu, b().rw, rows, k, b().moe, strm());
-    }
-
-    // The NVFP4 experts on the FP4 block-scaled tensor cores, the weights read once a tile in place: each activation row
-    // as two FP4 terms (its rounding and the rounding of the rest, E4M3 scales per 16 under one token scale, about 8 bits;
-    // one FP4 term costs KLD 0.0025 -> 0.0041), both through each weight fragment on one fp32 chain. Gate/up from the token
-    // planes into H as the softcapped SwiGLU, H rounded per expert tile, then down into the pairs' rows.
-    bool fp4_shape() const { return g_.n_embd == 2304 && g_.n_ff_exp == 1152 && g_.n_expert <= 1024; }
-    void experts_fp4(const LayerWeights& w, int rows) {
-        const int E = g_.n_embd, F = g_.n_ff_exp, n = g_.n_expert, pairs = rows * g_.n_used;
-        const bk::NativeExpertLayout L = bk::native_expert_layout(w.gu_type, w.d_type, E, F);
-        fp4::plan_blocks(b().bounds, n, b().tile_off, b().blk_off, strm());
-        fp4::quantize_tokens(b().nrm, rows, E, E, b().a4x, b().gsx, strm(), true);
-        fp4::Product gu;
-        gu.base = w.experts;
-        gu.stride = w.expert_stride;
-        gu.blk_off = b().blk_off;
-        gu.blocks = fp4::max_blocks(pairs, n);
-        gu.n = n;
-        gu.w_rows = 2 * F;
-        gu.w_cols = E;
-        gu.a4 = b().a4x;
-        gu.gs = b().gsx;
-        gu.bounds = b().bounds;
-        gu.ids = b().tok;
-        gu.tokens = rows;
-        gu.swiglu = true;
-        gu.tail_off = L.bytes - 16;
-        gu.gate_softcap = g_.gate_softcap;
-        gu.up_softcap = g_.up_softcap;
-        auto* h16 = reinterpret_cast<uint16_t*>(b().h);
-        gu.dst_f16 = h16;
-        gu.ld_dst = F;
-        gu.two = true;
-        fp4::run(gu, strm());
-        fp4::quantize_f16(h16, b().bounds, b().tile_off, n, b().a4h, b().gsh, F, F, pairs, strm());
-        fp4::Product d = gu;
-        d.swiglu = false;
-        d.ids = nullptr;
-        d.w_off = L.down_off;
-        d.w_rows = E;
-        d.w_cols = F;
-        d.a4 = b().a4h;
-        d.gs = b().gsh;
-        d.tile_off = b().tile_off;
-        auto* gu16 = reinterpret_cast<uint16_t*>(b().gu);
-        d.dst = nullptr;
-        d.dst_f16 = gu16;
-        d.dst_ids = b().dst;
-        d.two = true;
-        d.ld_dst = E;
-        fp4::run(d, strm());
-        moe_combine_f16(gu16, b().rw, rows, g_.n_used, b().moe, strm());
     }
 
     InklingModel& m_;
