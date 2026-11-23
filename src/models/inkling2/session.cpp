@@ -187,6 +187,11 @@ struct Shared {
     }
 };
 
+// The experts' reads ahead of their kernels (a guessed window's experts, or a wider window's from the window before, into
+// L2 on a side stream): off. An RTX 3090's 6 MB L2 holds two of a visit's experts' gate/up rows, so the reads would evict
+// one another before the experts run; on only where a measurement shows a gain.
+constexpr bool kExpertsAhead = false;
+
 // One card's side of a session's forward: its streams and events and its running counts of the experts' lookups. The first
 // card's are the session's own members (stream_, ...); the layer split's second card has its own.
 struct Lane {
@@ -866,7 +871,7 @@ private:
         // kGuessExperts / rows best) into L2 on the other side stream, while the attention and the glue before the experts
         // run (it starts once the projections are done)
         const int vi = (int) (&v - g_.visits.data());
-        const bool guess = rows <= kGuessRows;
+        const bool guess = kExpertsAhead && rows <= kGuessRows;
         if (guess && vi > 0 && m_.card_of(g_.visits[(size_t) vi - 1].layer) == card) {   // its guess was made on this card
             const bk::NativeExpertLayout Lx = bk::native_expert_layout(w.gu_type, w.d_type, E, g_.n_ff_exp);
             cudaEventRecord(k.pf_ev, k.stream);
@@ -919,7 +924,7 @@ private:
         bk::native_q8_0_mmvq(w.out, x.xo_, x.o_, kOutRows, E, rows, k.stream);
         // a wider window: the experts this visit took in the window before into L2 on the side stream, while the glue
         // before the experts runs (it starts once the output projection is done)
-        if (!guess) {
+        if (kExpertsAhead && !guess) {
             const bk::NativeExpertLayout Lx = bk::native_expert_layout(w.gu_type, w.d_type, E, g_.n_ff_exp);
             cudaEventRecord(k.ra_ev, k.stream);
             cudaStreamWaitEvent(k.ra_st, k.ra_ev, 0);
