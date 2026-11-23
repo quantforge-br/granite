@@ -1,16 +1,18 @@
 # Models and the router
 
-Several models share one server. A request's `model` field picks one, and one is loaded at a time. A swap ends one engine process
-and starts the next.
+Several model entries share one server. A request's `model` field picks one, and one is loaded at a time. A swap ends one
+engine process and starts the next.
+
+granite builds one model, Inkling 2 Mini, so the entries are Inkling 2 Mini packs with their own settings. A request may name
+a model by its file name, so each entry needs its own file.
 
 ```json
 {
   "version": 2,
-  "engine": { "conversation-cache-disk-mib": 32768, "idle-sleep": 300, "vram-reserve-mib": 500 },
+  "engine": { "idle-sleep": 300 },
   "models": [
-    { "alias": "Flash-Next", "model": "flash-next.basalt", "gpu": "auto", "kv": "int8", "max-context": 262144, "parallel": 4,
-      "slot-full-context": true, "vision": "dynamic" },
-    { "alias": "Inkling", "model": "inkling2.basalt", "gpu": "auto", "max-context": 1048576, "vision": "dynamic" }
+    { "alias": "Inkling", "model": "inkling2.basalt", "gpu": "0,1", "max-context": 262144, "vision": "dynamic" },
+    { "alias": "Inkling-1M", "model": "inkling2-1m.basalt", "gpu": "0", "kv": "fp8", "max-context": 1048576 }
   ],
   "server": { "host": "127.0.0.1", "port": 8080 }
 }
@@ -21,8 +23,7 @@ and starts the next.
 - `server`: shared by the whole server: `host`, `port`, `allowed-host`, `cors-origin`, `image-url-host`, `image-dir`,
   `image-remote-only`, `max-payload-mib`, `lazy`, `open`, `debug`, `request-lines`.
 - An entry takes engine flags and these server options: `gpu`, `vision`, `parallel`, `slot-full-context`, `idle-sleep`,
-  `idle-unload`, `min-free-vram-mib`, `fit-max-tokens`, `grammar`, `video-max-tokens`, the reasoning settings and the sampling
-  defaults.
+  `idle-unload`, `min-free-vram-mib`, `fit-max-tokens`, `grammar`, the reasoning settings and the sampling defaults.
 - `version` is `2`. A file in the old shape (no `models`) is refused.
 - The command line wins for every model.
 
@@ -36,8 +37,9 @@ Each entry is checked before anything loads, by the engine's own rules:
 | Value the model refuses (`max-context` past its maximum) | stops the start | stops the start |
 | Unknown name | stops the start | stops the start |
 
-`kv` takes each model's own values (`fp16` or `fp8` for Inkling 2 Mini); another value stops the start. Two aliases that are the same, or two entries sharing a cache
-directory, stop the start too.
+`kv` takes `fp16` or `fp8`; another value stops the start. Two entries that answer to the same name (an alias, or the same
+file), or two entries sharing a conversation folder on disk, stop the start too. Copies of one pack share a cache folder, so with
+`conversation-cache-disk-mib` each needs its own `conversation-cache-dir`.
 
 ## Requests and turns
 
@@ -59,8 +61,8 @@ Clients wait through a swap; they do not get a 503 for it. A streamed response s
 | Conversations on disk | kept in each model's folder |
 | Conversations in RAM and slots | written to disk at exit when `conversation-cache-disk-mib` is on; otherwise lost |
 | Sleeping engine | wakes on the next request for it |
-| `POST /v1/vram` | the machine's; applies to each model that can resize its tier |
+| `POST /v1/vram` | the machine's; a model loaded later applies the last reserve too |
 | Metrics | per model (`GET /metrics?model=NAME`) |
 
 `POST /v1/load` with `{"model": NAME}` swaps ahead of a request. `/health` and `/metrics` show the swap's progress. The console prints
-`[server] swap: Flash-Next -> Inkling, 2 waiting`.
+`[server] swap Inkling -> Inkling-1M (2 waiting)`, then `[server] swap: Inkling-1M ready in N s`.
