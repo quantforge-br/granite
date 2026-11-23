@@ -371,27 +371,12 @@ int reclaim_due_cases() {
     check("rose above the lead, fell back a chunk: yes", reclaim_due(floor + lead - 1, floor, lead, gib(9.0), 250), true);
     return fail;
 }
-// The watchdog's line: the budget flag is named only when the resident copy is big enough for it to shrink.
+// The watchdog's line: the free RAM, and no flag to change.
 int exhausted_message_cases() {
-    using basalt::platform::ram_exhausted_message;
-    int fail = 0;
-    const uint64_t margin = gib(4.0);
-    struct Case { const char* what; bool resident; double copy_gib; bool names_budget; bool names_mmap; };
-    const Case cases[] = {
-        {"mapped experts, nothing resident", false, 0.0, false, true},
-        {"tiny resident copy", true, 0.008, false, false},
-        {"empty resident copy", true, 0.0, false, false},
-        {"large resident copy", true, 60.0, true, false},
-    };
-    for (const Case& c : cases) {
-        const std::string m = ram_exhausted_message(gib(1.0), c.resident, gib(c.copy_gib), margin);
-        const bool budget = m.find("--resident-budget-gib") != std::string::npos;
-        const bool mmap = m.find("--mmap-experts") != std::string::npos;
-        const bool ok = budget == c.names_budget && mmap == c.names_mmap && m.find("1024 MiB free") != std::string::npos;
-        std::printf("ram message %-56s -> %s%s\n", c.what, m.c_str(), ok ? "" : "   <-- WRONG");
-        fail |= !ok;
-    }
-    return fail;
+    const std::string m = basalt::platform::ram_exhausted_message(gib(1.0));
+    const bool ok = m.find("1024 MiB free") != std::string::npos && m.find("--") == std::string::npos;
+    std::printf("ram message %-56s -> %s%s\n", "1 GiB free", m.c_str(), ok ? "" : "   <-- WRONG");
+    return ok ? 0 : 1;
 }
 // Without a stall reading: samples every 100 ms through BelowFloorClock into ram_level
 int ram_level_sustained_cases() {
@@ -558,13 +543,13 @@ int stall_parse_cases() {
     std::printf("stall reading here: %s (some %.2f, full %.2f)\n", live.known ? "known" : "none", live.some, live.full);
     return fail;
 }
-// The stop's error: the floor it fell under, and the budget flag only when the engine's own growth took the RAM
+// The stop's error: the floor it fell under, and the engine's own growth when it took most of the RAM
 int stop_message_cases() {
     using namespace basalt::platform;
     int fail = 0;
     const uint64_t floor = 3161ull << 20, hard = kRamHardFloor;
     const MemoryStalls calm{true, 1.0, 0.0}, stalled{true, 75.0, 45.0}, none{};
-    struct Case { const char* what; double avail; MemoryStalls st; double others, own; const char* has; bool budget; };
+    struct Case { const char* what; double avail; MemoryStalls st; double others, own; const char* has; bool engine; };
     const Case cases[] = {
         {"under the hard floor, other programs", 900.0 / 1024, calm, 2.0, 0.1, "900 MiB free < 1024 MiB hard floor", false},
         {"stalls, other programs", 2.5, stalled, 3.0, 0.5, "and the system stalls on memory (some 75%, full 45%)", false},
@@ -574,8 +559,8 @@ int stop_message_cases() {
     };
     for (const Case& c : cases) {
         const std::string m = ram_stop_message(gib(c.avail), floor, hard, c.st, gib(c.others), gib(c.own));
-        const bool budget = m.find("--resident-budget-gib") != std::string::npos;
-        const bool ok = m.find(c.has) != std::string::npos && budget == c.budget;
+        const bool engine = m.find("the engine took 1536 MiB since it was ready") != std::string::npos;
+        const bool ok = m.find(c.has) != std::string::npos && engine == c.engine;
         std::printf("ram stop %-50s -> %s%s\n", c.what, m.c_str(), ok ? "" : "   <-- WRONG");
         fail |= !ok;
     }

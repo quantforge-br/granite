@@ -135,12 +135,8 @@ uint64_t ram_budget(bool* known = nullptr);
 /// Polls available_memory() until `stop_memory_watchdog`.  Below `floor_bytes` it prints a `granite error:` line and
 /// _exit(1)s, so a load that is exhausting RAM ends before the machine starts to swap.
 void start_memory_watchdog(uint64_t floor_bytes);
-/// Tells the watchdog the load builds a resident RAM copy of the experts (`resident`) and how big it is so far, so
-/// its error names the copy's cap instead of the resident mode.
-void watch_resident_ram(bool resident, uint64_t copy_bytes);
-/// The line the watchdog prints when RAM runs out: `avail` bytes free, `resident` for the resident-copy mode with a
-/// copy of `copy_bytes`, `reserve` the free RAM to keep. A budget flag is named only when it could shrink the copy.
-std::string ram_exhausted_message(uint64_t avail, bool resident, uint64_t copy_bytes, uint64_t reserve);
+/// The line the watchdog prints when RAM runs out with `avail` bytes free.
+std::string ram_exhausted_message(uint64_t avail);
 void stop_memory_watchdog();
 
 /// Whether an available-RAM reading of `avail` is below `floor` (a reading of 0, unknown, is not).
@@ -228,8 +224,7 @@ inline bool ram_admit_waits(RamLevel level, uint64_t waited_ms, uint64_t limit_m
 
 /// The error a request stops with at RamLevel::Critical: the free RAM `avail` against the floor it fell under
 /// (`hard`, or the guard's `floor` with the stalls that made it critical) and who took the RAM since the engine was
-/// ready: `others` bytes by other programs, `own` by the engine. The budget flag is named only when the engine's own
-/// growth is the larger part.
+/// ready: `others` bytes by other programs, `own` by the engine, the larger of the two named.
 std::string ram_stop_message(uint64_t avail, uint64_t floor, uint64_t hard, const MemoryStalls& stalls,
                              uint64_t others, uint64_t own);
 

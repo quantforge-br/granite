@@ -392,33 +392,13 @@ uint64_t ram_budget(bool* known) {
 namespace {
 std::atomic<bool> g_watch_stop{false};
 std::atomic<bool> g_watch_on{false};
-std::atomic<bool> g_resident_mode{false};
-std::atomic<uint64_t> g_resident_copy{0};
 }  // namespace
 
-std::string ram_exhausted_message(uint64_t avail, bool resident, uint64_t copy_bytes, uint64_t reserve) {
-    const unsigned long long mib = (unsigned long long) (avail >> 20);
-    char buf[384];
-    if (!resident) {
-        std::snprintf(buf, sizeof buf, "RAM ran out loading (%llu MiB free); use "
-                                       "--resident-experts or --mmap-experts", mib);
-    } else if (copy_bytes < (1ull << 30)) {
-        // a budget of 1 GiB or more would not shrink a copy this small, so it is not offered
-        std::snprintf(buf, sizeof buf, "RAM ran out loading (%llu MiB free); the resident copy is only "
-                                       "%llu MiB, so something else is holding the memory (other programs, or file "
-                                       "pages read while loading)", mib, (unsigned long long) (copy_bytes >> 20));
-    } else {
-        // the copy shrunk by what the reserve is short of leaves the reserve free again
-        const uint64_t keep = copy_bytes - std::min(copy_bytes, reserve > avail ? reserve - avail : 0);
-        std::snprintf(buf, sizeof buf, "RAM ran out loading (%llu MiB free); use --resident-budget-gib %llu",
-                      mib, (unsigned long long) std::max<uint64_t>(1, keep >> 30));
-    }
+std::string ram_exhausted_message(uint64_t avail) {
+    char buf[160];
+    std::snprintf(buf, sizeof buf, "RAM ran out loading (%llu MiB free); free RAM and start again",
+                  (unsigned long long) (avail >> 20));
     return buf;
-}
-
-void watch_resident_ram(bool resident, uint64_t copy_bytes) {
-    g_resident_mode = resident;
-    g_resident_copy = copy_bytes;
 }
 
 void start_memory_watchdog(uint64_t floor_bytes) {
@@ -428,8 +408,7 @@ void start_memory_watchdog(uint64_t floor_bytes) {
         while (!g_watch_stop.load()) {
             const uint64_t avail = available_memory();
             if (avail > 0 && avail < floor_bytes) {
-                basalt::log::error("granite", "%s", ram_exhausted_message(avail, g_resident_mode.load(), g_resident_copy.load(),
-                                                                   ram_reserve()).c_str());
+                basalt::log::error("granite", "%s", ram_exhausted_message(avail).c_str());
                 _exit(1);
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -489,7 +468,7 @@ std::string ram_stop_message(uint64_t avail, uint64_t floor, uint64_t hard, cons
                       (unsigned long long) (floor >> 20));
     char tail[160] = "";
     if (own > others)
-        std::snprintf(tail, sizeof tail, "; lower --resident-budget-gib");
+        std::snprintf(tail, sizeof tail, "; the engine took %llu MiB since it was ready", (unsigned long long) (own >> 20));
     else if (others >= (1ull << 20))
         std::snprintf(tail, sizeof tail, "; other programs took %llu MiB since the engine was ready",
                       (unsigned long long) (others >> 20));
