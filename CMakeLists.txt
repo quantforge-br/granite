@@ -950,9 +950,8 @@ add_executable(window_gemm_two_gpu tests/kernels/window_gemm_two_gpu.cpp)
 target_link_libraries(window_gemm_two_gpu PRIVATE window_gemm kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME window_gemm_two_gpu COMMAND window_gemm_two_gpu)
 set_tests_properties(window_gemm_two_gpu PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
-# the FP8 and FP4 codes as bf16x2 (narrow_bf16.cuh): the direct cvt (CUDA 13.2+) and the f16 route, every input
+# the FP8 and FP4 codes as bf16x2 (narrow_bf16.cuh) against the host's values, every input
 add_executable(narrow_bf16_parity tests/kernels/narrow_bf16_parity.cu)
-set_target_properties(narrow_bf16_parity PROPERTIES CUDA_ARCHITECTURES 120a-real)
 target_include_directories(narrow_bf16_parity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(narrow_bf16_parity PRIVATE ${_gpu_runtime_target})
 basalt_gpu_test(NAME narrow_bf16_parity COMMAND narrow_bf16_parity)
