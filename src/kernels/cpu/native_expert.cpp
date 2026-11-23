@@ -5,7 +5,6 @@
 #include "basalt/kernels/cpu/expert.hpp"
 #include "basalt/kernels/cpu/iq_avx512.hpp"
 #include "basalt/kernels/cpu/iq_avx2.hpp"
-#include "basalt/kernels/cpu/kq_avx2.hpp"
 #include "basalt/kernels/cpu/nvfp4_avx512.hpp"
 #include "basalt/kernels/cpu/nvfp4_avx2.hpp"
 #include "basalt/kernels/cpu/expert_layout.hpp"

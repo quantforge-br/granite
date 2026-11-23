@@ -109,7 +109,6 @@ if(MSVC)
   set(_isa_avx2_flags "/arch:AVX2;-D__F16C__=1")
   set(_isa_avxvnni_flags "/arch:AVX2;-D__F16C__=1")
   set(_isa_avxvnniint8_flags "/arch:AVX2;-D__F16C__=1")
-  set(_isa_avx1_flags "/arch:AVX")
 else()
   set(_isa_avx512_flags "-mavx512f;-mavx512bw;-mavx512vl;-mavx512dq;-mavx512vnni;-mavx512vbmi;-mf16c;-mfma")
   set(_isa_avx2_flags "-mavx2;-mfma;-mf16c")
@@ -117,7 +116,6 @@ else()
   # -mno-avx512f keeps the file below EVEX under a global -march=native: there vpdpbssd lands on ymm16+, which
   # only its AVX10.2 form encodes, so the assembler refuses it or emits an instruction AVX-512 CPUs do not run.
   set(_isa_avxvnniint8_flags "-mavx2;-mfma;-mf16c;-mavxvnniint8;-mno-avx512f")
-  set(_isa_avx1_flags "-mavx")
 endif()
 
 # ---- artifact -------------------------------------------------------
@@ -937,8 +935,7 @@ target_sources(kernels_cpu PRIVATE src/kernels/cpu/native_expert.cpp src/kernels
                                          src/kernels/cpu/nvfp4_avx512.cpp
                                          src/kernels/cpu/nvfp4_avx2.cpp src/kernels/cpu/nvfp4_avx2_vnni.cpp
                                          src/kernels/cpu/iq_avx2.cpp src/kernels/cpu/iq_avx2_vnni.cpp
-                                         src/kernels/cpu/kq_avx2.cpp
-                                         src/kernels/cpu/kq_avx1.cpp src/kernels/cpu/ggml/ggml_cpu_dispatch.cpp
+                                         src/kernels/cpu/ggml/ggml_cpu_dispatch.cpp
                                          $<TARGET_OBJECTS:ggml_dots_avx2> $<TARGET_OBJECTS:ggml_dots_avx512>)
 # the i-quant rows also use BMI2 (pdep/pext for the sign masks; cpu_avx512_ok requires it). MSVC compiles the
 # intrinsics without a switch.
@@ -955,9 +952,6 @@ set_source_files_properties(src/kernels/cpu/iq_avx2_vnni.cpp PROPERTIES COMPILE_
 set_source_files_properties(src/kernels/cpu/nvfp4_avx2.cpp PROPERTIES COMPILE_OPTIONS "${_isa_avx2_flags}")
 # the same rows with AVX-VNNI-INT8 (`vpdpbssd`), called only behind cpu_avxvnni_int8_ok()
 set_source_files_properties(src/kernels/cpu/nvfp4_avx2_vnni.cpp PROPERTIES COMPILE_OPTIONS "${_isa_avxvnniint8_flags}")
-set_source_files_properties(src/kernels/cpu/kq_avx2.cpp PROPERTIES COMPILE_OPTIONS "${_isa_avx2_flags}")
-# the router lookahead's AVX1 dot (called behind cpu_avx1_ok)
-set_source_files_properties(src/kernels/cpu/kq_avx1.cpp PROPERTIES COMPILE_OPTIONS "${_isa_avx1_flags}")
 # MSVC gives the scalar F16C conversions no working code: its headers declare them nowhere, and with
 # __F16C__ defined the compiler claims the names as its own, so a definition compiled under that macro does not
 # build as written. The file below supplies the pair from the vector intrinsics, which are the same instruction,
@@ -969,12 +963,6 @@ if(MSVC)
   set_source_files_properties(src/kernels/cpu/ggml/f16c_scalar_msvc.c PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
 endif()
 target_link_libraries(kernels_cpu PUBLIC ggml_quants)
-if(BUILD_TESTING)
-  # the router lookahead's dot on each rung this CPU has (AVX2, the older CPUs' AVX1) against a double reference
-  add_executable(router_dot_parity tests/kernels/cpu/router_dot_parity.cpp)
-  target_link_libraries(router_dot_parity PRIVATE kernels_cpu)
-  basalt_gpu_test(NAME router_dot_parity COMMAND router_dot_parity)
-endif()
 # MMQ (ggml-cuda) for the prompt path's experts: the kernel, one instance per format the packs use, and the
 # activation quantizer; mmq_host.cu holds its few host symbols
 set(_mmq_types q2_0 iq1_s iq1_m iq2_xxs iq2_xs iq2_s iq3_xxs iq3_s iq4_nl iq4_xs q8_0 q5_0 q5_1 q2_k q3_k q4_k q5_k q6_k nvfp4)

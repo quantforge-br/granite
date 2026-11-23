@@ -12,7 +12,6 @@
 #include "basalt/kernels/cpu/expert_layout.hpp"
 #include "basalt/kernels/cpu/iq_avx2.hpp"
 #include "basalt/kernels/cpu/iq_avx512.hpp"
-#include "basalt/kernels/cpu/kq_avx2.hpp"
 #include "basalt/kernels/cpu/native_expert.hpp"
 #include "basalt/kernels/cpu/nvfp4_avx2.hpp"
 #include "basalt/kernels/cpu/nvfp4_avx512.hpp"
@@ -143,14 +142,13 @@ int main(int argc, char** argv) {
         ops.push_back({g.name, "avx512", bytes, NFF, [=](const uint8_t* b, int r0, int r1, int) { cpu::iq512_gu_rows(type, b, row, up, NH, pk, NT, ff, r0, r1); }, bytes});
         ops.push_back({g.name, "avx2", bytes, NFF, [=](const uint8_t* b, int r0, int r1, int) { cpu::iq256_gu_rows(type, b, row, up, NH, pk, NT, ff, r0, r1); }, bytes});
     }
-    {   // Q4_K gate/up: AVX-512 CPUs run ggml's dot per token; AVX2 CPUs the multi-token kernel
+    {   // Q4_K gate/up: ggml's dot per token
         const size_t row = gu_row(12), up = row * NFF, bytes = 2 * up;
         auto tr = [&](const ggml_type_traits_cpu* t) {
             return [=](const uint8_t* b, int r0, int r1, int) {
                 for (int r = r0; r < r1; ++r) for (int k = 0; k < NT; ++k) { float g, u; t->vec_dot(NH, &g, 0, b + r * row, 0, pk[k], 0, 1); t->vec_dot(NH, &u, 0, b + up + r * row, 0, pk[k], 0, 1); ff[k][r] = g * u; } };
         };
         ops.push_back({"Q4_K gate/up", "avx512", bytes, NFF, tr(ggml_get_type_traits_cpu_avx512(GGML_TYPE_Q4_K)), bytes});
-        ops.push_back({"Q4_K gate/up", "avx2", bytes, NFF, [=](const uint8_t* b, int r0, int r1, int) { cpu::kq256_gu_rows(12, b, row, up, NH, pk, NT, ff, r0, r1); }, bytes});
     }
     {   // NVFP4 gate/up and down
         const size_t row = gu_row(40), up = row * NFF, bytes = 2 * up, drow = d_row(40), dbytes = drow * NH;
