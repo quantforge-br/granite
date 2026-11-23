@@ -1,5 +1,5 @@
 // src/kernels/cuda/window_gemm.cu - see include/basalt/kernels/window_gemm.hpp: the activation packs, the plan and the
-// dispatch to the kernel instantiations (window_gemm_f8.cu, window_gemm_nvfp4.cu).
+// dispatch to the kernel instantiations (window_gemm_nvfp4.cu).
 // Adapted from Infernix (Ian Ranson and contributors), Apache-2.0: see THIRD_PARTY_LICENSES.
 #include "window_gemm_kernels.hpp"
 
@@ -156,21 +156,8 @@ int resident(const Kernel& k) {
     return per_sm * sm_count();
 }
 
-// An F8 call's warps per block (its K slices), from its shapes alone: more slices when its 16-row tiles are few
-int f8_warps(const Call& c) {
-    int64_t tiles = 0;
-    for (int i = 0; i < c.n; ++i) tiles += (c.m[i].rows + 15) / 16;
-    if (c.K % 512 == 0 && tiles < 512) return 8;
-    return c.K % 256 == 0 ? 4 : 2;
-}
-
 const Kernel& kernel_for(const Call& c, int nt) {
-    const bool swiglu = c.epi == Epilogue::SwiGLU;
-    if (c.fmt != Format::Nvfp4 && swiglu) refuse("an FP8 or BF16 SwiGLU pair", c);
-    if (c.fmt == Format::F8) return detail::f8(f8_warps(c), nt);
-    if (c.fmt == Format::Bf16) return detail::bf16(nt);
-    if (c.fmt == Format::Q8) return detail::q8(nt);
-    return swiglu ? detail::nvfp4_swiglu(nt) : detail::nvfp4(nt);
+    return c.epi == Epilogue::SwiGLU ? detail::nvfp4_swiglu(nt) : detail::nvfp4(nt);
 }
 
 // The slice count from the call's shapes and the device alone (the T = 1..8 kernel's residency for every T): the fewest
@@ -184,13 +171,8 @@ Plan plan_for(const Call& c) {
     else
         for (int i = 0; i < c.n; ++i) p.tiles += (int) ((c.m[i].rows + rs - 1) / rs);
     p.nchunks = (int) (c.K / p.k->ch);
-    if (c.fmt == Format::F8) {   // whole K in each block: one item a tile, no slices
-        p.cps = p.nchunks;
-        p.grid = p.tiles;
-        return p;
-    }
     const int64_t R = resident(*p.k);
-    const int cb = c.fmt == Format::Q8 ? p.k->ch : c.fmt == Format::Bf16 ? 2 * p.k->ch : p.k->ch / 2;   // weight bytes per row per chunk
+    const int cb = p.k->ch / 2;   // weight bytes per row per chunk
     const double sums = 1.0 + 64.0 / cb;   // an item's fixed cost in chunks: its pipeline turn and its slice's sums
     double best = 1e30;
     for (int ks = 1; ks <= std::min(p.nchunks, 64); ++ks) {
@@ -218,27 +200,7 @@ int64_t part_rows(const Call& c) {
     return r;
 }
 
-// one thread per (row, 32-value block): the fp16 scale to the scale plane, the 32 codes to the code plane
-__global__ void q8_planes_kernel(const uint8_t* __restrict__ src, int64_t rows, int64_t K, uint8_t* __restrict__ dst) {
-    const int64_t nb = K / 32, i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= rows * nb) return;
-    const int64_t r = i / nb, b = i - r * nb;
-    const uint8_t* blk = src + i * 34;
-    uint8_t* codes = dst + r * K + b * 32;
-    for (int k = 0; k < 32; ++k) codes[k] = blk[2 + k];
-    uint8_t* sc = dst + rows * K + (r * nb + b) * 2;
-    sc[0] = blk[0];
-    sc[1] = blk[1];
-}
-
 }  // namespace
-
-void q8_planes(const void* blocks, int64_t rows, int64_t K, void* planes, void* stream) {
-    if (K % 32 != 0) refuse("Q8 planes of K not a multiple of 32", Call{});
-    const int64_t n = rows * (K / 32);
-    q8_planes_kernel<<<(unsigned) ((n + 255) / 256), 256, 0, (cudaStream_t) stream>>>((const uint8_t*) blocks, rows, K, (uint8_t*) planes);
-    check("window gemm: q8 planes");
-}
 
 std::size_t act_bytes(int64_t K) { return (size_t) kRows * K * sizeof(uint16_t); }
 
@@ -277,8 +239,7 @@ void gemm(const Call& c, const void* act, int T, const Workspace& ws, void* stre
     if (c.K % p.k->ch != 0) refuse("K is not a multiple of the chunk", c);
     for (int i = 0; i < c.n; ++i) {
         if (((uintptr_t) c.m[i].w & 15) != 0) refuse("unaligned matrix", c);
-        if (c.fmt == Format::Nvfp4 && c.m[i].rows % 128 != 0) refuse("NVFP4 rows not a multiple of 128", c);
-        if (c.m[i].row_scales && c.fmt != Format::F8) refuse("a scale per row on a matrix other than F8", c);
+        if (c.m[i].rows % 128 != 0) refuse("rows not a multiple of 128", c);
     }
     const int64_t pr = part_rows(c);
     if (p.ks > 1 && ((size_t) p.ks * kRows * pr > ws.partial_floats || (size_t) p.tiles > ws.tickets_n))
@@ -290,10 +251,9 @@ void gemm(const Call& c, const void* act, int T, const Workspace& ws, void* stre
     int64_t off = 0;
     for (int i = 0; i < c.n; ++i) {
         a.w[i] = c.m[i].w;
-        a.sp[i] = c.m[i].scales ? c.m[i].scales : c.m[i].w + c.m[i].rows * (c.fmt == Format::Q8 ? c.K : c.K / 2);
+        a.sp[i] = c.m[i].scales ? c.m[i].scales : c.m[i].w + c.m[i].rows * (c.K / 2);
         a.rows[i] = c.m[i].rows;
         a.scale[i] = c.m[i].scale;
-        a.row_scales[i] = c.m[i].row_scales;
         a.y[i] = c.m[i].y;
         a.y16[i] = c.m[i].y16;
         a.ld_y[i] = c.m[i].ld_y;

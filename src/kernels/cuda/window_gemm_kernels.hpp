@@ -1,4 +1,4 @@
-// src/kernels/cuda/window_gemm_kernels.hpp - the decode window products' kernel instantiations, one .cu per format.
+// src/kernels/cuda/window_gemm_kernels.hpp - the decode window products' kernel instantiations (window_gemm_nvfp4.cu).
 // Adapted from Infernix (Ian Ranson and contributors), Apache-2.0: see THIRD_PARTY_LICENSES.
 #pragma once
 
@@ -6,18 +6,14 @@
 
 namespace basalt::kernels::wgemm::detail {
 
-/// The kernel for windows of up to 8 (nt 1), 16 (nt 2) or 32 (nt 4) rows.  Every nt of a kind has the same block shape;
-/// F8 with kw warps on K slices (window_gemm_sliced.cuh).
-const Kernel& f8(int kw, int nt);
-const Kernel& bf16(int nt);
-const Kernel& q8(int nt);
+/// The kernel for windows of up to 8 (nt 1), 16 (nt 2) or 32 (nt 4) rows.  Every nt of a kind has the same block shape.
 const Kernel& nvfp4(int nt);
 const Kernel& nvfp4_swiglu(int nt);
 
-template <int F, int RS, int NM, int CH, int ST, int NT, int MW> Kernel make_kernel() {
-    using C = Cfg<F, RS, NM, CH, ST>;
+template <int RS, int NM, int CH, int ST, int NT, int MW> Kernel make_kernel() {
+    using C = Cfg<RS, NM, CH, ST>;
     Kernel k;
-    k.fn = wgemm_kernel<F, RS, NM, CH, ST, NT, MW>;
+    k.fn = wgemm_kernel<RS, NM, CH, ST, NT, MW>;
     k.threads = C::kThreads / MW;
     k.smem = C::kSmem;
     k.rs = RS;

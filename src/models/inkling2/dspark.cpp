@@ -66,7 +66,6 @@ void ws_need(const DsparkGeometry& d, size_t& partial, size_t& tickets) {
     partial = tickets = 0;
     const auto need = [&](int64_t K, std::initializer_list<int64_t> rows, wg::Epilogue epi) {
         wg::Call c;
-        c.fmt = wg::Format::Nvfp4;
         c.K = K;
         c.epi = epi;
         c.n = 0;
@@ -538,14 +537,12 @@ void DsparkHook::stage(int k, int n, void* stream) {
         const float* sc = L.fp4_scale;
         wg::pack(attn_, kQ, kQ, kDsBlock, act_a_, stream);
         wg::Call o;
-        o.fmt = wg::Format::Nvfp4;
         o.K = kQ;
         o.epi = wg::Epilogue::Add;
         o.m[0] = mat(L.wo, kE, sc + 3, x_, kE);
         wg::gemm(o, act_a_, kDsBlock, ws_, stream);
         wg::norm_pack(x_, L.post_norm, d.rms_eps, kE, kDsBlock, act_a_, nullptr, stream);
         wg::Call gu;
-        gu.fmt = wg::Format::Nvfp4;
         gu.K = kE;
         gu.n = 2;
         gu.epi = wg::Epilogue::SwiGLU;
@@ -554,7 +551,6 @@ void DsparkHook::stage(int k, int n, void* stream) {
         gu.act_out = act_h_;
         wg::gemm(gu, act_a_, kDsBlock, ws_, stream);
         wg::Call dn;
-        dn.fmt = wg::Format::Nvfp4;
         dn.K = d.n_ff;
         dn.epi = wg::Epilogue::Add;
         dn.m[0] = mat(L.down, kE, sc + 6, x_, kE);
@@ -566,7 +562,6 @@ void DsparkHook::stage(int k, int n, void* stream) {
         const float* sc = L.fp4_scale;
         wg::norm_pack(x_, L.attn_norm, d.rms_eps, kE, kDsBlock, act_a_, nullptr, stream);
         wg::Call qkv;
-        qkv.fmt = wg::Format::Nvfp4;
         qkv.K = kE;
         qkv.n = 3;
         qkv.m[0] = mat(L.wq, kQ, sc + 0, q_, kQ);

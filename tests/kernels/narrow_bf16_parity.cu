@@ -1,7 +1,7 @@
-// tests/kernels/narrow_bf16_parity.cu - the FP8 E4M3 and FP4 E2M1 conversions to bf16x2 (basalt/kernels/narrow_bf16.cuh)
-// against the host's values: every pair of E4M3 bytes, every UE4M3 scale byte in both halves (bit 7 ignored, 0x7f as 0), and
-// every E2M1 byte at every UE4M3 scale byte in each byte of the word, bit for bit (a NaN only as a NaN); and bf16x2_mul_rn
-// against the host's rounding of the product on a sweep of bf16 pairs.  Exit 77 without a GPU.
+// tests/kernels/narrow_bf16_parity.cu - the FP4 E2M1 and UE4M3 conversions to bf16x2 (basalt/kernels/narrow_bf16.cuh)
+// against the host's values: every UE4M3 scale byte in both halves (bit 7 ignored, 0x7f as 0), and every E2M1 byte at
+// every UE4M3 scale byte in each byte of the word, bit for bit; and bf16x2_mul_rn against the host's rounding of the
+// product on a sweep of bf16 pairs.  Exit 77 without a GPU.
 #include "basalt/kernels/narrow_bf16.cuh"
 
 #include <cuda_fp8.h>
@@ -18,12 +18,6 @@ namespace bk = basalt::kernels;
 namespace {
 
 constexpr int kN = 1 << 16;
-
-// i: two E4M3 bytes
-__global__ void e4m3(unsigned* got) {
-    const unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
-    got[i] = bk::e4m3x2_bf16x2(i);
-}
 
 // i: a UE4M3 scale byte (the low byte; the rest of the sweep repeats it)
 __global__ void ue4m3(unsigned* got) {
@@ -43,7 +37,7 @@ __global__ void e2m1(unsigned* got) {
     const unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned s = i >> 8;
     unsigned h[4];
-    bk::e2m1x8_bf16x2_scaled(e2m1_word(i), bk::e4m3x2_bf16x2(s | (s << 8)), bk::e2m1_table(0), h);
+    bk::e2m1x8_bf16x2_scaled(e2m1_word(i), bk::ue4m3_bf16x2(s), bk::e2m1_table(0), h);
     for (int k = 0; k < 4; ++k) got[4 * i + k] = h[k];
 }
 
@@ -72,8 +66,6 @@ float e2m1f(unsigned n) {
     return (n & 8) ? -mag[n & 7] : mag[n & 7];
 }
 
-bool bf16_nan(unsigned h) { return (h & 0x7f80u) == 0x7f80u && (h & 0x7fu); }
-
 float bf16_f(unsigned h) {
     const unsigned u = (h & 0xffffu) << 16;
     float f;
@@ -89,6 +81,8 @@ unsigned bf16_rn(float v) {
 }
 
 int fails = 0;
+
+bool bf16_nan(unsigned h) { return (h & 0x7f80u) == 0x7f80u && (h & 0x7fu); }
 
 // one half against the host's value (a NaN only as a NaN; signed zeros by their bits)
 void check(const char* what, unsigned in, int half, unsigned got, float want) {
@@ -116,18 +110,13 @@ int main() {
     if (cudaMalloc(&d, 4 * kN * sizeof(unsigned)) != cudaSuccess) return 77;
     std::vector<unsigned> g(4 * kN);
 
-    if (!run(e4m3, d, g, kN, "e4m3")) return 1;
-    for (unsigned i = 0; i < kN; ++i)
-        for (int half = 0; half < 2; ++half) check("e4m3x2", i, half, g[i], e4m3f((i >> (8 * half)) & 0xffu));
-    std::printf("e4m3x2: NaN 0x7f -> 0x%04x, 0xff -> 0x%04x\n", g[0x7f] & 0xffffu, g[0xff] & 0xffffu);
-
     if (!run(ue4m3, d, g, kN, "ue4m3")) return 1;
     for (unsigned i = 0; i < kN; ++i)
         for (int half = 0; half < 2; ++half) check("ue4m3", i, half, g[i], ue4m3f(i & 0xffu));
 
     if (!run(e2m1, d, g, 4 * (size_t) kN, "e2m1")) return 1;
     for (unsigned i = 0; i < kN; ++i) {
-        const float sc = e4m3f(i >> 8);
+        const float sc = ue4m3f(i >> 8);
         const unsigned w = e2m1_word(i);
         for (int k = 0; k < 4; ++k)
             for (int half = 0; half < 2; ++half)

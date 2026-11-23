@@ -1,11 +1,11 @@
-// include/basalt/kernels/narrow_bf16.cuh - FP8 E4M3 and FP4 E2M1 codes as bf16x2 for a kernel's mma operands.  Device
-// code only (no kernel): include from a .cu.
+// include/basalt/kernels/narrow_bf16.cuh - NVFP4's FP4 E2M1 codes and UE4M3 scales as bf16x2 for a kernel's mma operands.
+// Device code only (no kernel): include from a .cu.
 //
-// Every E4M3 and E2M1 value is exact in bf16.  The supported cards have no cvt from either format and no mul.bf16x2, so
-// an E4M3 code's magnitude bits go under the bf16 exponent, where they read as the code's value times 2^-120 (normal and
-// subnormal codes alike), and one bf16x2 fma by 2^120, with a -0 addend (a plain multiply, -0 products kept), gives the
-// value exactly; an E2M1 code's eight magnitudes come from a byte table.  An E4M3 NaN (magnitude 0x7f) becomes a bf16
-// NaN.  tests/kernels/narrow_bf16_parity.cu checks every input against the host's values.
+// Every E2M1 and UE4M3 value is exact in bf16.  The supported cards have no cvt from either format and no mul.bf16x2, so
+// a UE4M3 scale's magnitude bits go under the bf16 exponent, where they read as the scale times 2^-120 (normal and
+// subnormal scales alike), and one bf16x2 fma by 2^120, with a -0 addend (a plain multiply), gives the value exactly; an
+// E2M1 code's eight magnitudes come from a byte table.  tests/kernels/narrow_bf16_parity.cu checks every input against
+// the host's values.
 #pragma once
 
 #include <cuda_runtime.h>
@@ -17,14 +17,6 @@ __device__ __forceinline__ unsigned bf16x2_mul_rn(unsigned a, unsigned b) {
     unsigned d;
     asm("fma.rn.bf16x2 %0, %1, %2, %3;" : "=r"(d) : "r"(a), "r"(b), "r"(0x80008000u));
     return d;
-}
-
-/// two E4M3 bytes (the low 16 bits of x, the low byte the lower half) as bf16x2 (exact; a NaN stays a NaN)
-__device__ __forceinline__ unsigned e4m3x2_bf16x2(unsigned x) {
-    const unsigned s = (x & 0xffu) | ((x & 0xff00u) << 8);   // byte k in half k
-    const unsigned m = (s & 0x007f007fu) << 4;                // exponent and mantissa under bf16's: the value * 2^-120
-    const unsigned h = bf16x2_mul_rn(m | ((s & 0x00800080u) << 8), 0x7b807b80u);   // * 2^120, the sign kept
-    return h | (__vcmpeq2(m, 0x07f007f0u) & 0x7fff7fffu);
 }
 
 /// an NVFP4 sub-block scale byte (UE4M3, x < 256) as bf16 in both halves, as the format reads it elsewhere
