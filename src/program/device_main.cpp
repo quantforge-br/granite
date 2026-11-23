@@ -1,4 +1,4 @@
-// src/program/device_main.cpp - `basalt-device`: report the GPU and exercise the arena.
+// src/program/device_main.cpp - `granite-device`: report the GPU and exercise the arena.
 //
 // It runs without a model.  It is also the run-time half of the architecture policy: CMake refuses to COMPILE for
 // another architecture, and this refuses to RUN on one.
@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--list-devices") == 0) list_devices = true;
         else if (std::strcmp(argv[i], "--link-rates") == 0) link_rates = true;
         else if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
-            std::printf("usage: basalt-device [--selftest] [--list-devices] [--link-rates]\n"
+            std::printf("usage: granite-device [--selftest] [--list-devices] [--link-rates]\n"
                         "  --list-devices  every GPU the runtime enumerates, numbered as\n"
                         "                  CUDA_VISIBLE_DEVICES numbers them, and whether this binary can run it\n"
                         "  --link-rates    per GPU, one line \"pcie_h2d BUS_ID GB_PER_S\": pinned host-to-device copy speed\n");
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
             } catch (const basalt::core::CudaError&) {
                 std::printf("selftest: over-allocation refused as required\n");
             }
-            std::printf("basalt-device selftest OK\n");
+            std::printf("granite-device selftest OK\n");
         }
         return 0;
     } catch (const std::exception& e) {

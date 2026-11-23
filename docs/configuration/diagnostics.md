@@ -74,7 +74,7 @@ Binary: **CLI** = `bin/basalt` one-shot (`--tokens IDS`), **serve** = `--serve` 
 | `--hardware` | | Measure CPU, RAM and each GPU's link, then exit. |
 | `--community`, `--submitter NAME`, `--community-file PATH` | bench | | The community preset and its row, which names the model ([community runs](../community.md)). |
 
-`basalt-device` (in the build folder): `--list-devices`, `--link-rates`, `--selftest`.
+`granite-device` (in the build folder): `--list-devices`, `--link-rates`, `--selftest`.
 
 ## Experiment keys (`--exp`)
 

@@ -206,15 +206,15 @@ foreach(_m IN LISTS BASALT_MODELS)
 endforeach()
 
 
-add_executable(basalt-gguf src/artifact/gguf_reader.cpp)
-target_link_libraries(basalt-gguf PRIVATE artifact models)
-basalt_embed_manifest(basalt-gguf)
+add_executable(granite-gguf src/artifact/gguf_reader.cpp)
+target_link_libraries(granite-gguf PRIVATE artifact models)
+basalt_embed_manifest(granite-gguf)
 
-add_executable(basalt-dequant src/artifact/dequant.cpp)
-target_link_libraries(basalt-dequant PRIVATE artifact)
-basalt_embed_manifest(basalt-dequant)
+add_executable(granite-dequant src/artifact/dequant.cpp)
+target_link_libraries(granite-dequant PRIVATE artifact)
+basalt_embed_manifest(granite-dequant)
 # this file is now nothing but the CLI entry point, and its inherited guard spells that as a "selftest"
-target_compile_definitions(basalt-dequant PRIVATE DEQUANT_SELFTEST)
+target_compile_definitions(granite-dequant PRIVATE DEQUANT_SELFTEST)
 if(BUILD_TESTING)
   # the reader refuses a duplicate tensor name at open, naming it (a synthetic GGUF: no model, no GPU)
   add_executable(gguf_reader_test tests/artifact/gguf_reader_test.cpp)
@@ -267,8 +267,8 @@ target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # linker error ("unresolved external symbol cudaGraphInstantiate") names the function rather than the cause.
 target_link_libraries(core PUBLIC model_file artifact platform warnings ${_gpu_runtime_target})
 
-add_executable(basalt-device src/program/device_main.cpp)
-target_link_libraries(basalt-device PRIVATE core)
+add_executable(granite-device src/program/device_main.cpp)
+target_link_libraries(granite-device PRIVATE core)
 
 # ---- kernels ----
 # Naive first, each with a parity test against a reference that was itself validated against ggml.  The
@@ -346,17 +346,17 @@ add_library(serve_shared STATIC src/program/serve/commands.cpp
 target_include_directories(serve_shared PUBLIC include PRIVATE ${_gpu_include_directories} ${CMAKE_CURRENT_SOURCE_DIR}/src/program/tokenizer)
 target_link_libraries(serve_shared PUBLIC tiers model engine_session grammar tokenizer spec ${_gpu_runtime_target})
 
-add_executable(basalt src/program/generate.cpp
+add_executable(granite src/program/generate.cpp
                        src/program/generate/adapter.cpp
                        src/program/generate/configure.cpp
                        src/program/cli/arguments.cpp
                        src/program/cli/serve.cpp
                        src/program/cli/startup.cpp
                        src/program/cli/gpu.cpp)
-basalt_ship_to_bin(basalt)
-target_include_directories(basalt PRIVATE ${_gpu_include_directories})
-target_link_libraries(basalt PRIVATE models serve_shared engine_session ${_gpu_runtime_target})
-basalt_embed_manifest(basalt)
+basalt_ship_to_bin(granite)
+target_include_directories(granite PRIVATE ${_gpu_include_directories})
+target_link_libraries(granite PRIVATE models serve_shared engine_session ${_gpu_runtime_target})
+basalt_embed_manifest(granite)
 # `basalt serve` runs the Python server from the directory above bin/; the engine reads its expert profiles from data/profiles
 
 # The standard benchmark: a host-only program that drives the engine over its stdin/stdout protocol.
@@ -369,7 +369,7 @@ add_custom_target(git_stamp
   COMMENT "Refreshing the commit stamp")
 execute_process(COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${_git_stamp}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_stamp.cmake)
-# the engine driven as a child process and the report logic, shared by basalt-bench and basalt-probe
+# the engine driven as a child process and the report logic, shared by granite-bench and granite-probe
 add_library(engine_session STATIC src/program/engine_session.cpp src/program/load_summary.cpp src/program/probe_report.cpp src/program/probe_derive.cpp src/program/community_row.cpp src/program/host_rates.cpp
             src/program/gpu_select.cpp src/program/multi_gpu_plan.cpp)
 target_include_directories(engine_session PUBLIC include)
@@ -400,8 +400,8 @@ if(BUILD_TESTING)
   basalt_cpu_test(NAME tokenizer_test COMMAND tokenizer_test)
   set_tests_properties(tokenizer_test PROPERTIES TIMEOUT 60)
 endif()
-add_executable(basalt-bench src/program/bench_main.cpp)
-basalt_ship_to_bin(basalt-bench)
+add_executable(granite-bench src/program/bench_main.cpp)
+basalt_ship_to_bin(granite-bench)
 # the image encoder sidecar, bin/basalt-vision (its own project, built with this one)
 add_subdirectory(tools/vision)
 target_link_libraries(serve_shared PUBLIC vision_core)
@@ -435,28 +435,28 @@ if(BUILD_TESTING)
     set_tests_properties(ffmpeg_abi_test PROPERTIES SKIP_RETURN_CODE 77)
   endif()
 endif()
-add_dependencies(basalt-bench basalt basalt-device git_stamp)
+add_dependencies(granite-bench granite granite-device git_stamp)
 add_dependencies(serve_shared git_stamp)   # the engine's INFO commit=
 target_include_directories(serve_shared PRIVATE ${CMAKE_BINARY_DIR}/stamp)
-target_include_directories(basalt-bench PRIVATE ${CMAKE_BINARY_DIR}/stamp)
-target_link_libraries(basalt-bench PRIVATE engine_session platform warnings ${CMAKE_DL_LIBS})
-basalt_embed_manifest(basalt-bench)
-target_compile_definitions(basalt-bench PRIVATE
-  BASALT_BENCH_ENGINE="$<TARGET_FILE:basalt>"
-  BASALT_BENCH_DEVICE="$<TARGET_FILE:basalt-device>"
+target_include_directories(granite-bench PRIVATE ${CMAKE_BINARY_DIR}/stamp)
+target_link_libraries(granite-bench PRIVATE engine_session platform warnings ${CMAKE_DL_LIBS})
+basalt_embed_manifest(granite-bench)
+target_compile_definitions(granite-bench PRIVATE
+  BASALT_BENCH_ENGINE="$<TARGET_FILE:granite>"
+  BASALT_BENCH_DEVICE="$<TARGET_FILE:granite-device>"
   BASALT_BENCH_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/data/bench"
   BASALT_BENCH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
   BASALT_BENCH_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
   BASALT_BENCH_CUDA="${CMAKE_CUDA_COMPILER_VERSION}")
 
 # granite-probe: starts the engine, measures its rates and cold decode speed, prints a report
-add_executable(basalt-probe src/program/probe_main.cpp)
-basalt_ship_to_bin(basalt-probe)
-add_dependencies(basalt-probe basalt)
-target_link_libraries(basalt-probe PRIVATE engine_session platform warnings ${CMAKE_DL_LIBS})
-basalt_embed_manifest(basalt-probe)
-target_compile_definitions(basalt-probe PRIVATE
-  BASALT_BENCH_ENGINE="$<TARGET_FILE:basalt>"
+add_executable(granite-probe src/program/probe_main.cpp)
+basalt_ship_to_bin(granite-probe)
+add_dependencies(granite-probe granite)
+target_link_libraries(granite-probe PRIVATE engine_session platform warnings ${CMAKE_DL_LIBS})
+basalt_embed_manifest(granite-probe)
+target_compile_definitions(granite-probe PRIVATE
+  BASALT_BENCH_ENGINE="$<TARGET_FILE:granite>"
   BASALT_BENCH_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/data/bench")
 
 if(BUILD_TESTING)
@@ -465,7 +465,7 @@ if(BUILD_TESTING)
 if(BASALT_STDIN_STOP_MODEL AND Python3_Interpreter_FOUND)
   add_test(NAME stdin_stop_test
            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/program/stdin_stop_test.py
-                   $<TARGET_FILE:basalt> ${BASALT_STDIN_STOP_MODEL} ${CMAKE_CURRENT_SOURCE_DIR}/data/bench/conv.ids
+                   $<TARGET_FILE:granite> ${BASALT_STDIN_STOP_MODEL} ${CMAKE_CURRENT_SOURCE_DIR}/data/bench/conv.ids
                    ${BASALT_STDIN_STOP_ARGS})
   set_property(TEST stdin_stop_test APPEND PROPERTY LABELS gpu)
   set_tests_properties(stdin_stop_test PROPERTIES TIMEOUT 600)
@@ -476,7 +476,7 @@ endif()
 if(BASALT_GRAMMAR_MODEL AND Python3_Interpreter_FOUND)
   add_test(NAME grammar_engine_test
            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/program/grammar_engine_test.py
-                   $<TARGET_FILE:basalt> ${BASALT_GRAMMAR_MODEL} ${BASALT_GRAMMAR_ARGS})
+                   $<TARGET_FILE:granite> ${BASALT_GRAMMAR_MODEL} ${BASALT_GRAMMAR_ARGS})
   set_property(TEST grammar_engine_test APPEND PROPERTY LABELS gpu)
   set_tests_properties(grammar_engine_test PROPERTIES TIMEOUT 900)
 endif()
@@ -486,7 +486,7 @@ endif()
 if(BASALT_GRAMMAR_MODEL AND Python3_Interpreter_FOUND)
   add_test(NAME grammar_batch_test
            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/program/grammar_batch_test.py
-                   $<TARGET_FILE:basalt> ${BASALT_GRAMMAR_MODEL} ${BASALT_GRAMMAR_BATCH_ARGS})
+                   $<TARGET_FILE:granite> ${BASALT_GRAMMAR_MODEL} ${BASALT_GRAMMAR_BATCH_ARGS})
   set_property(TEST grammar_batch_test APPEND PROPERTY LABELS gpu)
   set_tests_properties(grammar_batch_test PROPERTIES TIMEOUT 1500)
 endif()
@@ -706,7 +706,7 @@ basalt_embed_manifest(log_test)
 basalt_cpu_test(NAME log_test COMMAND log_test)
 set_tests_properties(log_test PROPERTIES TIMEOUT 60)
 
-# basalt-probe's report: rates block and layout (CPU only)
+# granite-probe's report: rates block and layout (CPU only)
 add_executable(probe_report_test tests/program/probe_report_test.cpp)
 target_link_libraries(probe_report_test PRIVATE engine_session warnings)
 basalt_embed_manifest(probe_report_test)
@@ -730,7 +730,7 @@ basalt_embed_manifest(multi_gpu_plan_test)
 basalt_cpu_test(NAME multi_gpu_plan_test COMMAND multi_gpu_plan_test)
 set_tests_properties(multi_gpu_plan_test PROPERTIES TIMEOUT 60)
 
-# basalt-probe's suggested values: the worker pick, the balance share and the suggestion lines (CPU only)
+# granite-probe's suggested values: the worker pick, the balance share and the suggestion lines (CPU only)
 add_executable(probe_derive_test tests/program/probe_derive_test.cpp)
 target_link_libraries(probe_derive_test PRIVATE engine_session warnings)
 basalt_embed_manifest(probe_derive_test)
@@ -816,7 +816,7 @@ basalt_cpu_test(NAME shipped_profiles_test COMMAND shipped_profiles_test)
 # The GPU test runs ON THE TARGET PC. `--selftest` allocates
 # and writes real VRAM, so a machine without a device fails this test rather than skipping it silently -
 # which is correct: an engine that targets one GPU should not report a pass for having no GPU.
-basalt_gpu_test(NAME cuda_device_selftest COMMAND basalt-device --selftest)
+basalt_gpu_test(NAME cuda_device_selftest COMMAND granite-device --selftest)
 endif()
 
 # ---- kernels_cpu ----
