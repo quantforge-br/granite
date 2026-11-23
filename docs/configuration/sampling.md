@@ -12,8 +12,7 @@ default, then the engine's. `/props` reports what is in effect. An out-of-range 
 | `repetition_penalty` | > 0 | Multiplicative penalty on tokens in the window. `1` is off. |
 | `presence_penalty`, `frequency_penalty` | number | Flat, and count-based, penalties. `0` is off. |
 | `penalty_last_n` | 0..4096 | Window for the penalties (default 64). |
-| `seed` | integer | Fixes the draw. On Flash-Next the same seeded request repeats run to run for the same session history (the same requests in the same order, one at a time; see [adaptive tier](adaptive.md)). |
-| `relaxed_drafting` | [0, 1] or `false` | This request's relaxed-drafting threshold. `false` or `0` forces exact sampling. |
+| `seed` | integer | Fixes the draw. |
 
 Also read: `max_tokens` / `max_completion_tokens` (`0` or `-1` = the rest of the context), `stop`, `logit_bias`, `reasoning_effort`,
 `enable_thinking`, `reasoning_budget_tokens` (`0` = no thinking budget). Anthropic's `thinking.budget_tokens` is the same budget.
@@ -45,20 +44,19 @@ them, and decode speed stays within a few percent.
 - **Chat Completions:** `logprobs: true` and `top_logprobs` (0 to 20). `choices[0].logprobs.content` has one entry per answer
   token, `{token, logprob, bytes, top_logprobs: [{token, logprob, bytes}]}`, likeliest first. Streaming: each chunk carries the
   entries of its tokens.
-- **Thinking and tool calls:** Basalt adds `logprobs.reasoning_content` (the thinking's tokens) and `logprobs.tool_calls`
+- **Thinking and tool calls:** granite adds `logprobs.reasoning_content` (the thinking's tokens) and `logprobs.tool_calls`
   (`[{index, content}]`, each call's tokens as the model wrote them, markup included): the least likely token of a call is where
   the model guessed.
 - **Responses:** `include: ["message.output_text.logprobs"]` with `top_logprobs` fills `output_text.logprobs` and each
-  `response.output_text.delta`; Basalt adds `logprobs` to reasoning and call items (and to `response.reasoning_text.delta` and
+  `response.output_text.delta`; granite adds `logprobs` to reasoning and call items (and to `response.reasoning_text.delta` and
   `response.function_call_arguments.delta`).
-- **Anthropic Messages** (a Basalt extension; the API has no such field): the same `logprobs` and `top_logprobs`. Each
+- **Anthropic Messages** (a granite extension; the API has no such field): the same `logprobs` and `top_logprobs`. Each
   `content_block_delta` carries `logprobs`, the entries of its tokens; the message, or else `message_delta`, carries the
   `logprobs` object above.
 - **Uses:** with `response_format` set to a schema whose field is an `enum`, the `top_logprobs` at the value's first
   token give each label's probability (a classifier); in an agent, a tool call whose least likely token sits far below
   its alternative is one the model was unsure of.
-- Tokens the server writes itself (the close of a thinking budget) have none. Refused with parallel slots split over GPUs by
-  layer (pipelined batch groups).
+- Tokens the server writes itself (the close of a thinking budget) have none.
 
 ## Thinking
 
@@ -101,9 +99,8 @@ The call takes the API key like every `/v1` route. A page on another origin read
 `/props` (llama.cpp's route, unchanged for its clients) carries one extra key, `granite`: `{"version": "...", "capabilities":
 ["answer_now", "logprobs", "documents"]}`. A client that finds `granite` there talks to Granite; `"answer_now" in granite.capabilities` says the
 endpoint above is served, `"logprobs"` that logprobs come back on all three APIs with the thinking's and tool calls' tokens
-([logprobs](#logprobs)), `"documents"` that messages may carry PDF and text documents ([documents](documents.md)), and `"video"` (only
-while video is on) that this model takes video parts now (image input on, a model that reads video, FFmpeg found:
-[video](../running.md#video)). Later features add their names to the same list.
+([logprobs](#logprobs)), and `"documents"` that messages may carry PDF and text documents ([documents](documents.md)). Later features add their names
+to the same list.
 
 ## Thinking loops
 
@@ -112,5 +109,5 @@ while video is on) that this model takes video parts now (image input on, a mode
 
 ## The model file's defaults
 
-The model's GGUF metadata keys `general.sampling.temp`, `top_p`, `top_k`, `min_p`, `penalty_repeat` and `penalty_last_n` are the defaults of
+The model file's GGUF metadata keys `general.sampling.temp`, `top_p`, `top_k`, `min_p`, `penalty_repeat` and `penalty_last_n` are the defaults of
 the matching fields. A bad value stops the start. The defaults in effect print on the model's line (`temp=1.0 top_p=0.95 ...`).
