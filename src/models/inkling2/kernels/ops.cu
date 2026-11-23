@@ -635,7 +635,7 @@ void expert_read_ahead(const unsigned long long* blobs, const int32_t* n, uint64
 void expert_prefetch(const int32_t* ids, int n, const unsigned long long* blobs, uint64_t bytes, uint32_t* sink, void* stream) {
     if (n <= 0) return;
     if (n > kPrefetchMax || bytes == 0 || bytes % 16) throw std::runtime_error("inkling2 expert_prefetch: experts or bytes");
-    static int sms[kOptInDevices] = {};   // per device: a layer split launches it on two cards
+    static int sms[kOptInDevices] = {};   // per device
     const int dev = opt_in_device();
     int& blocks = sms[dev];
     if (!blocks) cudaDeviceGetAttribute(&blocks, cudaDevAttrMultiProcessorCount, dev);

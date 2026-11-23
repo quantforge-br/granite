@@ -318,7 +318,7 @@ void attention_decode(const AttnArgs& a, int rows, int64_t max_keys, void* scrat
     const int z = launch_splits(max_keys);
     float* part_ml = static_cast<float*>(scratch);
     float* part_acc = part_ml + (size_t) rows * kHeads * z * 2;
-    static bool attr[kOptInDevices] = {};   // the opt-in is per device: a layer split launches these on two cards
+    static bool attr[kOptInDevices] = {};   // the opt-in is per device
     if (bool& set = attr[opt_in_device()]; !set) {
         cudaFuncSetAttribute(attn_split_kernel<false>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) sizeof(Smem));
         cudaFuncSetAttribute(attn_split_kernel<true>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) sizeof(Smem));

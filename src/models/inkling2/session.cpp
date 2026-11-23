@@ -10,10 +10,6 @@
 // slot) entry. The positions and tokens are read on the card, and the attention's launch bound (a power of two of keys)
 // only sizes its grid. With a spill, the experts in RAM run on the CPU beside the card's (cpu_experts.hpp): the layers that
 // have any are part of a window's shape, and the window's captured graph queues their CPU work too.
-//
-// The layer split (model.hpp card_of): the second card runs its layers' visits on its own scratch and streams, and a window
-// crosses between the cards where walk.hpp's split_walk says, the row buffers the next card reads going through page-locked
-// RAM (consumer cards have no peer access). The whole window, both cards' launches and the crossings, is one graph.
 #include "basalt/core/conversation_cache.hpp"
 #include "basalt/core/elastic_array.hpp"
 #include "basalt/core/elastic_kv.hpp"
@@ -86,13 +82,10 @@ struct Scratch {
     static constexpr int kGuessRows = 2;        // the widest window guessed (wider ones keep the read-ahead)
 };
 
-// What the sessions of one model share: the forward scratch (with the layer split, the second card's too), the prompt path,
-// the drafter's tap, the CPU experts and the batch windows' graphs. Made by the first session; the model keeps a weak
-// reference (InklingModel::shared()).
+// What the sessions of one model share: the forward scratch, the prompt path, the drafter's tap, the CPU experts and the
+// batch windows' graphs. Made by the first session; the model keeps a weak reference (InklingModel::shared()).
 struct Shared {
-    Scratch x, x1;                          // the first card's scratch, the second card's (the layer split)
-    float* hand = nullptr;                  // the layer split: page-locked slots of a call's rows crossing between the cards,
-    int hand_slots = 0, tap_slot0 = 0;      // the crossings' first, then one per drafter tap
+    Scratch x;
     std::unique_ptr<PromptRunner> prompt;   // PROMPT HOOK
     std::unique_ptr<CpuExperts> cpu;        // with a spill: the RAM experts' rows
     float* tap = nullptr;                   // DSPARK HOOK: the drafter's features of a call's rows (dspark_tap_bytes)
@@ -108,23 +101,9 @@ struct Shared {
             cudaFree(p);
         }
         cudaSetDevice(dev);
-        if (hand) cudaFreeHost(hand);
     }
-    bool init(InklingModel& m, cudaStream_t stream, int max_pulls, std::string& err) {
+    bool init(InklingModel& m, cudaStream_t stream, std::string& err) {
         if (!alloc_scratch(m, x, m.device(), true, err)) return false;
-        if (m.cards() > 1) {
-            cudaSetDevice(m.card_device(1));
-            const bool ok = alloc_scratch(m, x1, m.card_device(1), false, err);
-            cudaSetDevice(m.device());
-            if (!ok) return false;
-            tap_slot0 = max_pulls;
-            hand_slots = max_pulls + kDsTargets;
-            if (cudaHostAlloc((void**) &hand, (size_t) hand_slots * kMaxRows * m.geo().n_embd * 4, cudaHostAllocPortable) != cudaSuccess) {
-                cudaGetLastError();
-                err = "cannot pin the layer split's hand-off rows";
-                return false;
-            }
-        }
         if (!(cpu = CpuExperts::make(m, err)) && !err.empty()) return false;
         prompt = make_prompt(m, stream, err);   // PROMPT HOOK
         return prompt != nullptr || err.empty();
@@ -192,14 +171,13 @@ struct Shared {
 // one another before the experts run; on only where a measurement shows a gain.
 constexpr bool kExpertsAhead = false;
 
-// One card's side of a session's forward: its streams and events and its running counts of the experts' lookups. The first
-// card's are the session's own members (stream_, ...); the layer split's second card has its own.
+// The card's side of a session's forward: its streams and events and its running counts of the experts' lookups (the
+// session's own members, stream_, ...).
 struct Lane {
     int device = 0;
     const Scratch* x = nullptr;
     cudaStream_t stream = nullptr, ra_st = nullptr, pf_st = nullptr;
     cudaEvent_t ra_ev = nullptr, ra_join = nullptr, gs_ev = nullptr, pf_ev = nullptr, pf_join = nullptr;
-    cudaEvent_t hand = nullptr;                 // behind the card's half of a crossing
     uint32_t* ex_tally = nullptr;               // [layer][expert] lookups of the card's layers
     unsigned long long* rec_blobs = nullptr;    // [visit][kAheadExperts] the experts each visit took in the last window
     int32_t* rec_n = nullptr;                   // [visit] how many
@@ -211,7 +189,6 @@ public:
     explicit Session(InklingModel& m) : m_(m), g_(m.geo()) {}
     ~Session() override {
         if (stream_) cudaStreamSynchronize(stream_);
-        if (lane_[1].stream) cudaStreamSynchronize(lane_[1].stream);
         if (m_.spill().any() && ex_tally_) {   // how decode's lookups fell between the card and RAM
             std::vector<uint32_t> t;
             if (read_tally(t)) {
@@ -227,16 +204,7 @@ public:
             cudaFree(p);
         }
         for (void* p : pinned_) cudaFreeHost(p);
-        if (Lane& k = lane_[1]; k.stream) {
-            cudaSetDevice(k.device);
-            for (cudaEvent_t e : {k.ra_ev, k.ra_join, k.gs_ev, k.pf_ev, k.pf_join, k.hand, io_ev1_})
-                if (e) cudaEventDestroy(e);
-            for (cudaStream_t st : {k.ra_st, k.pf_st, k.stream})
-                if (st) cudaStreamDestroy(st);
-        }
         cudaSetDevice(m_.device());
-        for (cudaEvent_t e : {hand0_, io_ev0_})
-            if (e) cudaEventDestroy(e);
         for (cudaEvent_t e : stage_ev_)
             if (e) cudaEventDestroy(e);
         for (cudaEvent_t e : {ra_ev_, ra_join_, gs_ev_, pf_ev_, pf_join_})
@@ -259,27 +227,6 @@ public:
             return false;
         }
         if (!walk(g_, walk_, err)) return false;
-        {   // the runs of visits on each card (one run, the whole walk, on one card)
-            std::vector<int> card_of((size_t) g_.n_layers);
-            for (int l = 0; l < g_.n_layers; ++l) card_of[(size_t) l] = m_.card_of(l);
-            segs_ = split_walk(g_, walk_, card_of);
-        }
-        if (m_.cards() > 1) {
-            Lane& k = lane_[1];
-            k.device = m_.card_device(1);
-            cudaSetDevice(k.device);
-            bool sok = cudaStreamCreateWithFlags(&k.stream, cudaStreamNonBlocking) == cudaSuccess &&
-                       cudaStreamCreateWithFlags(&k.ra_st, cudaStreamNonBlocking) == cudaSuccess &&
-                       cudaStreamCreateWithFlags(&k.pf_st, cudaStreamNonBlocking) == cudaSuccess;
-            for (cudaEvent_t* e : {&k.ra_ev, &k.ra_join, &k.gs_ev, &k.pf_ev, &k.pf_join, &k.hand, &io_ev1_})
-                sok = sok && cudaEventCreateWithFlags(e, cudaEventDisableTiming) == cudaSuccess;
-            cudaSetDevice(m_.device());
-            for (cudaEvent_t* e : {&hand0_, &io_ev0_}) sok = sok && cudaEventCreateWithFlags(e, cudaEventDisableTiming) == cudaSuccess;
-            if (!sok) {
-                err = "cannot create the second card's streams";
-                return false;
-            }
-        }
         bool ok = true;
         auto f = [&](int64_t n) { return (float*) alloc((size_t) n * 4, ok); };
         const int64_t E = g_.n_embd, R = kMaxRows;
@@ -288,11 +235,8 @@ public:
         int max_slot = 0;
         for (const Visit& v : g_.visits) max_slot = std::max(max_slot, v.slot);
         vc_.assign((size_t) max_slot + 1, VisitCache{});
-        slot_card_.assign(vc_.size(), 0);
         for (const Visit& v : g_.visits) {
             VisitCache& c = vc_[(size_t) v.slot];
-            slot_card_[(size_t) v.slot] = m_.card_of(v.layer);
-            cudaSetDevice(m_.card_device(m_.card_of(v.layer)));   // a visit's caches on its layer's card
             c.ring = g_.swa[(size_t) v.layer];
             c.cap = c.ring ? (int64_t) g_.window + kMaxRows : ctx;
             const size_t bytes = (size_t) kKvHeads * (size_t) c.cap * kHeadDim * elem;
@@ -313,23 +257,6 @@ public:
             c.a_ring = f((int64_t) kConvRing * E);
             c.m_ring = f((int64_t) kConvRing * E);
         }
-        if (Lane& k = lane_[1]; k.stream) {   // the second card's running counts
-            cudaSetDevice(k.device);
-            k.ex_tally = (uint32_t*) alloc((size_t) expert_pairs() * 4, ok);
-            k.rec_blobs = (unsigned long long*) alloc((size_t) g_.visits.size() * kAheadExperts * 8, ok);
-            k.rec_n = (int32_t*) alloc((size_t) g_.visits.size() * 4, ok);
-            if (ok) cudaMemset(k.ex_tally, 0, (size_t) expert_pairs() * 4);
-            if (ok) cudaMemset(k.rec_n, 0, (size_t) g_.visits.size() * 4);
-            for (const VisitCache& c : vc_)
-                if (ok && slot_card_[(size_t) (&c - vc_.data())] == 1) {
-                    cudaMemset(c.k_ring, 0, (size_t) kConvRing * kKvHeads * kHeadDim * 4);
-                    cudaMemset(c.v_ring, 0, (size_t) kConvRing * kKvHeads * kHeadDim * 4);
-                    cudaMemset(c.a_ring, 0, (size_t) kConvRing * E * 4);
-                    cudaMemset(c.m_ring, 0, (size_t) kConvRing * E * 4);
-                }
-            cudaDeviceSynchronize();
-        }
-        cudaSetDevice(m_.device());
         ex_tally_ = (uint32_t*) alloc((size_t) expert_pairs() * 4, ok);
         rec_blobs_ = (unsigned long long*) alloc((size_t) g_.visits.size() * kAheadExperts * 8, ok);
         rec_n_ = (int32_t*) alloc((size_t) g_.visits.size() * 4, ok);
@@ -348,18 +275,13 @@ public:
         // the scratch every session of the model shares: the first session makes it
         sh_ = std::static_pointer_cast<Shared>(m_.shared().lock());
         if (!sh_) {
-            size_t pulls = 0;   // the most row buffers one crossing takes
-            for (const Segment& sg : segs_) pulls = std::max(pulls, sg.pull.size());
             sh_ = std::make_shared<Shared>();
-            if (!sh_->init(m_, stream_, (int) pulls, err)) return false;
+            if (!sh_->init(m_, stream_, err)) return false;
             m_.shared() = sh_;
         }
         static_cast<Scratch&>(*this) = sh_->x;
-        lane_[0] = Lane{m_.device(), &sh_->x, stream_, ra_st_, pf_st_, ra_ev_, ra_join_, gs_ev_, pf_ev_, pf_join_, hand0_, ex_tally_,
-                        rec_blobs_, rec_n_};
-        lane_[1].x = &sh_->x1;
+        lane_ = Lane{m_.device(), &sh_->x, stream_, ra_st_, pf_st_, ra_ev_, ra_join_, gs_ev_, pf_ev_, pf_join_, ex_tally_, rec_blobs_, rec_n_};
         for (const VisitCache& c : vc_) {
-            if (slot_card_[(size_t) (&c - vc_.data())] != 0) continue;
             cudaMemsetAsync(c.k_ring, 0, (size_t) kConvRing * kKvHeads * kHeadDim * 4, stream_);
             cudaMemsetAsync(c.v_ring, 0, (size_t) kConvRing * kKvHeads * kHeadDim * 4, stream_);
             cudaMemsetAsync(c.a_ring, 0, (size_t) kConvRing * E * 4, stream_);
@@ -630,9 +552,8 @@ public:
             return {model::Status::Error, "inkling2: the rings have moved on more than " + std::to_string(kMaxRows) + " positions past the checkpoint"};
         if (save && pos > (int64_t) hist_.size()) return {model::Status::Error, "inkling2: a checkpoint past the session's position"};
         const size_t kv_ring = (size_t) kConvRing * kKvHeads * kHeadDim * 4, e_ring = (size_t) kConvRing * g_.n_embd * 4;
-        for (size_t i = 0; i < vc_.size(); ++i) {   // the second card's visits go with its stream
-            const VisitCache& c = vc_[i];
-            std::vector<core::DeviceRegion>& to = slot_card_[i] ? st.peer_regions : st.regions;
+        for (const VisitCache& c : vc_) {
+            std::vector<core::DeviceRegion>& to = st.regions;
             if (c.ring) {
                 to.push_back({c.k, kv_bytes_of(c)});
                 to.push_back({c.v, kv_bytes_of(c)});
@@ -644,10 +565,6 @@ public:
         }
         dspark_.running_regions(st);   // DSPARK HOOK
         st.stream = stream_;
-        if (lane_[1].stream) {
-            st.peer_stream = lane_[1].stream;
-            st.peer_device = lane_[1].device;
-        }
         return {};
     }
 
@@ -734,17 +651,12 @@ public:
         return {(int64_t) sh.card, (int64_t) sh.all, 0, 0};
     }
     std::vector<CardExperts> experts_by_card() const override {
-        std::vector<CardExperts> out;   // each card its layers' (the layer split spills none)
-        for (int c = 0; c < m_.cards(); ++c) {
-            CardExperts ce{m_.card_device(c), 0, 0};
-            for (int l = 0; l < g_.n_layers; ++l)
-                if (m_.card_of(l) == c) {
-                    ce.slots += g_.n_expert - m_.layer(l).n_spill;
-                    ce.bytes += (uint64_t) (g_.n_expert - m_.layer(l).n_spill) * m_.layer(l).expert_stride;
-                }
-            out.push_back(ce);
+        CardExperts ce{m_.device(), 0, 0};
+        for (int l = 0; l < g_.n_layers; ++l) {
+            ce.slots += g_.n_expert - m_.layer(l).n_spill;
+            ce.bytes += (uint64_t) (g_.n_expert - m_.layer(l).n_spill) * m_.layer(l).expert_stride;
         }
-        return out;
+        return {ce};
     }
     bool expert_map(int64_t& total, std::vector<uint8_t>& homes, std::vector<uint32_t>& routed) override {
         if (cudaStreamSynchronize(stream_) != cudaSuccess || !read_tally(tally_h_)) return false;
@@ -774,16 +686,10 @@ private:
         return p;
     }
 
-    // Every card's running counts of the experts' lookups, summed (a card counts its own layers').
+    // The running counts of the experts' lookups.
     bool read_tally(std::vector<uint32_t>& t) const {
         t.assign((size_t) expert_pairs(), 0u);
-        std::vector<uint32_t> c(t.size());
-        for (const Lane& k : lane_) {
-            if (!k.ex_tally) continue;
-            if (cudaMemcpy(c.data(), k.ex_tally, c.size() * 4, cudaMemcpyDeviceToHost) != cudaSuccess) return false;
-            for (size_t i = 0; i < t.size(); ++i) t[i] += c[i];
-        }
-        return true;
+        return cudaMemcpy(t.data(), ex_tally_, t.size() * 4, cudaMemcpyDeviceToHost) == cudaSuccess;
     }
 
     // Layer `l` (visit `v`) over `rows` rows: `hid` its input, `blocks` the finished blocks before it, `msgs` (or null)
@@ -792,8 +698,7 @@ private:
     void run_layer(const Visit& v, const float* hid, const float* const* blocks, int n_blocks, const float* msgs, int rows,
                    int64_t full_keys, float* out, float* tap) {
         const int l = v.layer;
-        const int card = m_.card_of(l);   // the layer split: the layer's card, its scratch and streams
-        Lane& k = lane_[card];
+        Lane& k = lane_;
         const Scratch& x = *k.x;
         const LayerWeights& w = m_.layer(l);
         const bool full = !g_.swa[(size_t) l];
@@ -872,7 +777,7 @@ private:
         // run (it starts once the projections are done)
         const int vi = (int) (&v - g_.visits.data());
         const bool guess = kExpertsAhead && rows <= kGuessRows;
-        if (guess && vi > 0 && m_.card_of(g_.visits[(size_t) vi - 1].layer) == card) {   // its guess was made on this card
+        if (guess && vi > 0) {
             const bk::NativeExpertLayout Lx = bk::native_expert_layout(w.gu_type, w.d_type, E, g_.n_ff_exp);
             cudaEventRecord(k.pf_ev, k.stream);
             cudaStreamWaitEvent(k.pf_st, k.pf_ev, 0);
@@ -971,7 +876,7 @@ private:
         ra.k = g_.n_used;
         ra.weight_scale = g_.expert_scale;
         ra.gate = bk::RouterGate::Sigmoid;
-        const bool guess_next = guess && vi + 1 < (int) g_.visits.size() && m_.card_of(g_.visits[(size_t) vi + 1].layer) == card;
+        const bool guess_next = guess && vi + 1 < (int) g_.visits.size();
         if (guess_next) cudaEventRecord(k.ra_ev, k.stream);   // the MLP input is in
         bk::router(nrm, w.router, w.router_bias, rows, ra, x.rlog_, x.ids_, x.rw_, k.stream);
         if (guess_next) {   // the next visit's experts: its router on this visit's MLP input, beside this visit's router
@@ -1054,15 +959,6 @@ private:
             last = std::max<int64_t>(last, io[kMaxRows + i]);
         }
         cudaMemcpyAsync(io_d_, io, (size_t) 2 * kMaxRows * 4, cudaMemcpyHostToDevice, stream_);
-        if (Lane& k = lane_[1]; k.stream) {   // the positions to the second card too, after its last window, before this one
-            cudaEventRecord(io_ev0_, stream_);
-            cudaSetDevice(k.device);
-            cudaStreamWaitEvent(k.stream, io_ev0_, 0);
-            cudaMemcpyAsync(k.x->io_d_, io, (size_t) 2 * kMaxRows * 4, cudaMemcpyHostToDevice, k.stream);
-            cudaEventRecord(io_ev1_, k.stream);
-            cudaSetDevice(m_.device());
-            cudaStreamWaitEvent(stream_, io_ev1_, 0);
-        }
         cudaEventRecord(stage_ev_[slot], stream_);
         float* x0 = buf(Buf::X0);
         if (emb) {
@@ -1097,12 +993,12 @@ private:
     // Launches only: the visits, then the head. Each kernel may start while the one before it finishes (it waits for it
     // before reading what it wrote), so a product streams its first weights during the glue before it.
     void body(int rows, int head, int64_t full_keys) {
-        for (Lane& k : lane_) k.ra_on = k.pf_on = false;
+        lane_.ra_on = lane_.pf_on = false;
         visits_and_head(rows, head, full_keys);
-        join_sides(lane_[0]);
+        join_sides(lane_);
     }
 
-    // A card's side streams join its window stream.
+    // The side streams join the window stream.
     static void join_sides(Lane& k) {
         if (k.ra_on) {
             cudaEventRecord(k.ra_join, k.ra_st);
@@ -1115,82 +1011,40 @@ private:
         k.ra_on = k.pf_on = false;
     }
 
-    // The layer split: the window crosses from card `from` to segment `sg`'s card, which waits for it and takes the row
-    // buffers it reads that were last written on `from` (and, coming back to the first card, the drafter taps the second
-    // card's visits wrote), through the page-locked slots.
-    void cross(int from, const Segment& sg, int rows) {
-        Lane& a = lane_[from];
-        Lane& b = lane_[sg.card];
-        const size_t n = (size_t) rows * g_.n_embd, slot = (size_t) kMaxRows * g_.n_embd;
-        join_sides(a);
-        cudaSetDevice(a.device);
-        for (size_t i = 0; i < sg.pull.size(); ++i)
-            cudaMemcpyAsync(sh_->hand + i * slot, a.x->role_[(int) sg.pull[i]], n * 4, cudaMemcpyDeviceToHost, a.stream);
-        cudaEventRecord(a.hand, a.stream);
-        cudaSetDevice(b.device);
-        cudaStreamWaitEvent(b.stream, a.hand, 0);
-        for (size_t i = 0; i < sg.pull.size(); ++i)
-            cudaMemcpyAsync(b.x->role_[(int) sg.pull[i]], sh_->hand + i * slot, n * 4, cudaMemcpyHostToDevice, b.stream);
-    }
-
-    // DSPARK HOOK: a second-card visit's input rows to the drafter's tap on the first card (through a page-locked slot of
-    // its own beyond the crossings').
-    void tap_across(int t, const float* rows_dev, int rows) {
-        Lane& a = lane_[1];
-        const size_t n = (size_t) rows * g_.n_embd;
-        float* slot = sh_->hand + (size_t) (sh_->tap_slot0 + t) * kMaxRows * g_.n_embd;
-        cudaMemcpyAsync(slot, rows_dev, n * 4, cudaMemcpyDeviceToHost, a.stream);
-        cudaEventRecord(a.hand, a.stream);
-        cudaSetDevice(m_.device());
-        cudaStreamWaitEvent(stream_, a.hand, 0);
-        cudaMemcpyAsync(dspark_.tap(t), slot, n * 4, cudaMemcpyHostToDevice, stream_);
-        cudaSetDevice(a.device);
-    }
-
     void visits_and_head(int rows, int head, int64_t full_keys) {
         bk::PdlScope pdl(true);
         const int E = g_.n_embd;
         const size_t RE = (size_t) rows * E;
         const float* blocks[kMaxMix];
         bool tapped_in = false;   // the visit's input rows were written to its drafter tap by the visit before
-        for (size_t gi = 0; gi < segs_.size(); ++gi) {   // one segment on one card; the layer split's crossings between
-            const Segment& sg = segs_[gi];
-            if (gi > 0) cross(segs_[gi - 1].card, sg, rows);
-            const Lane& k = lane_[sg.card];
-            const Scratch& x = *k.x;
-            auto kb = [&](Buf b) { return x.role_[(int) b]; };
-            for (size_t si = sg.s0; si < sg.s1; ++si) {
-                const Step& s = walk_.steps[si];
-                const Visit& v = g_.visits[(size_t) s.visit];
-                const float* msgs = nullptr;
-                if (s.msgs) {
-                    const int core = g_.loop_end - g_.loop_start;
-                    if (sg.mix_msgs[si - sg.s0]) {   // a pass's messages, every core layer's four streams, from its bank
-                        MixNorm mm;
-                        mm.st.s[mm.st.n++] = kb(s.bank[0]);
-                        mm.st.s[mm.st.n++] = kb(s.bank[1]);
-                        mm.queries = m_.msg_queries(sg.card);
-                        mm.mix_out = x.msg_;
-                        mm.out_stride = (int64_t) RE;
-                        mix_norm(mm, core * kStreams, rows, k.stream);
-                    }
-                    msgs = x.msg_ + (size_t) (v.layer - g_.loop_start) * kStreams * RE;
+        for (size_t si = 0; si < walk_.steps.size(); ++si) {
+            const Step& s = walk_.steps[si];
+            const Visit& v = g_.visits[(size_t) s.visit];
+            const float* msgs = nullptr;
+            if (s.msgs) {
+                const int core = g_.loop_end - g_.loop_start;
+                if (s.mix_msgs) {   // a pass's messages, every core layer's four streams, from its bank
+                    MixNorm mm;
+                    mm.st.s[mm.st.n++] = buf(s.bank[0]);
+                    mm.st.s[mm.st.n++] = buf(s.bank[1]);
+                    mm.queries = m_.msg_queries();
+                    mm.mix_out = msg_;
+                    mm.out_stride = (int64_t) RE;
+                    mix_norm(mm, core * kStreams, rows, stream_);
                 }
-                for (int i = 0; i < s.n_blocks; ++i) blocks[i] = kb(s.blocks[i]);
-                if (int t = dspark_.slot_of_visit(s.visit); t >= 0 && !tapped_in) {   // DSPARK HOOK: the visit's input rows
-                    if (sg.card == 0) cudaMemcpyAsync(dspark_.tap(t), kb(s.hid), RE * 4, cudaMemcpyDeviceToDevice, stream_);
-                    else tap_across(t, kb(s.hid), rows);
-                }
-                // the next visit's tap, when its input is this visit's output on the first card, is written by this visit's
-                // last kernel
-                float* tap = nullptr;
-                if (si + 1 < sg.s1 && sg.card == 0) {
-                    const Step& nx = walk_.steps[si + 1];
-                    if (int t = dspark_.slot_of_visit(nx.visit); t >= 0 && nx.hid == s.out) tap = dspark_.tap(t);
-                }
-                tapped_in = tap != nullptr;
-                run_layer(v, kb(s.hid), blocks, s.n_blocks, msgs, rows, full_keys, kb(s.out), tap);
+                msgs = msg_ + (size_t) (v.layer - g_.loop_start) * kStreams * RE;
             }
+            for (int i = 0; i < s.n_blocks; ++i) blocks[i] = buf(s.blocks[i]);
+            if (int t = dspark_.slot_of_visit(s.visit); t >= 0 && !tapped_in)   // DSPARK HOOK: the visit's input rows
+                cudaMemcpyAsync(dspark_.tap(t), buf(s.hid), RE * 4, cudaMemcpyDeviceToDevice, stream_);
+            // the next visit's tap, when its input is this visit's output, is written by this visit's last kernel
+            float* tap = nullptr;
+            if (si + 1 < walk_.steps.size()) {
+                const Step& nx = walk_.steps[si + 1];
+                if (int t = dspark_.slot_of_visit(nx.visit); t >= 0 && nx.hid == s.out) tap = dspark_.tap(t);
+            }
+            tapped_in = tap != nullptr;
+            run_layer(v, buf(s.hid), blocks, s.n_blocks, msgs, rows, full_keys, buf(s.out), tap);
         }
         const bool tapped = dspark_.on();   // DSPARK HOOK: the drafter reads every row's final normed state
         if (head <= 0 && !tapped) return;
@@ -1295,10 +1149,7 @@ private:
     cudaStream_t stream_ = nullptr;
     std::vector<std::pair<int, void*>> bufs_;   // (device, allocation)
     std::vector<void*> pinned_;
-    Lane lane_[2];                           // each card's side of the forward (the first card's: the members above)
-    std::vector<Segment> segs_;              // the walk's runs of visits on each card (walk.hpp split_walk)
-    std::vector<int> slot_card_;             // [cache slot] the card of its visits
-    cudaEvent_t hand0_ = nullptr, io_ev0_ = nullptr, io_ev1_ = nullptr;   // the first card's crossing; the second card's positions
+    Lane lane_;                              // the card's side of the forward (the members below)
     std::vector<VisitCache> vc_;
     std::shared_ptr<Shared> sh_;             // the scratch, the prompt path and the batch graphs every session shares
     DsparkHook dspark_;                      // DSPARK HOOK

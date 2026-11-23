@@ -113,73 +113,34 @@ void carve(Carve& c, Bufs& b, const Geometry& g) {
     b.dbounds = c.take<int32_t>(2);
 }
 
-// One card's side of the prompt path: its chunk buffers, products and stream (the first card's: the reading session's).
+// The card's side of the prompt path: its chunk buffers, products and stream (the reading session's).
 struct Lane {
-    int device = 0;
     Bufs b;
     void* mem = nullptr;
     mmq::Context mmq;
     cudaStream_t stream = nullptr;
-    cudaEvent_t hand = nullptr;   // behind the card's half of a crossing
 };
 
 class Prompt final : public PromptRunner {
 public:
-    Prompt(InklingModel& m, cudaStream_t s) : m_(m), g_(m.geo()) { lane_[0].stream = s; }
+    Prompt(InklingModel& m, cudaStream_t s) : m_(m), g_(m.geo()) { lane_.stream = s; }
     ~Prompt() override {   // every read synced its streams before it returned
         for (cudaEvent_t& e : done_)
             if (e) cudaEventDestroy(e);
-        for (int i = m_.cards() - 1; i >= 0; --i) {
-            Lane& k = lane_[i];
-            cudaSetDevice(k.device);
-            if (k.hand) cudaEventDestroy(k.hand);
-            if (i > 0 && k.stream) cudaStreamDestroy(k.stream);
-            if (k.mem) cudaFree(k.mem);
-        }
-        if (hand_) cudaFreeHost(hand_);
+        if (lane_.mem) cudaFree(lane_.mem);
     }
 
     bool init(std::string& err) {
         if (!walk(g_, walk_, err)) return false;
-        {   // the runs of visits on each card (walk.hpp)
-            std::vector<int> card_of((size_t) g_.n_layers);
-            for (int l = 0; l < g_.n_layers; ++l) card_of[(size_t) l] = m_.card_of(l);
-            segs_ = split_walk(g_, walk_, card_of);
-        }
         for (cudaEvent_t& e : done_)
             if (cudaEventCreateWithFlags(&e, cudaEventDisableTiming) != cudaSuccess) {
                 err = "cannot create the prompt path's events";
                 return false;
             }
-        for (int i = m_.cards() - 1; i >= 0; --i) {   // the first card's last: it stays current
-            cur_ = i;
-            lane_[i].device = m_.card_device(i);
-            cudaSetDevice(lane_[i].device);
-            if (i > 0 && cudaStreamCreateWithFlags(&lane_[i].stream, cudaStreamNonBlocking) != cudaSuccess) {
-                err = "cannot create the prompt path's second stream";
-                return false;
-            }
-            if (cudaEventCreateWithFlags(&lane_[i].hand, cudaEventDisableTiming) != cudaSuccess) {
-                err = "cannot create the prompt path's events";
-                return false;
-            }
-            if (!init_lane(err)) return false;
-        }
-        if (m_.cards() > 1) {   // the crossings' page-locked slots, then one per drafter tap
-            size_t pulls = 0;
-            for (const Segment& sg : segs_) pulls = std::max(pulls, sg.pull.size());
-            tap_slot0_ = (int) pulls;
-            const size_t bytes = (pulls + kDsTargets) * (size_t) kChunk * g_.n_embd * 4;
-            if (cudaHostAlloc((void**) &hand_, bytes, cudaHostAllocPortable) != cudaSuccess) {
-                cudaGetLastError();
-                err = "cannot pin " + std::to_string(bytes >> 20) + " MiB for the layer split's prompt hand-offs";
-                return false;
-            }
-        }
-        return true;
+        return init_lane(err);
     }
 
-    // The current card's chunk buffers and products.
+    // The card's chunk buffers and products.
     bool init_lane(std::string& err) {
         Carve c;
         carve(c, b(), g_);
@@ -205,7 +166,7 @@ public:
         if (!ready(8, kProj) || !ready(8, kProjQ) || !ready(8, kProjKV) || !ready(8, kKvHeads * kHeadDim) || !ready(8, E)) return false;
         for (int l = 0; l < g_.n_layers; ++l) {
             const LayerWeights& w = m_.layer(l);
-            if (m_.card_of(l) == cur_ && (!ready(w.gu_type, 2 * (int64_t) F) || !ready(w.d_type, E))) return false;
+            if (!ready(w.gu_type, 2 * (int64_t) F) || !ready(w.d_type, E)) return false;
         }
         if (cudaStreamSynchronize(strm()) != cudaSuccess) {
             err = "the prompt path's setup failed";
@@ -230,49 +191,14 @@ public:
     }
 
 private:
-    Lane& lane() { return lane_[cur_]; }
-    Bufs& b() { return lane_[cur_].b; }
-    cudaStream_t strm() const { return lane_[cur_].stream; }
+    Lane& lane() { return lane_; }
+    Bufs& b() { return lane_.b; }
+    cudaStream_t strm() const { return lane_.stream; }
     float* buf(Buf x) { return b().role[(int) x]; }
     void bind(const std::vector<VisitCache>& caches, DsparkHook& dspark, void* stream) {
         vc_ = &caches;
         ds_ = &dspark;
-        cur_ = 0;
-        lane_[0].stream = (cudaStream_t) stream;
-        if (m_.cards() > 1) {   // the second card after whatever the session queued (its windows' second-card work)
-            cudaEventRecord(lane_[0].hand, lane_[0].stream);
-            cudaSetDevice(lane_[1].device);
-            cudaStreamWaitEvent(lane_[1].stream, lane_[0].hand, 0);
-            cudaSetDevice(lane_[0].device);
-        }
-    }
-    // The layer split: the chunk crosses from card `from` to segment `sg`'s card, which waits for it and takes the row
-    // buffers it reads that were last written on `from`, through the page-locked slots.
-    void cross(int from, const Segment& sg, int rows) {
-        Lane& a = lane_[from];
-        Lane& k = lane_[sg.card];
-        const size_t n = (size_t) rows * g_.n_embd, slot = (size_t) kChunk * g_.n_embd;
-        cudaSetDevice(a.device);
-        for (size_t i = 0; i < sg.pull.size(); ++i)
-            cudaMemcpyAsync(hand_ + i * slot, a.b.role[(int) sg.pull[i]], n * 4, cudaMemcpyDeviceToHost, a.stream);
-        cudaEventRecord(a.hand, a.stream);
-        cudaSetDevice(k.device);
-        cudaStreamWaitEvent(k.stream, a.hand, 0);
-        for (size_t i = 0; i < sg.pull.size(); ++i)
-            cudaMemcpyAsync(k.b.role[(int) sg.pull[i]], hand_ + i * slot, n * 4, cudaMemcpyHostToDevice, k.stream);
-        cur_ = sg.card;
-    }
-    // DSPARK HOOK: a second-card visit's input rows to the drafter's tap on the first card
-    void tap_across(int t, const float* rows_dev, int rows) {
-        Lane& a = lane_[1];
-        const size_t n = (size_t) rows * g_.n_embd;
-        float* slot = hand_ + (size_t) (tap_slot0_ + t) * kChunk * g_.n_embd;
-        cudaMemcpyAsync(slot, rows_dev, n * 4, cudaMemcpyDeviceToHost, a.stream);
-        cudaEventRecord(a.hand, a.stream);
-        cudaSetDevice(lane_[0].device);
-        cudaStreamWaitEvent(lane_[0].stream, a.hand, 0);
-        cudaMemcpyAsync(ds_->tap(t), slot, n * 4, cudaMemcpyHostToDevice, lane_[0].stream);
-        cudaSetDevice(a.device);
+        lane_.stream = (cudaStream_t) stream;
     }
 
     // `n` rows (tokens, or host embedding rows) in chunks of about equal size; one chunk stays queued ahead of the host,
@@ -306,11 +232,7 @@ private:
     // One chunk of `rows` rows at pos0..: the embedding, the visits, the caches.
     bool chunk(const int32_t* tokens, const float* emb, int rows, int64_t pos0, std::string& err) {
         const int E = g_.n_embd;
-        for (int i = m_.cards() - 1; i >= 0; --i) {   // each card its rows' positions, the first card's last: it starts
-            cur_ = i;
-            cudaSetDevice(lane().device);
-            prompt_rows(b().pos, pos0, rows, b().dbounds, strm());
-        }
+        prompt_rows(b().pos, pos0, rows, b().dbounds, strm());
         float* x0 = buf(Buf::X0);
         if (emb) {
             cudaMemcpyAsync(x0, emb, (size_t) rows * E * 4, cudaMemcpyHostToDevice, strm());
@@ -319,17 +241,10 @@ private:
             bk::iq_embed_rows(kTypeBF16, m_.embedding(), (size_t) E * 2, b().tokd, rows, E, b().mix, strm());
             bk::rms_norm_rows(b().mix, m_.embed_norm(), rows, E, g_.rms_eps, x0, strm());
         }
-        for (size_t gi = 0; gi < segs_.size(); ++gi) {   // one segment on one card; the layer split's crossings between
-            const Segment& sg = segs_[gi];
-            if (gi > 0) cross(segs_[gi - 1].card, sg, rows);
-            for (size_t si = sg.s0; si < sg.s1; ++si) {
-                const Step& s = walk_.steps[si];
-                if (const int k = ds_->slot_of_visit(s.visit); k >= 0) {   // the drafter's features: the visit's input rows
-                    if (cur_ == 0) cudaMemcpyAsync(ds_->tap(k), buf(s.hid), (size_t) rows * E * 4, cudaMemcpyDeviceToDevice, strm());
-                    else tap_across(k, buf(s.hid), rows);
-                }
-                layer(s, rows, pos0);
-            }
+        for (const Step& s : walk_.steps) {
+            if (const int k = ds_->slot_of_visit(s.visit); k >= 0)   // the drafter's features: the visit's input rows
+                cudaMemcpyAsync(ds_->tap(k), buf(s.hid), (size_t) rows * E * 4, cudaMemcpyDeviceToDevice, strm());
+            layer(s, rows, pos0);
         }
         if (ds_->on()) {   // and every row's final normed state, then the rows' context keys and values
             MixStates st;
@@ -560,11 +475,7 @@ private:
     const std::vector<VisitCache>* vc_ = nullptr;   // the reading session's caches, drafter and stream
     DsparkHook* ds_ = nullptr;
     Walk walk_;
-    std::vector<Segment> segs_;   // the walk's runs of visits on each card (walk.hpp split_walk)
-    Lane lane_[2];                // each card's buffers, products and stream
-    int cur_ = 0;                 // the card the launches go to
-    float* hand_ = nullptr;       // the layer split: page-locked slots of a chunk's rows crossing between the cards
-    int tap_slot0_ = 0;           // the first drafter tap's slot
+    Lane lane_;                   // the card's buffers, products and stream
     cudaEvent_t done_[2] = {};
 };
 
