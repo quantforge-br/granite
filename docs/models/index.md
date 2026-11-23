@@ -1,6 +1,6 @@
 # Models
 
-A model is one `.basalt` file. The server reads the architecture from the file and picks the chat format, tool syntax and thinking switch. Several models can share one address ([router](../configuration/models.md)). What each model supports:
+A model is one `.basalt` file. The server reads the architecture from the file and picks the chat format, tool syntax and thinking switch. granite builds one model, Inkling 2 Mini; several of its packs can share one address ([router](../configuration/models.md)). What it supports:
 
 | | Inkling 2 Mini |
 | --- | --- |
@@ -14,12 +14,11 @@ A model is one `.basalt` file. The server reads the architecture from the file a
 | Images | `--vision dynamic` only |
 | Video | no |
 | `--kv` | fp16 (default), fp8 |
-| Cards | main card, experts in RAM when the context needs their room; or two cards as a layer split |
-| Layer split | yes, matched cards, priced at start |
+| Cards | one sm_86 card, experts in RAM when the context needs their room; or two alike cards as one tensor-parallel pair ([GPUs](../configuration/gpus.md#two-cards)) |
 | Parallel slots | not measured |
 | Lossy flags | none |
 | Prompt skip | no |
-| Idle sleep, wake | yes (Linux) |
-| `basalt-bench --quality` | yes |
+| Idle sleep, wake | yes |
+| `granite-bench --quality` | yes |
 | Guide | [guide](inkling2.md) |
 | Precision | [precision](../precision/inkling2.md) |
