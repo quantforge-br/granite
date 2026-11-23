@@ -541,7 +541,7 @@ void DsparkHook::stage(int k, int n, void* stream) {
         o.epi = wg::Epilogue::Add;
         o.m[0] = mat(L.wo, kE, sc + 3, x_, kE);
         wg::gemm(o, act_a_, kDsBlock, ws_, stream);
-        wg::norm_pack(x_, L.post_norm, d.rms_eps, kE, kDsBlock, act_a_, nullptr, stream);
+        wg::norm_pack(x_, L.post_norm, d.rms_eps, kE, kDsBlock, act_a_, stream);
         wg::Call gu;
         gu.K = kE;
         gu.n = 2;
@@ -560,7 +560,7 @@ void DsparkHook::stage(int k, int n, void* stream) {
         const DsparkLayer& L = w.layer[(size_t) k];
         const Cache& c = cache_[(size_t) k];
         const float* sc = L.fp4_scale;
-        wg::norm_pack(x_, L.attn_norm, d.rms_eps, kE, kDsBlock, act_a_, nullptr, stream);
+        wg::norm_pack(x_, L.attn_norm, d.rms_eps, kE, kDsBlock, act_a_, stream);
         wg::Call qkv;
         qkv.K = kE;
         qkv.n = 3;
