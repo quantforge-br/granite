@@ -3,7 +3,7 @@
 //
 //   vision_cuda_parity kernels
 //   vision_cuda_parity encoder <mmproj.gguf> <image>
-//   vision_cuda_parity video <model.basalt | mmproj.gguf> <clip>
+//   vision_cuda_parity video <model.granite | mmproj.gguf> <clip>
 //
 // kernels: random inputs at the real geometry (1152 columns, 16 heads of 72); each result against a double
 // precision host computation of the same operation, bitwise repeatability, and a row's independence of the rows
@@ -399,7 +399,7 @@ int run_video(const char* model, const char* clip) {
     granite::core::ModelFile file;
     granite::core::FileRange range(model);
     const std::string m = model;
-    if (m.size() > 7 && m.compare(m.size() - 7, 7, ".basalt") == 0) {
+    if (m.size() > 8 && m.compare(m.size() - 8, 8, ".granite") == 0) {
         if (!file.open(m, err) || file.range("vision/mmproj").empty()) { std::printf("no vision/mmproj in %s %s\n", model, err.c_str()); return 2; }
         range = file.range("vision/mmproj");
     }
@@ -504,7 +504,7 @@ int main(int argc, char** argv) {
     } else if (argc >= 4 && !std::strcmp(argv[1], "video")) {
         if (run_video(argv[2], argv[3]) != 0) return 2;
     } else {
-        std::fprintf(stderr, "usage: vision_cuda_parity kernels | encoder <mmproj.gguf> <image> | video <model.basalt | mmproj.gguf> <clip>\n");
+        std::fprintf(stderr, "usage: vision_cuda_parity kernels | encoder <mmproj.gguf> <image> | video <model.granite | mmproj.gguf> <clip>\n");
         return 2;
     }
     std::printf(g_fail ? "FAILED (%d)\n" : "all passed\n", g_fail);

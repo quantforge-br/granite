@@ -4,7 +4,7 @@
 //     build/native_expert_parity --synthetic GU/DOWN ...      random weights quantized by ggml (e.g. q4_K/q5_1)
 //     build/native_expert_parity --q5_1-min                   the Q5_1 min term on crafted activations
 //     build/native_expert_parity --synthetic nvfp4/nvfp4      NVFP4: the CPU tier and the GPU's generic kernels
-//     build/native_expert_parity --experts FILE [layer ...]   NVFP4 experts of a pack's experts.bin or a .basalt
+//     build/native_expert_parity --experts FILE [layer ...]   NVFP4 experts of a pack's experts.bin or a .granite
 //
 // (a) float reference: ggml's own dequantizer (`to_float`) and a float SwiGLU expert, (b) the CPU path
 // (ggml-cpu vec_dot with its quantized activations), (c) the GPU path (`native_expert_grouped`, q8_1
@@ -766,7 +766,7 @@ int gpu_nvfp4(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, const s
     return failures;
 }
 
-// Expert `e` of `layer` from an NVFP4 pack: a native experts.bin (its native_experts.txt beside it) or a .basalt
+// Expert `e` of `layer` from an NVFP4 pack: a native experts.bin (its native_experts.txt beside it) or a .granite
 // (its `experts` section and `experts.layout`).  Blobs are layer-major, `blob` bytes each.
 bool read_pack_expert(const std::string& path, int layer, int e, const cpu::NativeFmt& f, std::vector<uint8_t>& out) {
     std::ifstream in(path, std::ios::binary);
@@ -774,7 +774,7 @@ bool read_pack_expert(const std::string& path, int layer, int e, const cpu::Nati
     uint64_t base = 0, n_expert = 512;
     char magic[8] = {};
     in.read(magic, 8);
-    if (std::memcmp(magic, "BASALTMF", 8) == 0) {   // header (64 B) then 128-byte entries: name[64], off, size, ...
+    if (std::memcmp(magic, "GRANITMF", 8) == 0) {   // header (64 B) then 128-byte entries: name[64], off, size, ...
         uint32_t ver = 0, n = 0;
         in.read((char*) &ver, 4);
         in.read((char*) &n, 4);
@@ -1255,7 +1255,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "usage: native_expert_parity <shard.gguf> [layer ...]\n"
                              "       native_expert_parity --synthetic GU/DOWN ...   (ggml type names, e.g. q4_K/q5_1)\n"
                              "       native_expert_parity --cpu-synthetic GU/DOWN ...   (CPU tier only, e.g. q6_K/q8_0)\n"
-                             "       native_expert_parity --experts experts.bin|MODEL.basalt [layer ...]   (NVFP4)\n"
+                             "       native_expert_parity --experts experts.bin|MODEL.granite [layer ...]   (NVFP4)\n"
                              "       native_expert_parity --q5_1-min\n"
                              "       native_expert_parity --q8k-quant\n"
                              "       native_expert_parity --bf16-embd\n"

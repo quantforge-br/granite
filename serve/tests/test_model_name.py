@@ -15,7 +15,7 @@ from serve.service import Service  # noqa: E402
 from serve.util.text import ByteTokenizer  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-ALIAS, FILE = "Qwen 3.8 FN", "Qwen3.8-FN-NVFP4.basalt"
+ALIAS, FILE = "Qwen 3.8 FN", "Qwen3.8-FN-NVFP4.granite"
 MSGS = [{"role": "user", "content": "hi"}]
 PATHS = {"/v1/chat/completions": {"messages": MSGS, "max_tokens": 8},
          "/v1/messages": {"messages": MSGS, "max_tokens": 8},

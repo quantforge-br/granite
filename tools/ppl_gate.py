@@ -8,7 +8,7 @@ not know are passed to the engine as they are; it sets only what the measurement
 no adaptive swaps, the first two visible GPUs when there are two: --gpu 0,1), and an engine flag given here replaces
 that value.
 
-  python3 tools/ppl_gate.py --model FILE.basalt --base base.kld --out DIR [--engine-bin BIN] [--chunks 20] [--t 3]
+  python3 tools/ppl_gate.py --model FILE.granite --base base.kld --out DIR [--engine-bin BIN] [--chunks 20] [--t 3]
                             [--gpu 0 ...]
   python3 tools/ppl_gate.py --report DIR/rows.tsv          # summary of a finished run
   python3 tools/ppl_gate.py --diff A/rows.tsv B/rows.tsv   # row by row: identical rows, largest NLL/KLD change
@@ -180,7 +180,7 @@ def run(a) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--model", help="the .basalt file")
+    ap.add_argument("--model", help="the .granite file")
     ap.add_argument("--engine-bin", default=str(ENGINE_BIN) if ENGINE_BIN.is_file() else None,
                     help="the engine binary (default: bin/granite in the repo)")
     ap.add_argument("--base")

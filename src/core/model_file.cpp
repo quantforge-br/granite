@@ -1,4 +1,4 @@
-// src/core/model_file.cpp - the .basalt reader, the byte ranges the loaders share, a small JSON parser and the
+// src/core/model_file.cpp - the .granite reader, the byte ranges the loaders share, a small JSON parser and the
 // hc8 table.  Host only.  See the header.
 #include "granite/core/model_file.hpp"
 
@@ -275,7 +275,7 @@ bool ModelFile::open(const std::string& path, std::string& err) {
     meta_loaded_ = false;
     uint64_t actual = 0;
     if (!platform::file_size(path, actual)) { err = "cannot open " + path; return false; }
-    if (actual < kHeaderBytes) { err = path + ": not a .basalt model file (too short)"; return false; }
+    if (actual < kHeaderBytes) { err = path + ": not a .granite model file (too short)"; return false; }
     std::vector<uint8_t> head((size_t) kHeaderBytes);
     {
         const int fd = platform::open_fd_utf8(path);
@@ -287,13 +287,15 @@ bool ModelFile::open(const std::string& path, std::string& err) {
     FileHeader h;
     std::memcpy(&h, head.data(), sizeof h);
     if (std::memcmp(h.magic, kModelMagic, sizeof kModelMagic) != 0) {
-        err = path + ": not a .basalt model file (bad magic)";
+        // upstream Basalt's packs are this container under another magic; a script converts one once
+        err = std::memcmp(h.magic, "BASALTMF", 8) == 0
+                  ? path + ": a Basalt pack; convert it with tools/migrations/pack_to_granite.py"
+                  : path + ": not a .granite model file (bad magic)";
         return false;
     }
     if (h.version != kModelVersion) {
-        err = path + ": .basalt version " + std::to_string(h.version) + ", this build reads version " +
-              std::to_string(kModelVersion) +
-              (h.version < kModelVersion ? "; upgrade it with tools/migrations/basalt_v1_to_v2.py" : "");
+        err = path + ": .granite version " + std::to_string(h.version) + ", this build reads version " +
+              std::to_string(kModelVersion);
         return false;
     }
     if (h.n_sections > kMaxSections) { err = path + ": the section table is too long"; return false; }
@@ -457,7 +459,7 @@ bool hc8_read(const FileRange& r, std::map<std::string, Hc8Copy>& out, std::stri
     out.clear();
     Hc8Header h{};
     if (!read_range_at(r, 0, &h, sizeof h, err)) return false;
-    if (std::memcmp(h.magic, "BASALTH8", 8) != 0 || h.version != 1) { err = "hc8: bad magic or version in " + r.path; return false; }
+    if (std::memcmp(h.magic, "GRANITH8", 8) != 0 || h.version != 1) { err = "hc8: bad magic or version in " + r.path; return false; }
     const uint64_t total = r.size();
     if (h.n_entries > 4096) { err = "hc8: implausible entry count"; return false; }
     std::vector<Hc8Entry> entries(h.n_entries);

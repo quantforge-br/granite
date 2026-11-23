@@ -8,7 +8,7 @@ prompt path ran the NVFP4 experts on FP4 tensor cores; granite runs them through
 
 ## Pack
 
-One file, `Inkling-2-Mini-NVFP4-DQ8.basalt` (19.7 GB), built from the official release with its vision encoder and DSpark
+One file, `Inkling-2-Mini-NVFP4-DQ8.granite` (19.7 GB), built from the official release with its vision encoder and DSpark
 drafter:
 
 - Routed experts, layers 0 to 19: the release's NVFP4 codes and scales, bit for bit (14.7 GiB for all 24 layers).
@@ -20,6 +20,17 @@ drafter:
 
 Build it from the release directory: `tools/convert/convert.py --checkpoint DIR` reads both safetensors files, the quant config,
 the tokenizer and the template.
+
+Upstream publishes the pack as `Inkling-2-Mini-NVFP4-DQ8.basalt` in
+[jesdga/Inkling-2-Mini-Basalt](https://huggingface.co/jesdga/Inkling-2-Mini-Basalt) (19,734,300,551 bytes, SHA-256
+`f7b4e5f8e17681c4735a7dfc51ffd8e805c44184fad4e1778b13187d79dc3787`). granite refuses a `.basalt` file: convert it once,
+which copies every section, re-quantizes nothing and needs room for a second copy
+([migration](../../tools/migrations/README.md)):
+
+```sh
+hf download jesdga/Inkling-2-Mini-Basalt Inkling-2-Mini-NVFP4-DQ8.basalt --local-dir models
+python3 tools/migrations/pack_to_granite.py models/Inkling-2-Mini-NVFP4-DQ8.basalt models/Inkling-2-Mini-NVFP4-DQ8.granite
+```
 
 ## Architecture
 

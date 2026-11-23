@@ -1,10 +1,10 @@
 // src/models/inkling2/vision_parity.cpp - Inkling 2's image encoder on the real projector: per picture its plan, the CUDA
 // encoder against the CPU encoder stage by stage (--cpu), the encode time, and the rows written for an outside reference.
 //
-//   inkling2_vision_parity <model.basalt | mmproj.gguf> [--cpu] [--dump DIR] [--reps N] <image>...
+//   inkling2_vision_parity <model.granite | mmproj.gguf> [--cpu] [--dump DIR] [--reps N] <image>...
 //
 // --cpu: per tap relative L2 of the CUDA encoder against the CPU encoder run with the same bf16 rounding of the product
-// inputs, and the lowest cosine of an output row. --dump: DIR/<name>.basalt.f32 (and .cpu.f32 with --cpu), the rows
+// inputs, and the lowest cosine of an output row. --dump: DIR/<name>.granite.f32 (and .cpu.f32 with --cpu), the rows
 // [cells][2304] as float32. The time is the mean of N encodes after a first one (the picture's bytes to the card and the
 // rows back included), next to the host's decode and preparation. Exit status 1 when a gate fails.
 #include "granite/core/model_file.hpp"
@@ -91,13 +91,13 @@ int main(int argc, char** argv) {
         else images.push_back(a);
     }
     if (model.empty() || images.empty()) {
-        std::fprintf(stderr, "usage: inkling2_vision_parity <model.basalt | mmproj.gguf> [--cpu] [--dump DIR] [--reps N] <image>...\n");
+        std::fprintf(stderr, "usage: inkling2_vision_parity <model.granite | mmproj.gguf> [--cpu] [--dump DIR] [--reps N] <image>...\n");
         return 2;
     }
     std::string err;
     core::ModelFile file;
     core::FileRange range(model);
-    if (model.size() > 7 && model.compare(model.size() - 7, 7, ".basalt") == 0) {
+    if (model.size() > 8 && model.compare(model.size() - 8, 8, ".granite") == 0) {
         if (!file.open(model, err) || file.range("vision/mmproj").empty()) {
             std::printf("no vision/mmproj in %s %s\n", model.c_str(), err.c_str());
             return 2;
@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
         std::printf("  decode %.1f ms, prepare %.1f ms, encode %.2f ms (%d tokens in the tower)\n", t_decode, t_prep, t_enc,
                     4 * plan.cells() + 1);
         if (out.size() != (size_t) plan.cells() * width) { std::printf("  %zu values, not %d rows\n", out.size(), plan.cells()); ++g_fail; }
-        if (!dump.empty() && !write_f32(dump + "/" + stem(path) + ".basalt.f32", out)) { std::printf("  cannot write the dump\n"); ++g_fail; }
+        if (!dump.empty() && !write_f32(dump + "/" + stem(path) + ".granite.f32", out)) { std::printf("  cannot write the dump\n"); ++g_fail; }
         if (!cpu_ref) continue;
         std::map<std::string, std::vector<float>> taps_c;
         std::vector<float> oc;

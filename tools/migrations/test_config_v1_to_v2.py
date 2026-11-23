@@ -13,7 +13,7 @@ sys.path.insert(0, str(HERE.parents[1]))
 import config_v1_to_v2 as migrate  # noqa: E402
 from serve.config import build_parser, load_config_file  # noqa: E402
 
-OLD = {"server": {"model": "m.basalt", "alias": "Name", "gpu": "auto", "vision": "dynamic", "host": "0.0.0.0", "port": 8080,
+OLD = {"server": {"model": "m.granite", "alias": "Name", "gpu": "auto", "vision": "dynamic", "host": "0.0.0.0", "port": 8080,
                   "parallel": 4, "slot-full-context": True, "idle-sleep": 300},
        "engine": {"max-context": 262144, "kv": "int8", "vram-reserve-mib": 500, "pool-workers": 8,
                   "conversation-cache-disk-mib": 32768}}
@@ -30,7 +30,7 @@ class Migration(unittest.TestCase):
         self.assertEqual(migrate.migrated(OLD), {
             "version": 2,
             "engine": {"conversation-cache-disk-mib": 32768, "idle-sleep": 300, "pool-workers": 8, "vram-reserve-mib": 500},
-            "models": [{"alias": "Name", "gpu": "auto", "kv": "int8", "max-context": 262144, "model": "m.basalt", "parallel": 4,
+            "models": [{"alias": "Name", "gpu": "auto", "kv": "int8", "max-context": 262144, "model": "m.granite", "parallel": 4,
                         "slot-full-context": True, "vision": "dynamic"}],
             "server": {"host": "0.0.0.0", "port": 8080}})
 

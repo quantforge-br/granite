@@ -627,7 +627,7 @@ def build(a, Job, fingerprint, die) -> None:
             lic = kv.get("general.license", "")
             mx = [l for l, kind, _, _, _ in experts.layers if kind == "q8_0"]
             meta = {
-                "format": "basalt", "version": 2, "name": name, "arch": ARCH,
+                "format": "granite", "version": 2, "name": name, "arch": ARCH,
                 "converter": {"tool": "tools/convert/convert.py"},
                 "sources": [{"path": p.name, "size": p.stat().st_size,
                              "fingerprint_sha256_first_last_64mib_and_size": fingerprint(p)} for p in ck.files],

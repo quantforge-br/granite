@@ -268,7 +268,7 @@ class Wire(unittest.TestCase):
             for value, cli, want in ((True, [], True), (False, [], False), (True, ["--no-grammar"], False),
                                      (False, ["--grammar"], True)):
                 p = Path(d) / "c.json"
-                p.write_text(json.dumps({"models": [{"model": "m.basalt", "grammar": value}]}))
+                p.write_text(json.dumps({"models": [{"model": "m.granite", "grammar": value}]}))
                 self.assertEqual(model_settings(build_parser(), ["--config", str(p)] + cli)[0][0].grammar, want)
 
 
@@ -299,8 +299,8 @@ class EngineStart(unittest.TestCase):
             eng = Path(d) / "eng"
             eng.write_bytes(flags)
             conf = Path(d) / "c.json"
-            conf.write_text(json.dumps({"models": [{"model": "m.basalt", **server_block}]}))
-            (Path(d) / "m.basalt").write_bytes(b"")              # the launch check wants the file to exist
+            conf.write_text(json.dumps({"models": [{"model": "m.granite", **server_block}]}))
+            (Path(d) / "m.granite").write_bytes(b"")              # the launch check wants the file to exist
             argv = ["x", "--config", str(conf), "--engine-bin", str(eng), "--port", str(free_port()), *cli]
             tokdir = Path(d) / "tok"
             tokdir.mkdir()
@@ -329,13 +329,13 @@ class EngineStart(unittest.TestCase):
         out = io.StringIO()
         with redirect_stdout(out):
             self.engine_args(block, cli)
-        return next(x for x in out.getvalue().splitlines() if x.startswith("[server] m.basalt"))
+        return next(x for x in out.getvalue().splitlines() if x.startswith("[server] m.granite"))
 
     def test_startup_line(self):
-        self.assertEqual(self.line({}), "[server] m.basalt")
-        self.assertEqual(self.line({"grammar": True}), "[server] m.basalt  grammar=on")
-        self.assertEqual(self.line({"grammar": True}, ["--no-grammar"]), "[server] m.basalt  grammar=off")
-        self.assertEqual(self.line({}, ["--grammar"]), "[server] m.basalt  grammar=on")
+        self.assertEqual(self.line({}), "[server] m.granite")
+        self.assertEqual(self.line({"grammar": True}), "[server] m.granite  grammar=on")
+        self.assertEqual(self.line({"grammar": True}, ["--no-grammar"]), "[server] m.granite  grammar=off")
+        self.assertEqual(self.line({}, ["--grammar"]), "[server] m.granite  grammar=on")
 
     def test_command_line(self):
         self.assertEqual(self.engine_args({}, ["--grammar"]), ["--serve", "--gpu", "0", "--grammar", "on"])

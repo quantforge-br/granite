@@ -1,6 +1,6 @@
 """Do requests decoded together give the tokens they give alone, and how fast are they together?
 
-    python3 tools/batch_identity.py ENGINE --model FILE.basalt [--slots 2,4,8] [--tokens N] [--fixtures DIR]
+    python3 tools/batch_identity.py ENGINE --model FILE.granite [--slots 2,4,8] [--tokens N] [--fixtures DIR]
                                     [--out FILE.json] [-- ENGINE ARGS...]
 
 The serve-level batch check of any model (docs/design/batching.md). First each prompt (the bench fixtures conv, struct,

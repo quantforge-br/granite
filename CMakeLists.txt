@@ -170,7 +170,7 @@ if(BUILD_TESTING)
   target_link_libraries(inkling2_tokenizer_test PRIVATE tokenizer core)
   granite_cpu_test(NAME inkling2_tokenizer_test COMMAND inkling2_tokenizer_test
                   ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/inkling2/ignore_merges.tsv
-                  ${CMAKE_CURRENT_SOURCE_DIR}/models/Inkling-2-Mini-NVFP4-DQ8.basalt)
+                  ${CMAKE_CURRENT_SOURCE_DIR}/models/Inkling-2-Mini-NVFP4-DQ8.granite)
   set_tests_properties(inkling2_tokenizer_test PROPERTIES SKIP_RETURN_CODE 77)
   add_executable(inkling2_walk_test src/models/inkling2/walk_test.cpp src/models/inkling2/walk.cpp src/models/inkling2/pack.cpp)
   target_include_directories(inkling2_walk_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -695,6 +695,12 @@ granite_cpu_test(NAME engine_session_test COMMAND engine_session_test)
 set_tests_properties(engine_session_test PROPERTIES TIMEOUT 60)
 
 # the engine log helper: the line each level renders (CPU only)
+add_executable(model_file_test tests/core/model_file_test.cpp)
+target_link_libraries(model_file_test PRIVATE model_file)
+granite_embed_manifest(model_file_test)
+granite_cpu_test(NAME model_file_test COMMAND model_file_test)
+set_tests_properties(model_file_test PROPERTIES TIMEOUT 60)
+
 add_executable(log_test tests/core/log_test.cpp)
 target_include_directories(log_test PRIVATE include)
 target_link_libraries(log_test PRIVATE warnings)

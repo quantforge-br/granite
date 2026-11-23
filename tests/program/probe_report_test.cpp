@@ -92,7 +92,7 @@ int main() {
 
     // the config line names the cards as given, not as the engine sees them
     {
-        const std::vector<std::string> a = {"--model", "m.basalt", "--gpu", "0", "--kv", "int8"};
+        const std::vector<std::string> a = {"--model", "m.granite", "--gpu", "0", "--kv", "int8"};
         CHECK(format_config(a, "1") == "--gpu 1 --kv int8");
         CHECK(format_config(a, "auto") == "--gpu auto --kv int8");
         CHECK(format_config({"--gpu", "0,1", "--spec", "8"}, "0,1") == "--gpu 0,1 --spec 8");

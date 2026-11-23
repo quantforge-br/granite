@@ -76,7 +76,7 @@ class Section(unittest.TestCase):
     def test_table_layout(self):
         a, b = H.quantize(bf16(np.ones((2, 32)))), H.quantize(bf16(np.full((1, 64), 2.0)))
         blob = H.table([("x", 2, 32, a), ("mtp.y", 1, 64, b)])
-        self.assertEqual(blob[:8], b"BASALTH8")
+        self.assertEqual(blob[:8], b"GRANITH8")
         t = H.read_table(blob)
         self.assertEqual(list(t), ["x", "mtp.y"])
         self.assertEqual(t["x"], (2, 32, 8, a))

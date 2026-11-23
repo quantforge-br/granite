@@ -1,6 +1,6 @@
-"""Build the single .basalt model file from a safetensors checkpoint.
+"""Build the single .granite model file from a safetensors checkpoint.
 
-    python3 tools/convert/convert.py --checkpoint INKLING2_DIR --out MODEL.basalt [--name NAME] [--workers N] [--force]
+    python3 tools/convert/convert.py --checkpoint INKLING2_DIR --out MODEL.granite [--name NAME] [--workers N] [--force]
 
 From Thinking Machines' Inkling 2 Mini release (tools/convert/checkpoint_inkling2.py)
   --checkpoint DIR   a checkpoint of model type inkling2_loop: the release's safetensors (the model and its DSpark
@@ -87,7 +87,7 @@ def checkpoint_model_type(d: Path) -> str | None:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", help="the .basalt file to write")
+    ap.add_argument("--out", help="the .granite file to write")
     ap.add_argument("--name")
     ap.add_argument("--checkpoint", metavar="DIR", help="an Inkling 2 safetensors checkpoint (inkling2_loop): a whole inkling2 pack")
     ap.add_argument("--workers", type=int, default=16, help="converter processes")

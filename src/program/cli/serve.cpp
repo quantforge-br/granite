@@ -11,8 +11,8 @@
 
 namespace granite::program::cli {
 
-/// `granite serve --config FILE` or `granite serve MODEL.basalt [--python PY] [server args...]`: runs the Python server
-/// over this binary.  The server gets `--engine-bin` and what was typed; a MODEL.basalt argument stands for `--model MODEL.basalt`.
+/// `granite serve --config FILE` or `granite serve MODEL.granite [--python PY] [server args...]`: runs the Python server
+/// over this binary.  The server gets `--engine-bin` and what was typed; a MODEL.granite argument stands for `--model MODEL.granite`.
 /// Only returns on failure.
 int serve_subcommand(int argc, char** argv) {
     std::string python;
@@ -36,12 +36,12 @@ int serve_subcommand(int argc, char** argv) {
         if (a == "--python") python = value();
         else if (a == "--model") { extra.insert(extra.end(), {a, absolute(value())}); have_model = true; }
         else if (a == "--config") extra.insert(extra.end(), {a, absolute(value())});
-        // only the first argument can be MODEL.basalt; a later bare word is the value of the option before it
+        // only the first argument can be MODEL.granite; a later bare word is the value of the option before it
         else if (i == 2 && !have_model && !a.empty() && a[0] != '-') { extra.insert(extra.end(), {"--model", absolute(a)}); have_model = true; }
         else extra.push_back(a);
     }
     if (extra.empty()) {
-        granite::log::error("granite", "usage: granite serve --config FILE | MODEL.basalt [--python PY] [server args...]");
+        granite::log::error("granite", "usage: granite serve --config FILE | MODEL.granite [--python PY] [server args...]");
         return 2;
     }
     const std::string exe = granite::platform::module_path();

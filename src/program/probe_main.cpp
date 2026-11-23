@@ -54,9 +54,9 @@ void usage() {
     std::printf(
         "granite-probe - measures this machine and prints its rates, decode speeds and suggested values\n"
         "\n"
-        "usage: granite-probe --model FILE.basalt [-- ENGINE ARGS...]\n"
+        "usage: granite-probe --model FILE.granite [-- ENGINE ARGS...]\n"
         "\n"
-        "  --model FILE          a .basalt model file\n"
+        "  --model FILE          a .granite model file\n"
         "  --engine BIN          engine binary (default: granite beside this program, else the build's)\n"
         "  --fixtures DIR        fixture ids (default %s, or the model's own folder in it)\n"
         "  --logs DIR            keep the engine log there\n"

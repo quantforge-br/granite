@@ -1,6 +1,6 @@
 """Do two engine builds produce the same greedy tokens?
 
-    python3 tools/greedy_identity.py REF_BIN NEW_BIN --model FILE.basalt [--fixtures DIR] [--tokens N] [-- ENGINE ARGS...]
+    python3 tools/greedy_identity.py REF_BIN NEW_BIN --model FILE.granite [--fixtures DIR] [--tokens N] [-- ENGINE ARGS...]
 
 Each binary runs as `--serve` with BASE plus any flags after `--` (which replace BASE values). The bench fixtures'
 prompts (conv, struct, prose: comma-separated token ids per line) run at temperature 0 and every token is compared.

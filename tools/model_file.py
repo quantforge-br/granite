@@ -1,4 +1,4 @@
-"""Read and write the .basalt model file (the layout in include/granite/core/model_format.hpp).
+"""Read and write the .granite model file (the layout in include/granite/core/model_format.hpp).
 
     w = ModelWriter(path)
     w.add_bytes("meta", json_bytes)
@@ -6,7 +6,7 @@
     w.add_chunks("dense", chunk_iterator)             # streamed
     w.close()
 
-    m = ModelFile(path)                               # version 2 only; versions=(1,) for the migration's input
+    m = ModelFile(path)                               # version 2 only; a Basalt pack is refused, naming MIGRATION
     m.names(); m.section("meta") -> (offset, bytes); m.read("meta") -> bytes; m.verify("dense") -> bool
 """
 from __future__ import annotations
@@ -15,9 +15,10 @@ import hashlib
 import os
 import struct
 
-MAGIC = b"BASALTMF"
+MAGIC = b"GRANITMF"
+BASALT_MAGIC = b"BASALTMF"                     # upstream Basalt's packs: this container, converted once with MIGRATION
 VERSION = 2
-MIGRATION = "tools/migrations/basalt_v1_to_v2.py"
+MIGRATION = "tools/migrations/pack_to_granite.py"
 SECTION_ALIGN = 2 << 20
 HEADER_BYTES = 64 << 10
 TENSOR_ALIGN = 4096                            # inside the `gguf` section
@@ -144,16 +145,17 @@ class ModelWriter:
 
 
 class ModelFile:
-    def __init__(self, path: str, versions: tuple[int, ...] = (VERSION,)):
+    def __init__(self, path: str):
         self.path = path
         with open(path, "rb") as f:
             head = f.read(HEADER_BYTES)
         magic, version, n, file_bytes, _ = HEADER.unpack_from(head, 0)
+        if magic == BASALT_MAGIC:
+            raise ValueError(f"{path}: a Basalt pack; convert it with {MIGRATION}")
         if magic != MAGIC:
-            raise ValueError(f"{path}: not a .basalt model file")
-        if version not in versions:
-            hint = f"; upgrade it with {MIGRATION}" if version < VERSION else ""
-            raise ValueError(f"{path}: .basalt version {version}, this build reads version {VERSION}{hint}")
+            raise ValueError(f"{path}: not a .granite model file")
+        if version != VERSION:
+            raise ValueError(f"{path}: .granite version {version}, this build reads version {VERSION}")
         self.version = version
         if os.path.getsize(path) < file_bytes:
             raise ValueError(f"{path}: truncated ({os.path.getsize(path)} of {file_bytes} bytes)")

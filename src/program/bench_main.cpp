@@ -254,7 +254,7 @@ void usage(const std::string& engine) {
     std::printf(
         "granite-bench - the standard benchmark: decode fixtures, prefill depths, optional quality gate\n"
         "\n"
-        "usage: granite-bench --model FILE.basalt [options] [-- ENGINE ARGS...]\n"
+        "usage: granite-bench --model FILE.granite [options] [-- ENGINE ARGS...]\n"
         "\n"
         "what to run (default: -p 16384 -t conv,struct,prose; giving one of -p / -t runs only what is given)\n"
         "  -t LIST            decode fixtures, any of conv,struct,prose; they always run in that order, because\n"
@@ -293,7 +293,7 @@ void usage(const std::string& engine) {
         "                     host-to-device copy speed (the figures --community records), then exit; no model, no engine\n"
         "\n"
         "engine\n"
-        "  --model FILE       a .basalt model file\n"
+        "  --model FILE       a .granite model file\n"
         "  --gpu A,B,..|auto  the GPUs, as for the server and the engine (default: GPU 0 alone). Every\n"
         "                     other --flag is an engine flag, passed on as given (same names as `granite`; the engine\n"
         "                     rejects a bad one at startup); --print-command shows the command and exits\n"

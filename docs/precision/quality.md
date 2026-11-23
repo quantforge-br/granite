@@ -44,7 +44,7 @@ static spill (a fixed `--expert-cache N`, or a context of at most 32,768; [guide
 Drafting on and off, token by token: one engine session per configuration over `--serve`:
 
 ```sh
-bin/granite --serve --model MODEL.basalt {--spec 0 | --spec 8} --gpu 0 --max-context 8192
+bin/granite --serve --model MODEL.granite {--spec 0 | --spec 8} --gpu 0 --max-context 8192
 ```
 
 After `READY`, `GEN 256 temperature=0 ID,ID,...` on stdin returns `T ID` lines and ends with `DONE`; `QUIT` ends the session.

@@ -16,7 +16,7 @@ import numpy as np
 G8 = 32
 HEADER = struct.Struct("<8sII")                 # magic, version, n_entries
 ENTRY = struct.Struct("<128sIIIIQQ")             # name, rows, cols, srow, reserved, offset, bytes
-MAGIC = b"BASALTH8"
+MAGIC = b"GRANITH8"
 VERSION = 1
 DATA_ALIGN = 256
 # the drafter's matrices: bf16 tensors of its hyper-connection blocks

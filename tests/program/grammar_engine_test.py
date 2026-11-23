@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The engine enforces a request's grammar on the tokens it samples.
 
-    grammar_engine_test.py ENGINE MODEL.basalt [ENGINE ARGS...]
+    grammar_engine_test.py ENGINE MODEL.granite [ENGINE ARGS...]
 
 Starts `ENGINE --serve --grammar on` and asks for a person as JSON under a schema that only allows the name "Bob":
 the model's own answer names someone else, so a sampled token violates the grammar.  With the grammar key the reply

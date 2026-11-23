@@ -1,14 +1,14 @@
-# `.basalt` model file
+# `.granite` model file
 
 One file holds everything the engine and the server load: weights, tokenizer and chat template, DSpark drafter,
 vision projector, and the GGUF metadata with default sampling. Flags and the expert profile are
 not in it.
 
-- **Layout:** a 64 KiB header (magic `BASALTMF`, version 2, up to 511 named sections with offset, size and SHA-256), then sections aligned
+- **Layout:** a 64 KiB header (magic `GRANITMF`, version 2, up to 511 named sections with offset, size and SHA-256), then sections aligned
   to 2 MiB. Authoritative: [model_format.hpp](../include/granite/core/model_format.hpp).
-- **Versions:** the engine reads version 2 only. Version 1 files convert with
-  [tools/migrations/basalt_v1_to_v2.py](../tools/migrations/README.md), without a download. What changed:
-  [file format changes](basalt-file-changelog.md).
+- **Versions:** the engine reads version 2 only. An upstream Basalt pack (`.basalt`, magic `BASALTMF`) is the same container
+  under other names: the engine refuses it, and [tools/migrations/pack_to_granite.py](../tools/migrations/README.md) writes
+  the `.granite` from it once, without a download. What changed: [file format changes](granite-file-changelog.md).
 
 ## `NVFP4_PLANES` (tensor type 45)
 
@@ -27,7 +27,7 @@ stores no such tensor; the engine rounds the DSpark drafter's Q8_0 block product
 
 ## Inkling 2 Mini pack
 
-The pack (`Inkling-2-Mini-NVFP4-DQ8.basalt`, 19.7 GB) comes from Thinking Machines Lab's official release alone
+The pack (`Inkling-2-Mini-NVFP4-DQ8.granite`, 19.7 GB) comes from Thinking Machines Lab's official release alone
 ([thinkingmachines/Inkling-2-Mini](https://huggingface.co/thinkingmachines/Inkling-2-Mini), Apache-2.0): both safetensors files
 (`model` and the DSpark drafter `mtp`), `config.json`, `hf_quant_config.json`, the tokenizer files and the chat template. No other
 input. [checkpoint_inkling2.py](../tools/convert/checkpoint_inkling2.py) is what `convert.py --checkpoint` runs on a checkpoint of
@@ -35,7 +35,7 @@ model type `inkling2_loop`; the drafter is in the release.
 
 ```sh
 hf download thinkingmachines/Inkling-2-Mini --local-dir Inkling-2-Mini
-python3 tools/convert/convert.py --checkpoint Inkling-2-Mini --out Inkling-2-Mini-NVFP4-DQ8.basalt --name "Inkling 2 Mini"
+python3 tools/convert/convert.py --checkpoint Inkling-2-Mini --out Inkling-2-Mini-NVFP4-DQ8.granite --name "Inkling 2 Mini"
 ```
 
 - `experts` and `experts.layout`: the routed experts of each of the 24 layers, 128 to a layer, one blob per expert in the order

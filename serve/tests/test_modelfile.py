@@ -1,4 +1,4 @@
-"""--model FILE.basalt: the config derived from the file, the tokenizer read in memory, the peer card, vision."""
+"""--model FILE.granite: the config derived from the file, the tokenizer read in memory, the peer card, vision."""
 import io
 import json
 import sys
@@ -33,7 +33,7 @@ class Tmp(unittest.TestCase):
         self.engine_bin.write_text("")
 
     def build(self, vision=False, meta=META):
-        path = self.dir / "tiny.basalt"
+        path = self.dir / "tiny.granite"
         w = ModelWriter(str(path))
         w.add_bytes("meta", json.dumps(meta).encode())
         for n, b in TOKENIZER.items():
@@ -63,6 +63,14 @@ class Derivation(Tmp):
         cfg = modelfile.model_config(modelfile.ModelSpec(path), str(self.engine_bin))
         self.assertEqual(Path(cfg["log"]), self.dir / "cache" / key / "engine.log")
 
+    def test_a_basalt_pack_names_its_conversion(self):
+        # upstream's pack is this container under the magic BASALTMF: refused, naming the script that converts it
+        path = self.build()
+        with open(path, "r+b") as f:
+            f.write(b"BASALTMF")
+        with self.assertRaisesRegex(ValueError, "a Basalt pack; convert it with tools/migrations/pack_to_granite.py"):
+            modelfile.model_config(modelfile.ModelSpec(path), str(self.engine_bin))
+
     def test_conversation_dir_follows_the_budget(self):
         path = self.build()
         key = ModelFile(path).sections["meta"][2].hex()[:16]
@@ -85,11 +93,11 @@ class Derivation(Tmp):
         self.assertEqual(list(Path(cfg["log"]).parent.iterdir()), [])
 
     def test_missing_tokenizer_and_bad_file(self):
-        w = ModelWriter(str(self.dir / "bare.basalt"))
+        w = ModelWriter(str(self.dir / "bare.granite"))
         w.add_bytes("meta", b"{}")
         w.close()
         with self.assertRaises(ValueError):
-            modelfile.model_config(modelfile.ModelSpec(str(self.dir / "bare.basalt")), str(self.engine_bin))
+            modelfile.model_config(modelfile.ModelSpec(str(self.dir / "bare.granite")), str(self.engine_bin))
         (self.dir / "junk").write_bytes(b"x" * 5000)
         with self.assertRaises(ValueError):
             modelfile.model_config(modelfile.ModelSpec(str(self.dir / "junk")), str(self.engine_bin))

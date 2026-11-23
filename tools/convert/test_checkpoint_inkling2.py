@@ -205,7 +205,7 @@ class ConvertTest(unittest.TestCase):
         d = Path(cls.tmp.name) / "ckpt"
         d.mkdir()
         cls.fx = Fixture(d)
-        cls.out = Path(cls.tmp.name) / "tiny.basalt"
+        cls.out = Path(cls.tmp.name) / "tiny.granite"
         r = subprocess.run([sys.executable, str(HERE / "convert.py"), "--checkpoint", str(d), "--out", str(cls.out), "--workers", "2"],
                            capture_output=True, text=True)
         if r.returncode:

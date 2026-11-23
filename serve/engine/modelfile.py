@@ -1,4 +1,4 @@
-"""Engine settings, tokenizer and vision inputs for a .basalt model file. Nothing is unpacked: the tokenizer is read from
+"""Engine settings, tokenizer and vision inputs for a .granite model file. Nothing is unpacked: the tokenizer is read from
 its sections into memory, and the vision programs open the projector inside the file themselves."""
 from __future__ import annotations
 

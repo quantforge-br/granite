@@ -29,7 +29,7 @@ int run(int argc, char** argv) {
     };
     if (const auto code = cli::select_gpus(common, chosen_cards, (adapter != nullptr ? adapter->max_expert_cards() : granite::model::max_expert_cards()) + 1,
                                          adapter != nullptr && adapter->second_card_reads_prompts(), layer_stage)) return *code;
-    // ---- where every loader reads from: the sections of the .basalt file
+    // ---- where every loader reads from: the sections of the .granite file
     if (const auto code = cli::prepare_model_process(common)) return *code;
     if (const std::optional<int> code = adapter->run(common, chosen_cards)) return *code;
     return run_session_model(common, *adapter);

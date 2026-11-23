@@ -1,4 +1,4 @@
-// src/models/inkling2/pack.hpp - the Inkling 2 .basalt pack as the loader sees it: geometry and loop from the meta's
+// src/models/inkling2/pack.hpp - the Inkling 2 .granite pack as the loader sees it: geometry and loop from the meta's
 // gguf_kv, the tensor table, the experts layout, and where the vision tower and the drafter sit
 // (tools/convert/checkpoint_inkling2.py writes it).
 #pragma once

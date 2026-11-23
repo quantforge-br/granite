@@ -1,11 +1,11 @@
 # Models
 
-A model is one `.basalt` file. The server reads the architecture from the file and picks the chat format, tool syntax and thinking switch. granite builds one model, Inkling 2 Mini; several of its packs can share one address ([router](../configuration/models.md)). What it supports:
+A model is one `.granite` file. The server reads the architecture from the file and picks the chat format, tool syntax and thinking switch. granite builds one model, Inkling 2 Mini; several of its packs can share one address ([router](../configuration/models.md)). What it supports:
 
 | | Inkling 2 Mini |
 | --- | --- |
 | Architecture id | `inkling2` |
-| Packs | `Inkling-2-Mini-NVFP4-DQ8`, [Hugging Face](https://huggingface.co/jesdga/Inkling-2-Mini-Basalt), built from the official release ([guide](inkling2.md#pack)) |
+| Packs | `Inkling-2-Mini-NVFP4-DQ8`, built from the official release or converted once from upstream's [Hugging Face](https://huggingface.co/jesdga/Inkling-2-Mini-Basalt) `.basalt` ([guide](inkling2.md#pack)) |
 | Layers, experts | 24 visited 48 times a token (a core of 12 run three times; 4 full attention, 20 sliding-window); 128 per layer, top-8 |
 | Context | default 8,192; `--max-context` sets it, up to 1,048,576 |
 | Drafting | DSpark drafter in the pack, on; `--spec` default 8 |

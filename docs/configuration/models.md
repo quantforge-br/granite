@@ -11,8 +11,8 @@ a model by its file name, so each entry needs its own file.
   "version": 2,
   "engine": { "idle-sleep": 300 },
   "models": [
-    { "alias": "Inkling", "model": "inkling2.basalt", "gpu": "0,1", "max-context": 262144, "vision": "dynamic" },
-    { "alias": "Inkling-1M", "model": "inkling2-1m.basalt", "gpu": "0", "kv": "fp8", "max-context": 1048576 }
+    { "alias": "Inkling", "model": "inkling2.granite", "gpu": "0,1", "max-context": 262144, "vision": "dynamic" },
+    { "alias": "Inkling-1M", "model": "inkling2-1m.granite", "gpu": "0", "kv": "fp8", "max-context": 1048576 }
   ],
   "server": { "host": "127.0.0.1", "port": 8080 }
 }

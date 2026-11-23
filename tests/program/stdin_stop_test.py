@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Closing the engine's stdin mid-generation stops the running request and ends the process cleanly.
 
-    stdin_stop_test.py ENGINE MODEL.basalt IDS_FILE [ENGINE ARGS...]
+    stdin_stop_test.py ENGINE MODEL.granite IDS_FILE [ENGINE ARGS...]
 
 Starts `ENGINE --serve`, asks for a long greedy generation, closes stdin after a few tokens, and checks that the
 request stops within a few windows and the engine exits with status 0 soon after.  Needs a GPU and a model pack.

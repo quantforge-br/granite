@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Grammar requests are served under continuous batching, each slot held to its own grammar.
 
-    grammar_batch_test.py ENGINE MODEL.basalt [SERVER ARGS...]
+    grammar_batch_test.py ENGINE MODEL.granite [SERVER ARGS...]
 
 Starts the server on 127.0.0.1 with `--parallel 4` and checks that: six concurrent mixed requests (tool calls with
 schemas and json_object, temperature 0.7) all come back legal; twelve concurrent plain requests leave the engine

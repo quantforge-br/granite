@@ -12,7 +12,7 @@ Every setting: server options, engine flags, and the sampling fields. Effects on
 
 ```sh
 bin/granite serve --config config.json [options]
-bin/granite serve MODEL.basalt [--python PY] [options]
+bin/granite serve MODEL.granite [--python PY] [options]
 ```
 
 - **Server options** (the Python server): model, address, port, slots, vision, logging. `--name value` on the command line.
@@ -22,7 +22,7 @@ bin/granite serve MODEL.basalt [--python PY] [options]
 A config file is one JSON object. `models` lists the models; `engine` applies to every model that takes it; `server` is shared:
 
 ```json
-{ "version": 2, "models": [{ "model": "model.basalt", "kv": "fp8" }],
+{ "version": 2, "models": [{ "model": "model.granite", "kv": "fp8" }],
   "engine": { "max-context": 65536 }, "server": { "port": 8080 } }
 ```
 
@@ -51,7 +51,7 @@ Command line `--name`; the Where column says which config block takes it.
 
 | Setting | Where | Type, values | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `model` | model entry | path | required | The `.basalt` file: weights, tokenizer, chat template, drafter, vision projector and default sampling. |
+| `model` | model entry | path | required | The `.granite` file: weights, tokenizer, chat template, drafter, vision projector and default sampling. |
 | `alias` | model entry | string | name in the file | The model name the API reports. |
 | `host` | server | address | `127.0.0.1` | Listen address. `0.0.0.0` serves the network; never without `api-key`. |
 | `port` | server | integer | `8080` | TCP port. |

@@ -46,7 +46,7 @@ other than PDF or text, text that is not UTF-8, a URL or path the image rules re
 
 ```sh
 curl -s 127.0.0.1:8080/v1/messages -H 'content-type: application/json' -d @- <<EOF
-{"model": "model.basalt", "max_tokens": 1024, "messages": [{"role": "user", "content": [
+{"model": "model.granite", "max_tokens": 1024, "messages": [{"role": "user", "content": [
   {"type": "document", "title": "paper.pdf",
    "source": {"type": "base64", "media_type": "application/pdf", "data": "$(base64 -w0 paper.pdf)"}},
   {"type": "text", "text": "What does section 3 measure?"}]}]}

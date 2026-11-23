@@ -1,13 +1,18 @@
-# `.basalt` file format changelog
+# `.granite` file format changelog
 
 The version is the `u32` after the magic in the file's header. The engine reads one version; the
 [model file](model-file.md) page describes the current one.
 
-## Version 2
+## Version 2, granite's names
 
-The current version. The engine refuses version 1 files and names
-[tools/migrations/basalt_v1_to_v2.py](../tools/migrations/README.md), which writes a version 2 file from a version 1 file without a
-download or any re-quantizing.
+The current version: upstream Basalt's version 2 (below) under granite's names. The header's magic is `GRANITMF`, the `hc8`
+table's `GRANITH8`, `meta` says `"format": "granite"` and the file is a `.granite`; nothing else differs. The engine refuses a
+Basalt pack (`.basalt`, magic `BASALTMF`) and names [tools/migrations/pack_to_granite.py](../tools/migrations/README.md),
+which writes the `.granite` pack from it: every other section byte for byte, nothing downloaded or re-quantized.
+
+## Basalt version 2
+
+Upstream's last version. granite reads no version 1 file: every Inkling 2 Mini pack is version 2.
 
 - **Contains:** `meta`, `tokenizer/*`, `dense`, `dense.index`, `experts`, `experts.layout`, `gguf`, `mtp/*`, `hc8`,
   `dspark/gguf`, `vision/*`.
@@ -31,7 +36,7 @@ download or any re-quantizing.
 - **Trimmed `meta`:** no `sampling` (the server reads the GGUF metadata's `general.sampling.*` keys), no `profile` or
   `hc8` records and no converter revision, provenance that changed whenever a section was replaced.
 
-## Version 1
+## Basalt version 1
 
 - **Contains:** `meta` (with `sampling`, `profile` and `hc8` records and the converter's git revision),
   `tokenizer/*`, `dense`, `dense.index`, `experts`, `experts.layout`, `gguf`, `mtp/*`, `profile`, optionally `hc8`,

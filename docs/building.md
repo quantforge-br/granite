@@ -6,7 +6,7 @@ The build commands are in the [README](../README.md). Requirements: [platforms](
 
 - `src/`, `include/`: the engine (`granite`, `granite-bench`, `granite-probe`, `granite-vision`).
 - `serve/`: the Python server with the OpenAI and Anthropic API and the stats page.
-- `tools/`: the converter (`tools/convert/convert.py`), the `.basalt` reader (`model_file.py`), the gate-row report and diff
+- `tools/`: the converter (`tools/convert/convert.py`), the `.granite` reader (`model_file.py`), the gate-row report and diff
   (`ppl_gate.py --report`, `--diff`) and the tokenizer.
 - `tests/`: parity and unit tests. `data/`: expert profiles (`data/profiles`) and benchmark fixtures (`data/bench`).
 

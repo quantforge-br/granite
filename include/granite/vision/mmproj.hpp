@@ -37,7 +37,7 @@ public:
     Mmproj(const Mmproj&) = delete;
     Mmproj& operator=(const Mmproj&) = delete;
 
-    /// Reads the projector GGUF at `range` in place (a whole file, or the `vision/mmproj` section of a .basalt; mapped
+    /// Reads the projector GGUF at `range` in place (a whole file, or the `vision/mmproj` section of a .granite; mapped
     /// when the file system refuses unbuffered reads), parses the header and checks it is the `projector` type.  False
     /// with `err` otherwise.
     bool open(const core::FileRange& range, std::string& err, const char* projector = "qwen3vl_merger");

@@ -119,7 +119,7 @@ std::string fixture_dir() {
 
 int seam_cases() {
     const std::string dir = fixture_dir();
-    const std::string file = dir + "/mod\xc3\xa8le-\xe6\x97\xa5.basalt";   // modèle-日.basalt
+    const std::string file = dir + "/mod\xc3\xa8le-\xe6\x97\xa5.granite";   // modèle-日.granite
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
     std::filesystem::create_directories(dir, ec);
@@ -172,7 +172,7 @@ int long_path_case() {
     std::string dir = base;
     for (int i = 0; i < 8; ++i) dir += "/\xc3\xa9\xe6\x97\xa5\xd0\x96-dir-" + std::string(20, (char) ('a' + i));
     check(granite::platform::make_dirs(dir), "a directory past 260 chars is created");
-    const std::string file = dir + "/\xc3\xa9-\xe6\x97\xa5.basalt";
+    const std::string file = dir + "/\xc3\xa9-\xe6\x97\xa5.granite";
     const std::vector<uint8_t> bytes = pattern(1024);
     const bool wrote = write_file(file, bytes);
     std::printf("path_utf8 %-56s %zu chars\n", "path length", file.size());
@@ -196,7 +196,7 @@ int argv_case(const std::string& name) {
     std::printf("path_utf8 %-56s -> %s\n", "child argument bytes", esc(name).c_str());
     check(name == kName, "argv carried the UTF-8 bytes of the name");
     const std::string dir = granite::platform::temp_dir() + "/" + name;
-    const std::string file = dir + "/pack.basalt";
+    const std::string file = dir + "/pack.granite";
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
     std::filesystem::create_directories(dir, ec);

@@ -23,8 +23,9 @@ Status:
 
 ## Model and quantization
 
-The default pack is `Inkling-2-Mini-NVFP4-DQ8.basalt` from
-[jesdga/Inkling-2-Mini-Basalt](https://huggingface.co/jesdga/Inkling-2-Mini-Basalt) (19.7 GB):
+The default pack is `Inkling-2-Mini-NVFP4-DQ8.granite` (19.7 GB), converted once from upstream's `.basalt` in
+[jesdga/Inkling-2-Mini-Basalt](https://huggingface.co/jesdga/Inkling-2-Mini-Basalt) or built from the official release
+([guide](docs/models/inkling2.md#pack)):
 
 - Routed experts of layers 0 to 19 in NVFP4, bit for bit the release's own: the model ships its experts in NVFP4 and
   MXFP8, and no BF16 checkpoint exists.
@@ -45,13 +46,15 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j            # bin/granite, bin/granite-bench, bin/granite-probe, bin/granite-vision
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 hf download jesdga/Inkling-2-Mini-Basalt Inkling-2-Mini-NVFP4-DQ8.basalt --local-dir models
-bin/granite serve models/Inkling-2-Mini-NVFP4-DQ8.basalt --gpu 0
+python3 tools/migrations/pack_to_granite.py models/Inkling-2-Mini-NVFP4-DQ8.basalt models/Inkling-2-Mini-NVFP4-DQ8.granite
+bin/granite serve models/Inkling-2-Mini-NVFP4-DQ8.granite --gpu 0
 ```
 
 The server listens on 127.0.0.1. The model guide: [Inkling 2 Mini](docs/models/inkling2.md). Every setting:
 [configuration](docs/configuration/index.md).
 
-Name kept from Basalt: the `.basalt` pack format, so upstream packs load unchanged.
+A `.granite` pack is upstream Basalt's container under granite's names. The engine refuses a `.basalt` pack;
+`tools/migrations/pack_to_granite.py` converts one once, without a download ([model file](docs/model-file.md)).
 
 ## Credits
 

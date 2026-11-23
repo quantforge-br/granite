@@ -1,4 +1,4 @@
-"""`granite serve` hands the Python server what was typed, with only a leading MODEL.basalt turned into --model.
+"""`granite serve` hands the Python server what was typed, with only a leading MODEL.granite turned into --model.
 
     GRANITE_BIN=bin/granite python3 -m unittest tools.test_serve_launcher
 """
@@ -18,7 +18,7 @@ class ServeLauncher(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         d = Path(self.tmp.name).resolve()
         self.dir = d
-        (d / "m.basalt").write_text("")
+        (d / "m.granite").write_text("")
         (d / "c.json").write_text("{}")
         self.out = d / "argv.txt"
         stub = d / "python"                            # records its arguments, one per line
@@ -41,7 +41,7 @@ class ServeLauncher(unittest.TestCase):
         self.assertEqual(self.served("--config", "c.json", "--parallel", "4"), ["--config", str(self.dir / "c.json"), "--parallel", "4"])
 
     def test_first_bare_argument_is_the_model(self):
-        self.assertEqual(self.served("m.basalt", "--parallel", "4"), ["--model", str(self.dir / "m.basalt"), "--parallel", "4"])
+        self.assertEqual(self.served("m.granite", "--parallel", "4"), ["--model", str(self.dir / "m.granite"), "--parallel", "4"])
 
     def test_later_bare_word_is_not_a_model(self):
         self.assertEqual(self.served("--max-context", "4096", "--parallel", "4", "--config", "c.json"),

@@ -1,5 +1,5 @@
 #pragma once
-// The .basalt model file: one file holds everything the engine, the server and the vision sidecar load.
+// The .granite model file: one file holds everything the engine, the server and the vision sidecar load.
 //
 // Layout (little-endian):
 //   [0, 64 KiB)          FileHeader, then n_sections SectionEntry records (the table fits in the first 64 KiB)
@@ -9,7 +9,7 @@
 // A section's bytes are opaque to the container; what each one holds is listed below.  Text sections are UTF-8.
 // tools/model_file.py is the Python side of this layout and must stay byte-compatible with it.
 //
-// Sections (version 2; docs/basalt-file-changelog.md lists what each version holds):
+// Sections (version 2; docs/granite-file-changelog.md lists what each version holds):
 //   meta                     JSON: format/version, model name, the source GGUF metadata the engine and the server read
 //                            (`gguf_kv`, with the sampling defaults as general.sampling.*), the type, shape, size and
 //                            offset in `gguf` of every source tensor (`tensors`), provenance (source files, sizes,
@@ -33,7 +33,7 @@
 
 namespace granite::core {
 
-constexpr char kModelMagic[8] = {'B', 'A', 'S', 'A', 'L', 'T', 'M', 'F'};
+constexpr char kModelMagic[8] = {'G', 'R', 'A', 'N', 'I', 'T', 'M', 'F'};
 constexpr uint32_t kModelVersion = 2;
 constexpr uint64_t kSectionAlign = 2ull << 20;
 constexpr uint64_t kHeaderBytes = 64ull << 10;

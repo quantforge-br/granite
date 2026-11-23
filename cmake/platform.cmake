@@ -39,7 +39,7 @@ if(WIN32)
   target_link_libraries(platform PUBLIC advapi32 dxgi)   # processor name and adapter memory budgets
 endif()
 
-# The .basalt reader (host-only like `platform`): the engine's `core` and the vision programs, which open a section in
+# The .granite reader (host-only like `platform`): the engine's `core` and the vision programs, which open a section in
 # place, link the one copy.
 add_library(model_file STATIC ${GRANITE_CMAKE_ROOT}/src/core/model_file.cpp)
 target_include_directories(model_file PUBLIC ${GRANITE_CMAKE_ROOT}/include)

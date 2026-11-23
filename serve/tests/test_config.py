@@ -59,7 +59,7 @@ def conf(obj) -> str:
 
 def v2(cfg: dict) -> dict:
     """`cfg`'s settings as one model entry and the blocks they belong in: {"server": ..., "engine": ...} by kind."""
-    server, entry, shared = {}, {"model": "m.basalt"}, dict(cfg.get("engine", {}))
+    server, entry, shared = {}, {"model": "m.granite"}, dict(cfg.get("engine", {}))
     for key, value in cfg.get("server", {}).items():
         name = key.replace("_", "-").removeprefix("--")
         if name in ENTRY_OPTIONS or name in MODEL_OPTIONS:
@@ -92,7 +92,7 @@ class ConfigFile(unittest.TestCase):
     def test_blocks(self):
         cfg = load_config_file(conf({"version": 2, "server": {"port": 9000, "lazy": False, "allowed-host": ["a", "b"]},
                                      "engine": {"--kv": "int8", "resident-experts": True, "vision": 2},
-                                     "models": [{"model": "m.basalt", "max-context": 32768, "--gpu": "0,1"}]}), build_parser())
+                                     "models": [{"model": "m.granite", "max-context": 32768, "--gpu": "0,1"}]}), build_parser())
         self.assertEqual(cfg.server_argv, ["--port", "9000", "--allowed-host", "a", "--allowed-host", "b"])
         entry = cfg.models[0]
         self.assertEqual(entry.argv[:2], ["--vision", "2"])
@@ -101,19 +101,19 @@ class ConfigFile(unittest.TestCase):
         self.assertEqual(entry.own_words, ["--max-context", "32768"])
 
     def test_paths_are_relative_to_the_file(self):
-        p = conf({"server": {"tokenizer": "tok"}, "models": [{"model": "m/x.basalt"}]})
+        p = conf({"server": {"tokenizer": "tok"}, "models": [{"model": "m/x.granite"}]})
         cfg = load_config_file(p, build_parser())
         here = Path(p).resolve().parent
         self.assertEqual(cfg.server_argv, ["--tokenizer", str(here / "tok")])
-        self.assertEqual(cfg.models[0].argv, ["--model", str(here / "m" / "x.basalt")])
-        self.assertEqual(cfg.models[0].path, str(here / "m" / "x.basalt"))
+        self.assertEqual(cfg.models[0].argv, ["--model", str(here / "m" / "x.granite")])
+        self.assertEqual(cfg.models[0].path, str(here / "m" / "x.granite"))
 
     def test_the_exact_shape(self):
         p = conf({"engine": {"conversation-cache-disk-mib": 32768, "idle-sleep": 300, "pool-workers": 8, "vram-reserve-mib": 500},
                   "models": [{"alias": "Qwen 3.8 FN", "gpu": "auto", "kv": "int8", "max-context": 262144,
-                              "model": "a.basalt", "parallel": 4, "slot-full-context": True, "vision": "dynamic"},
+                              "model": "a.granite", "parallel": 4, "slot-full-context": True, "vision": "dynamic"},
                              {"alias": "DeepSeek V4.1 Flash", "gpu": "auto", "max-context": 1048576,
-                              "model": "b.basalt", "vision": "dynamic"}],
+                              "model": "b.granite", "vision": "dynamic"}],
                   "server": {"host": "0.0.0.0", "port": 8080}})
         (qwen, _, qfile, _), (ds, _, dfile, _) = model_settings(build_parser(), ["--config", p])
         self.assertEqual((qwen.alias, qwen.parallel, qwen.gpu, qwen.vision, qwen.idle_sleep, qwen.host, qwen.port),
@@ -131,20 +131,20 @@ class ConfigFile(unittest.TestCase):
         self.assertEqual(flag_value(dfile, "--max-context"), "1048576")
 
     def test_the_ram_reserve(self):
-        p = conf({"engine": {"ram-reserve-mib": 4096}, "models": [{"model": "a.basalt"}, {"model": "b.basalt"}]})
+        p = conf({"engine": {"ram-reserve-mib": 4096}, "models": [{"model": "a.granite"}, {"model": "b.granite"}]})
         for _, _, words, _ in model_settings(build_parser(), ["--config", p]):
             self.assertEqual(flag_value(words, "--ram-reserve-mib"), "4096")
 
     def test_version(self):
         ap = build_parser()
-        entry = [{"model": "m.basalt"}]
+        entry = [{"model": "m.granite"}]
         load_config_file(conf({"models": entry}), ap)                   # no key: this format
         load_config_file(conf({"version": 2, "models": entry}), ap)
-        for old in ({"server": {"model": "m.basalt"}, "engine": {"kv": "int8"}}, {"v": 1, "models": entry},
+        for old in ({"server": {"model": "m.granite"}, "engine": {"kv": "int8"}}, {"v": 1, "models": entry},
                     {"version": 1, "models": entry}, {}):
             with self.assertRaisesRegex(ValueError, "granite requires v2 config, please upgrade", msg=str(old)):
                 load_config_file(conf(old), ap)
-        p = conf({"server": {"model": "m.basalt"}})
+        p = conf({"server": {"model": "m.granite"}})
         with self.assertRaises(ValueError) as cm:
             load_config_file(p, ap)
         words = str(cm.exception).split("upgrade: ", 1)[1].split()       # a command that runs as printed
@@ -159,10 +159,10 @@ class ConfigFile(unittest.TestCase):
 
     def test_top_level_settings_a_model_lacks_are_left_out_for_it(self):
         p = conf({"engine": {"kv": "int8", "spec": 7, "pool-workers": 8},
-                  "models": [{"model": "a.basalt"}, {"model": "b.basalt", "route-prior": 1}]})
+                  "models": [{"model": "a.granite"}, {"model": "b.granite", "route-prior": 1}]})
 
         def refused(path, group):
-            return path.endswith("b.basalt") and group[0] in ("--spec", "--route-prior")
+            return path.endswith("b.granite") and group[0] in ("--spec", "--route-prior")
         (a, _, afile, _), (b, _, bfile, _) = model_settings(build_parser(), ["--config", p], refused)
         self.assertEqual(afile, ["--kv", "int8", "--spec", "7", "--pool-workers", "8"])
         self.assertEqual(a.skipped, [])
@@ -171,16 +171,16 @@ class ConfigFile(unittest.TestCase):
         self.assertEqual(b.skipped, ["--spec"])
 
     def test_model_and_alias_do_not_go_with_a_config(self):
-        p = conf({"models": [{"model": "a.basalt"}]})
-        for extra, text in ((["--model", "b.basalt"], "^--model is not supported when using a config file$"),
+        p = conf({"models": [{"model": "a.granite"}]})
+        for extra, text in ((["--model", "b.granite"], "^--model is not supported when using a config file$"),
                             (["--alias", "x"], "^--alias is not supported when using a config file$"),
-                            (["--model", "b.basalt", "--alias", "x"],
+                            (["--model", "b.granite", "--alias", "x"],
                              "^--model and --alias are not supported when using a config file$")):
             with self.assertRaisesRegex(ValueError, text):
                 model_settings(build_parser(), ["--config", p, *extra])
 
     def test_the_command_line_applies_to_every_model(self):
-        p = conf({"models": [{"model": "a.basalt", "parallel": 2, "max-context": 8192}, {"model": "b.basalt"}]})
+        p = conf({"models": [{"model": "a.granite", "parallel": 2, "max-context": 8192}, {"model": "b.granite"}]})
         (a, _, afile, acli), (b, _, _, bcli) = model_settings(build_parser(), ["--config", p, "--vision", "cpu", "--kv", "int8"])
         self.assertEqual((a.vision, b.vision), ("cpu", "cpu"))
         self.assertEqual(acli, ["--kv", "int8"])
@@ -189,7 +189,7 @@ class ConfigFile(unittest.TestCase):
 
     def test_errors(self):
         ap = build_parser()
-        entry = {"model": "m.basalt"}
+        entry = {"model": "m.granite"}
         for obj, msg in (({"spec": 7, "models": [entry]}, "unexpected key"),
                          ({"models": []}, "at least one"),
                          ({"models": [1]}, "at least one"),
@@ -616,7 +616,7 @@ class Startup(unittest.TestCase):
         return r.returncode, r.stderr
 
     def test_requirements_apply_to_the_file(self):
-        entry = {"model": "m.basalt"}
+        entry = {"model": "m.granite"}
         code, err = self.run_server({})
         self.assertEqual(code, 2)
         self.assertIn("granite requires v2 config", err)
@@ -650,7 +650,7 @@ class Startup(unittest.TestCase):
         d = Path(TMP.name)
         fake_engine = d / "engine"
         fake_engine.write_text("")
-        gone, gone2, folder = d / "gone.basalt", d / "gone2.basalt", d / "folder.basalt"
+        gone, gone2, folder = d / "gone.granite", d / "gone2.granite", d / "folder.granite"
         folder.mkdir(exist_ok=True)
         eng = ["--engine-bin", str(fake_engine)]
         code, err = self.run_server({"models": [{"model": str(gone), "alias": "Big One"}]}, *eng)
@@ -667,7 +667,7 @@ class Startup(unittest.TestCase):
         self.assertNotIn("Errno", err)
 
     def test_model_file_of_the_command_line(self):
-        gone = Path(TMP.name) / "gone.basalt"
+        gone = Path(TMP.name) / "gone.granite"
         r = subprocess.run([sys.executable, "-m", "serve.server", "--model", str(gone), "--engine-bin", sys.executable,
                             "--port", str(free_port())], cwd=ROOT, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 2)

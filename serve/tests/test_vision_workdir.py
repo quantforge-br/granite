@@ -11,7 +11,7 @@ from serve.engine.vision import EngineVision, Vision  # noqa: E402
 
 class WorkDir(unittest.TestCase):
     def test_shutdown_removes_the_folder_and_an_unload_keeps_it(self):
-        v = Vision({"vision_bin": "granite-vision", "model": "m.basalt"}, start=False)
+        v = Vision({"vision_bin": "granite-vision", "model": "m.granite"}, start=False)
         (v.dir / "k.sve").write_bytes(b"e")
         v.unload()                                   # the cache outlives an unload
         self.assertTrue((v.dir / "k.sve").is_file())

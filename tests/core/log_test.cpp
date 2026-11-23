@@ -26,8 +26,8 @@ int main() {
        "granite generate: session is up (engine 1.2)\n", "info keeps the tag and has no marker");
     is(render(Level::warning, "granite serve", "RAM %d MiB low", 512), "granite serve: warning: RAM 512 MiB low\n",
        "warning marker after the tag");
-    is(render(Level::error, "granite generate", "cannot open %s", "x.basalt"),
-       "granite generate: error: cannot open x.basalt\n", "error marker after the tag");
+    is(render(Level::error, "granite generate", "cannot open %s", "x.granite"),
+       "granite generate: error: cannot open x.granite\n", "error marker after the tag");
     is(render(Level::error, "granite", "kernel: %s", "bad"), "granite: error: kernel: bad\n", "a line of no area");
     is(render(Level::warning, "granite-bench", "NVML is unavailable"), "granite-bench: warning: NVML is unavailable\n",
        "a tool's own tag");

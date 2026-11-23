@@ -341,7 +341,7 @@ inline MetaValue read_value(Cursor& c, MetaType t, int depth = 0) {
 }
 
 // A GGUF-shaped view of a file that is not a GGUF: the metadata and the tensor directory come from elsewhere
-// (a .basalt model file's `meta` section) and every tensor offset is an absolute file offset.  Registered under the
+// (a .granite model file's `meta` section) and every tensor offset is an absolute file offset.  Registered under the
 // file's path, so everything that opens `GgufFile(path)` reads the tensors in place from it.
 struct VirtualGguf {
     std::map<std::string, MetaValue> meta;

@@ -133,7 +133,7 @@ std::optional<int> start(int argc, char** argv, std::unique_ptr<CommonOptions>& 
 
 std::optional<int> prepare_model_process(const CommonOptions& o) {
     if (o.model.empty()) {
-        granite::log::error("granite generate", "--model FILE.basalt is required");
+        granite::log::error("granite generate", "--model FILE.granite is required");
         usage();
         return 2;
     }
