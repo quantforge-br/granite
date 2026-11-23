@@ -1854,10 +1854,12 @@ __global__ void __launch_bounds__(256) native_q80_mma_seg_kernel(const Q80Block*
     q80_mma_body(w + std::size_t(p.row0) * (n_in / 32), p.x, p.y, n_in, p.n_out, ncols, p.bx);
 }
 
+// The columns from which a Q8_0 product runs on the tensor cores: a head-sized one (many blocks of 16 rows) from 4,
+// others from 5 (a narrow product ties the dp4a multi-column kernel at 4 and loses to the one-row layout at 2-3).
+int q80_mma_min_cols(int n_out) { return n_out >= 65536 ? 4 : 5; }
+
 bool launch_q80_mma(const void* weights, const void* x_q8_1, float* y, int n_in, int n_out, int ncols, cudaStream_t s) {
-    // a head-sized product (many blocks of 16 rows) from 4 columns, others from 7 (narrow dense products lose at 4-6
-    // columns, where 16-row blocks at two a SM hide less latency)
-    if (mmvq_mma_sms() == 0 || ncols < (n_out >= 65536 ? 4 : 7)) return false;
+    if (mmvq_mma_sms() == 0 || ncols < q80_mma_min_cols(n_out)) return false;
     launch_pdl(native_q80_mma_kernel, dim3(unsigned((n_out + 15) / 16)), dim3(256), 0, s,
                static_cast<const Q80Block*>(weights), static_cast<const Q81Block*>(x_q8_1), y, n_in, n_out, ncols);
     return true;
@@ -2223,7 +2225,7 @@ void native_q8_0_mmvq_segments(const void* weights, const Q80Segments& seg, int 
         validate_pointer(seg.x[i]);
         validate_pointer(seg.y[i]);
         if (seg.n_out[i] <= 0) throw std::invalid_argument("native MMVQ requires n_out > 0");
-        const bool m = ncols >= 4 && mmvq_mma_sms() != 0 && ncols >= (seg.n_out[i] >= 65536 ? 4 : 7);
+        const bool m = mmvq_mma_sms() != 0 && ncols >= q80_mma_min_cols(seg.n_out[i]);
         if (i == 0) mma = m;
         else if (m != mma) return separate();
     }
