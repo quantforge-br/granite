@@ -5,9 +5,10 @@
 # Every model that ships: the architecture ids, as `general.architecture` names them.
 set(BASALT_BUILTIN_MODELS qwen4exp deepseek41 qwen35 hy4flash inkling2)
 
-# "all" (the default) follows BASALT_BUILTIN_MODELS, so a build folder picks up a model added later. The cache keeps the
-# word, not the list: a list written as the default would stay in the folder and leave every newer model out.
-set(BASALT_MODELS "all" CACHE STRING
+# granite builds Inkling 2 Mini only by default. "all" follows BASALT_BUILTIN_MODELS, so a build folder picks up a model
+# added later. The cache keeps the word, not the list: a list written as the default would stay in the folder and leave
+# every newer model out.
+set(BASALT_MODELS "inkling2" CACHE STRING
     "Models to build: all, or a semicolon list from: ${BASALT_BUILTIN_MODELS}")
 # A folder configured before "all" holds the list that was then the default (0.4.x): it meant every model.
 if(BASALT_MODELS STREQUAL "qwen4exp;deepseek41;qwen35")
