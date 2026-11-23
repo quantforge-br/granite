@@ -550,7 +550,6 @@ add_library(kernels STATIC src/kernels/cuda/quantize_act.cu
                         src/kernels/cuda/dequant_bf16.cu
                         src/kernels/cuda/wait_abort.cu
                         src/kernels/cuda/iq_kernels.cu
-                        src/kernels/cuda/gdn_window.cu
                         src/kernels/cuda/gdn_commit.cu
                         src/kernels/cuda/gdn_prompt.cu
                         src/kernels/cuda/dense_ops.cu
@@ -563,6 +562,10 @@ add_library(kernels STATIC src/kernels/cuda/quantize_act.cu
                         src/kernels/cuda/row_norm.cu
                         src/ngram/ple_reader.cpp)
 target_link_libraries(kernels PUBLIC core artifact)
+if(BASALT_MODEL_QWEN4EXP OR BASALT_MODEL_QWEN35)
+  # the GDN window recurrence on thread-block clusters (sm_90+): the Qwen models' only
+  target_sources(kernels PRIVATE src/kernels/cuda/gdn_window.cu)
+endif()
 if(BASALT_MODEL_QWEN4EXP)
 # the tensor-core prompt attention vs the FP32 kernel and FP64 (GPU, synthetic, no model); with
 if(BUILD_TESTING)
@@ -927,8 +930,10 @@ target_include_directories(route_tail_skip_parity PRIVATE ${_gpu_include_directo
 target_link_libraries(route_tail_skip_parity PRIVATE kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME route_tail_skip_parity COMMAND route_tail_skip_parity)
 set_tests_properties(route_tail_skip_parity PROPERTIES SKIP_RETURN_CODE 77)
+if(BASALT_MODEL_QWEN4EXP OR BASALT_MODEL_QWEN35)
 add_executable(dense_window_bench tests/kernels/dense_window_bench.cpp)
 target_link_libraries(dense_window_bench PRIVATE kernels mmq ${_gpu_runtime_target})
+endif()
 add_executable(dense_ops_parity tests/kernels/dense_ops_parity.cpp)
 target_link_libraries(dense_ops_parity PRIVATE kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME dense_ops_parity COMMAND dense_ops_parity)
@@ -937,10 +942,12 @@ add_executable(nvfp4_planes_test tests/kernels/nvfp4_planes_test.cpp)
 target_link_libraries(nvfp4_planes_test PRIVATE kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME nvfp4_planes_test COMMAND nvfp4_planes_test)
 set_tests_properties(nvfp4_planes_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+if(BASALT_MODEL_QWEN4EXP OR BASALT_MODEL_QWEN35)
 add_executable(gdn_seg_split_parity tests/kernels/gdn_seg_split_parity.cpp)
 target_link_libraries(gdn_seg_split_parity PRIVATE kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME gdn_seg_split_parity COMMAND gdn_seg_split_parity)
 set_tests_properties(gdn_seg_split_parity PROPERTIES SKIP_RETURN_CODE 77)
+endif()
 add_executable(window_gemm_parity tests/kernels/window_gemm_parity.cpp)
 target_link_libraries(window_gemm_parity PRIVATE window_gemm kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME window_gemm_parity COMMAND window_gemm_parity)
@@ -1790,7 +1797,8 @@ target_compile_options(model_qwen4exp_moe_fused PRIVATE $<$<COMPILE_LANGUAGE:CUD
 target_link_libraries(model_qwen4exp_moe_fused PUBLIC mmq ${_gpu_runtime_target})
 target_link_libraries(model_qwen4exp_prefill PUBLIC model_qwen4exp_moe_fused)
 endif()
-# a prompt chunk's products against FP8 E4M3 weights on the FP8 tensor cores (W8A8)
+if(BASALT_MODEL_QWEN4EXP OR BASALT_MODEL_QWEN35)
+# a prompt chunk's products against FP8 E4M3 weights on the FP8 tensor cores (W8A8), the Qwen models' only
 add_library(prefill_fp8 STATIC src/prefill/fp8_gemm.cu)
 set_target_properties(prefill_fp8 PROPERTIES CUDA_ARCHITECTURES 120a-real)   # the block-scaled mma
 target_include_directories(prefill_fp8 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -1812,15 +1820,19 @@ if(BUILD_TESTING)
   basalt_gpu_test(NAME bf16_chunk_test COMMAND bf16_chunk_test)
   set_tests_properties(bf16_chunk_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
+endif()
 # a decode window's products against FP8 and NVFP4 matrices (bf16 mma on the codes converted in registers)
 add_library(window_gemm STATIC src/kernels/cuda/window_gemm.cu src/kernels/cuda/window_gemm_f8.cu
                                src/kernels/cuda/window_gemm_nvfp4.cu)
 target_include_directories(window_gemm PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(window_gemm PUBLIC core ${_gpu_runtime_target})
+if(BASALT_MODEL_QWEN4EXP OR BASALT_MODEL_QWEN35)
+# the FP4 block-scaled tensor-core products (sm_120a), the Qwen models' only
 add_library(prefill_fp4 STATIC src/prefill/moe_fp4.cu src/prefill/fp4_dense.cu)
 set_target_properties(prefill_fp4 PROPERTIES CUDA_ARCHITECTURES 120a-real)
 target_include_directories(prefill_fp4 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(prefill_fp4 PUBLIC mmq ${_gpu_runtime_target})
+endif()
 if(BASALT_MODEL_QWEN4EXP)
   target_link_libraries(model_qwen4exp_prefill PUBLIC prefill_fp4)
 endif()
