@@ -1,4 +1,4 @@
-# granite: an Inkling 2 Mini inference engine for two RTX 3090s (sm_86), forked from basalt.
+# granite: an Inkling 2 Mini inference engine for two RTX 3090s (sm_86).
 cmake_minimum_required(VERSION 3.24)
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
   set(CMAKE_CUDA_ARCHITECTURES 86 CACHE STRING "CUDA architectures" FORCE)
@@ -325,7 +325,7 @@ if(BUILD_TESTING)
   set_tests_properties(checkpoint_transfer_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
 endif()
 
-# `basalt` (generate.cpp): the engine program that composes the components into a token.  The prompt arrives as
+# `granite` (generate.cpp): the engine program that composes the components into a token.  The prompt arrives as
 # ids, so a tokenizer is never on one side of a logit comparison.
 # The prompt path: batched prompt processing (tensor-core GEMMs through cuBLAS).
 
@@ -357,7 +357,7 @@ granite_ship_to_bin(granite)
 target_include_directories(granite PRIVATE ${_gpu_include_directories})
 target_link_libraries(granite PRIVATE models serve_shared engine_session ${_gpu_runtime_target})
 granite_embed_manifest(granite)
-# `basalt serve` runs the Python server from the directory above bin/; the engine reads its expert profiles from data/profiles
+# `granite serve` runs the Python server from the directory above bin/; the engine reads its expert profiles from data/profiles
 
 # The standard benchmark: a host-only program that drives the engine over its stdin/stdout protocol.
 # The commit stamp is refreshed on every build (not only at configure time), by a target that rewrites the header
@@ -402,7 +402,7 @@ if(BUILD_TESTING)
 endif()
 add_executable(granite-bench src/program/bench_main.cpp)
 granite_ship_to_bin(granite-bench)
-# the image encoder sidecar, bin/basalt-vision (its own project, built with this one)
+# the image encoder sidecar, bin/granite-vision (its own project, built with this one)
 add_subdirectory(tools/vision)
 target_link_libraries(serve_shared PUBLIC vision_core)
 if(BUILD_TESTING)

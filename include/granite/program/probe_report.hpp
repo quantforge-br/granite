@@ -1,4 +1,4 @@
-// include/granite/program/probe_report.hpp - basalt-probe's report: the rates block parsed into the first line and the
+// include/granite/program/probe_report.hpp - granite-probe's report: the rates block parsed into the first line and the
 // text layout. Pure functions of their inputs (no engine, no clock), so they are unit tested.
 #pragma once
 

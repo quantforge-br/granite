@@ -622,7 +622,7 @@ __global__ void __launch_bounds__(PNW * 32) prompt_f16_kernel(const float* __res
 
 // ---------------------------------------------------------------- prompt, int8 cache
 // Adapted from Infernix (Ian Ranson and contributors), Apache-2.0: see THIRD_PARTY_LICENSES.  The structure follows
-// Infernix's fast int8 prompt kernel (src/ops/softmax_attention/dense/causal_cache/int8/fast_tiled_mma.cuh); Basalt's
+// Infernix's fast int8 prompt kernel (src/ops/softmax_attention/dense/causal_cache/int8/fast_tiled_mma.cuh); granite's
 // cache is unrotated and unpaged, so the queries are rounded to int8 per 64 dims directly and a key tile is gathered
 // cell by cell.
 //

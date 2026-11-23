@@ -1,11 +1,11 @@
 // tools/vision/vision.cpp - the image half of the engine's multimodal path.
 //
-// Turns an image into the embeddings the text model reads in place of its <|image_pad|> tokens, with Basalt's own
+// Turns an image into the embeddings the text model reads in place of its <|image_pad|> tokens, with granite's own
 // encoder (src/vision) and the model's mmproj file (vision encoder + projector).  The engine does the rest: it
 // places the rows at the image's pad tokens and gives them their 2-D M-RoPE positions (see --serve GENI in
 // src/program/serve/commands.cpp).
 //
-//   basalt-vision --model <model.basalt> [--gpu] [--threads N] [--max-tokens N]
+//   granite-vision --model <model.basalt> [--gpu] [--threads N] [--max-tokens N]
 //
 // The projector is read in place from the model file's `vision/mmproj` section; nothing is copied out.
 //
@@ -56,7 +56,7 @@ bool parse_enc(const std::string& line, std::string& img, std::string& out) {
 }
 
 const char* const kUsage =
-    "usage: basalt-vision --model <model.basalt> [--gpu] [--threads N] [--max-tokens N]\n"
+    "usage: granite-vision --model <model.basalt> [--gpu] [--threads N] [--max-tokens N]\n"
     "  reads the projector in place from the model file's vision/mmproj section;\n"
     "  reads \"ENC <image> <output>\" lines on stdin and writes each image's embeddings to <output>,\n"
     "  and \"ENCV <video> <output> [fps=F] [max_frames=N] [max_tokens=N]\" lines, one record per group;\n"

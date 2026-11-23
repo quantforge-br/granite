@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The part of ggml's type and quantization API that Basalt uses: the type ids, block size and row size of each
+// The part of ggml's type and quantization API that granite uses: the type ids, block size and row size of each
 // format, float conversion, reference (de)quantization, and the CPU row dot products with their activation
 // quantizers.  Declarations follow ggml.h / ggml-cpu.h of llama.cpp commit 3cf03257f219afbe7334045ff7c6a06ac68c627d
 // (https://github.com/ggml-org/llama.cpp).  Copyright (c) 2023-2026 The ggml authors.  MIT licence: see

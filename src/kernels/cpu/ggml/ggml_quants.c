@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Reference quantizers and dequantizers of the ggml formats Basalt reads (and of the legacy and K formats its tests
+// Reference quantizers and dequantizers of the ggml formats granite reads (and of the legacy and K formats its tests
 // quantize), the format table, and fp16 conversion.  Taken from ggml/src/ggml-quants.c and ggml/src/ggml.c of
 // llama.cpp commit 3cf03257f219afbe7334045ff7c6a06ac68c627d (https://github.com/ggml-org/llama.cpp).
 // Copyright (c) 2023-2026 The ggml authors.  MIT licence: see THIRD_PARTY_LICENSES.

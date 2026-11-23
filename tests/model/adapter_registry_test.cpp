@@ -21,7 +21,7 @@ int main() {
     check(model::find_adapter("inkling2") != nullptr, "the adapter is registered");
     check(model::find_adapter("llama") == nullptr, "an unknown architecture has no adapter");
 
-    const auto dir = std::filesystem::temp_directory_path() / "basalt_adapter_registry_test";
+    const auto dir = std::filesystem::temp_directory_path() / "granite_adapter_registry_test";
     std::filesystem::create_directories(dir);
     using namespace fixture;
 

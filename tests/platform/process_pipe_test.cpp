@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
     check(process_id() > 0, "process_id");
     check(!python_interpreter(".").empty(), "python_interpreter names something");
 
-    const std::string log = temp_dir() + "/basalt_process_pipe_test.err";
+    const std::string log = temp_dir() + "/granite_process_pipe_test.err";
     PipedChild pc;
     std::string err;
     check(spawn_piped({self, "--echo"}, log, pc, err), "the child starts: " + err);
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
     // a program that cannot be started is refused, not crashed
     PipedChild none;
     std::string err2;
-    const bool started = spawn_piped({temp_dir() + "/basalt_no_such_program"}, log, none, err2);
+    const bool started = spawn_piped({temp_dir() + "/granite_no_such_program"}, log, none, err2);
     if (started) {   // fork starts a child that fails at exec: its exit code says so
         check(child_wait(none.child, 10000) != 0, "a missing program ends non-zero");
         close_fd(none.in_fd);
@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
     check(only && only->find("to stdout") != std::string::npos && only->find("to stderr") == std::string::npos,
           "capture_output without stderr");
 
-    const std::string crash_log = temp_dir() + "/basalt_process_crash_test.err";
+    const std::string crash_log = temp_dir() + "/granite_process_crash_test.err";
     PipedChild crashed;
     std::string crash_err;
     check(spawn_piped({self, "--crash-terminate"}, crash_log, crashed, crash_err), "crash child starts: " + crash_err);

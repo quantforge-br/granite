@@ -41,7 +41,7 @@ const granite::platform::DirFile* find(const std::vector<granite::platform::DirF
 
 int main() {
     using namespace granite::platform;
-    const std::string dir = temp_dir() + "/basalt-file-write-" + std::to_string((long long) process_id()) +
+    const std::string dir = temp_dir() + "/granite-file-write-" + std::to_string((long long) process_id()) +
                             "/\xc3\xa9-\xe6\x97\xa5";   // é-日 under a fresh parent
 #if !defined(_WIN32)
     ::umask(022);

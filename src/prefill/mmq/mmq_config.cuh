@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The tile configurations of the MMQ kernels for the formats Basalt uses, from ggml-cuda/mmq-config-ampere.cuh of
+// The tile configurations of the MMQ kernels for the formats granite uses, from ggml-cuda/mmq-config-ampere.cuh of
 // llama.cpp commit 3cf03257f219afbe7334045ff7c6a06ac68c627d (https://github.com/ggml-org/llama.cpp).
 // Copyright (c) 2023-2026 The ggml authors.  MIT licence: see THIRD_PARTY_LICENSES.
 //

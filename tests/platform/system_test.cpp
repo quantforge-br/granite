@@ -70,7 +70,7 @@ int main() {
     const DynLib nvml = DynLib::open_nvml();
     if (nvml) {
         check(nvml.sym<void*>("nvmlInit_v2") != nullptr, "the management library, when present, exports nvmlInit_v2");
-        check(nvml.sym<void*>("basalt_no_such_symbol") == nullptr, "and a missing symbol is null");
+        check(nvml.sym<void*>("granite_no_such_symbol") == nullptr, "and a missing symbol is null");
     } else {
         std::printf("system: no GPU management library here; the loader returned empty\n");
     }
@@ -78,7 +78,7 @@ int main() {
     check(!moved, "an empty DynLib is false");
 
     // application libraries: a name nobody ships loads nothing; the C runtime's own does load, and names its file
-    check(!DynLib::open_app(DynLib::versioned_name("basalt_no_such_library", 99)), "open_app: a missing library is empty");
+    check(!DynLib::open_app(DynLib::versioned_name("granite_no_such_library", 99)), "open_app: a missing library is empty");
 #if defined(_WIN32)
     check(DynLib::versioned_name("avformat", 62) == "avformat-62.dll", "versioned_name follows the platform's spelling");
     const DynLib crt = DynLib::open_app("ucrtbase.dll");

@@ -11,7 +11,7 @@
 
 namespace granite::program::cli {
 
-/// `basalt serve --config FILE` or `basalt serve MODEL.basalt [--python PY] [server args...]`: runs the Python server
+/// `granite serve --config FILE` or `granite serve MODEL.basalt [--python PY] [server args...]`: runs the Python server
 /// over this binary.  The server gets `--engine-bin` and what was typed; a MODEL.basalt argument stands for `--model MODEL.basalt`.
 /// Only returns on failure.
 int serve_subcommand(int argc, char** argv) {

@@ -1,4 +1,4 @@
-// granite-probe: Basalt's built-in tuner, first stage. It starts the engine as a child process (like basalt-bench),
+// granite-probe: granite's built-in tuner, first stage. It starts the engine as a child process (like granite-bench),
 // asks it for the machine's rates (PROBE rates), measures cold decode speed on the three standard fixtures at
 // the engine's context, and prints a short report with the values it suggests. Manual only: it prints and saves
 // nothing.
@@ -224,7 +224,7 @@ int main(int argc, char** argv) {
 
     std::vector<std::string> args = {"--model", fs::absolute(o.model).string()};
     // what this model takes, asked of the engine; only its own tests and suggestions run
-    const std::string plan_log = granite::platform::temp_dir() + "/basalt-probe-plan-" + std::to_string((long long) granite::platform::process_id());
+    const std::string plan_log = granite::platform::temp_dir() + "/granite-probe-plan-" + std::to_string((long long) granite::platform::process_id());
     const auto model_takes = [&](const char* flag, const char* value) {
         std::string answer;
         return engine_plan(engine_bin, {args[0], args[1], "--gpu", "0", flag, value}, plan_log, answer) == 0;
@@ -294,7 +294,7 @@ int main(int argc, char** argv) {
     std::string work = o.logs;
     bool temp_work = false;
     if (work.empty()) {
-        work = granite::platform::temp_dir() + "/basalt-probe-" + std::to_string((long long) granite::platform::process_id());
+        work = granite::platform::temp_dir() + "/granite-probe-" + std::to_string((long long) granite::platform::process_id());
         temp_work = true;
     }
     std::error_code ec;

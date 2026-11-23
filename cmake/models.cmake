@@ -22,7 +22,7 @@ if(NOT GRANITE_MODELS)
 endif()
 foreach(_m IN LISTS GRANITE_MODELS)
   if(NOT _m IN_LIST GRANITE_BUILTIN_MODELS)
-    message(FATAL_ERROR "GRANITE_MODELS names '${_m}', which is not a Basalt model. Valid: all, ${_granite_valid}")
+    message(FATAL_ERROR "GRANITE_MODELS names '${_m}', which is not a granite model. Valid: all, ${_granite_valid}")
   endif()
 endforeach()
 

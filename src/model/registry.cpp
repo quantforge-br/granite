@@ -21,7 +21,7 @@ std::map<std::string, std::unique_ptr<ModelAdapter>>& table() {
     return t;
 }
 
-// GRANITE_KNOWN_MODELS (every model Basalt ships) and GRANITE_BUILT_MODELS (the ones this build holds) are comma lists
+// GRANITE_KNOWN_MODELS (every model granite ships) and GRANITE_BUILT_MODELS (the ones this build holds) are comma lists
 // that cmake/models.cmake bakes in.
 std::vector<std::string> models_of(const std::string& csv) {
     std::vector<std::string> v;
@@ -62,12 +62,12 @@ std::string unavailable_architecture(const std::string& arch) {
     const std::vector<std::string> known = models_of(GRANITE_KNOWN_MODELS);
     const std::vector<std::string> built = models_of(GRANITE_BUILT_MODELS);
     if (contains(known, arch) && !contains(built, arch)) {
-        // a Basalt model this build left out: what the build holds, and the option that adds this one
+        // a granite model this build left out: what the build holds, and the option that adds this one
         std::string held, rebuild;
         for (const std::string& m : built) held += (held.empty() ? "" : ";") + m;
         for (const std::string& m : known)
             if (m == arch || contains(built, m)) rebuild += (rebuild.empty() ? "" : ";") + m;
-        return "architecture is '" + arch + "', a Basalt model this build left out (built with GRANITE_MODELS=" + held +
+        return "architecture is '" + arch + "', a granite model this build left out (built with GRANITE_MODELS=" + held +
                "); rebuild with cmake -DGRANITE_MODELS=\"" + rebuild + "\" to load it";
     }
     std::string registered;

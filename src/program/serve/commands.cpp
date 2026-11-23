@@ -105,7 +105,7 @@ Flow Runtime::dispatch() {
         enc_command(line);
         return Flow::next;
     }
-    if (line.rfind("PROBE", 0) == 0) {   // between requests, not a request (basalt-probe's commands)
+    if (line.rfind("PROBE", 0) == 0) {   // between requests, not a request (granite-probe's commands)
         std::string perr;
         if (batch_on()) perr = "PROBE: not while batch slots are decoding";
         else probe_command(line, perr);

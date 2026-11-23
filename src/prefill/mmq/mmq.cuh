@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // The MMQ kernel: quantized weights times q8_1 activations on int8 tensor cores, grouped by expert (stream-k work
-// partitioning), for the formats Basalt uses.
+// partitioning), for the formats granite uses.
 // llama.cpp commit 3cf03257f219afbe7334045ff7c6a06ac68c627d (https://github.com/ggml-org/llama.cpp),
 // ggml/src/ggml-cuda/mmq.cuh.  Copyright (c) 2023-2026 The ggml authors.  MIT licence: see THIRD_PARTY_LICENSES.
 #pragma once

@@ -55,6 +55,6 @@ int main() {
     is(parsed("granite-bench: warning: NVML"), "warning|granite-bench|NVML", "parse: a tool's tag");
     is(parsed("granite serve: no error here"), "info|granite serve|no error here", "parse: the word error is no marker");
     is(parsed("CUDA error: out of memory"), "not a log line", "parse: a line of another writer");
-    is(parsed("basalt (ms/window): x"), "not a log line", "parse: odd characters in the tag");
+    is(parsed("granite (ms/window): x"), "not a log line", "parse: odd characters in the tag");
     return failures == 0 ? 0 : 1;
 }

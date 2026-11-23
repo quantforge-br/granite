@@ -49,7 +49,7 @@ static std::string temp_path() {
     const unsigned long owner = (unsigned long) getpid();
 #endif
     static std::atomic<unsigned> seq{0};
-    return base + "/basalt-direct-test-" + std::to_string(owner) + "-" + std::to_string(seq++) + ".bin";
+    return base + "/granite-direct-test-" + std::to_string(owner) + "-" + std::to_string(seq++) + ".bin";
 }
 
 /// A test file of `page_count` alignment-sized pages and an aligned buffer with spare pages for reads that start
@@ -148,7 +148,7 @@ static void test_bounded_opens() {
           "reopened read returned incorrect data");
     second.close();
     check(!second.submit(0, fx.at(0), page, 0, error), "closed file accepted a read that cannot complete");
-    check(!second.open("basalt-direct-test-no-such-file.bin", error, 1) && !second.is_open(),
+    check(!second.open("granite-direct-test-no-such-file.bin", error, 1) && !second.is_open(),
           "open of a missing file accepted");
     check(!second.open(fx.name, error, -1) && !second.is_open(), "negative worker count accepted");
     check(!second.open(fx.name, error, 257) && !second.is_open(), "excessive worker count accepted");

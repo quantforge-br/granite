@@ -102,7 +102,7 @@ int read_ahead_cases() {
     const uint64_t bytes = 256ull << 10;   // spans more than one 128 KiB hint window
     std::vector<uint8_t> pattern(bytes);
     for (uint64_t i = 0; i < bytes; ++i) pattern[i] = (uint8_t) (i * 13u + (i >> 8) * 7u);
-    const std::string path = (std::filesystem::temp_directory_path() / "basalt_memory_test_view.bin").string();
+    const std::string path = (std::filesystem::temp_directory_path() / "granite_memory_test_view.bin").string();
     {
         std::ofstream f(path, std::ios::binary);
         f.write((const char*) pattern.data(), (std::streamsize) bytes);
@@ -180,7 +180,7 @@ int drop_view_cases() {
     const uint64_t bytes = 1ull << 20;
     std::vector<uint8_t> pattern(bytes);
     for (uint64_t i = 0; i < bytes; ++i) pattern[i] = (uint8_t) (i * 31u + (i >> 9) * 5u);
-    const std::string path = (std::filesystem::temp_directory_path() / "basalt_memory_test_drop.bin").string();
+    const std::string path = (std::filesystem::temp_directory_path() / "granite_memory_test_drop.bin").string();
     {
         std::ofstream f(path, std::ios::binary);
         f.write((const char*) pattern.data(), (std::streamsize) bytes);
@@ -253,7 +253,7 @@ int guard_reclaim_cases() {
     const uint64_t bytes = 64ull << 20;
     std::vector<uint8_t> pattern(bytes);
     for (uint64_t i = 0; i < bytes; ++i) pattern[i] = (uint8_t) (i * 29u + (i >> 10) * 3u);
-    const std::string path = (std::filesystem::temp_directory_path() / "basalt_memory_test_guard.bin").string();
+    const std::string path = (std::filesystem::temp_directory_path() / "granite_memory_test_guard.bin").string();
     {
         std::ofstream f(path, std::ios::binary);
         f.write((const char*) pattern.data(), (std::streamsize) bytes);

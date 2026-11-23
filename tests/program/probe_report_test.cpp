@@ -1,4 +1,4 @@
-// Unit test for basalt-probe's report: parsing the rates block, the k-suffix depth parser and the layout.
+// Unit test for granite-probe's report: parsing the rates block, the k-suffix depth parser and the layout.
 #include "granite/program/engine_session.hpp"
 #include "granite/program/probe_report.hpp"
 

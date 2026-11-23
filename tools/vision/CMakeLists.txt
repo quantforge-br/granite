@@ -1,4 +1,4 @@
-# tools/vision - granite-vision, the image encoder for the multimodal path, on Basalt's own kernels (no ggml or
+# tools/vision - granite-vision, the image encoder for the multimodal path, on granite's own kernels (no ggml or
 # llama.cpp).  Built with the root project, or on its own:
 #
 #   cmake -S tools/vision -B build-vision -DCMAKE_BUILD_TYPE=Release

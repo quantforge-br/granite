@@ -1,4 +1,4 @@
-// tests/program/load_summary_test.cpp - the load summary basalt-bench prints from the engine's `granite load:` lines:
+// tests/program/load_summary_test.cpp - the load summary granite-bench prints from the engine's `granite load:` lines:
 // the one weights line, the total, a total that moves, an error and a warning line, the throttling and the terminal
 // mode. CPU only; the clock is passed in.
 #include "granite/program/load_summary.hpp"

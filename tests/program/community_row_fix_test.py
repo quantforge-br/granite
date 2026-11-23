@@ -44,7 +44,7 @@ def earlier(name, odd):
 
 def one_row():
     """A file holding the plain row alone, for the checks that edit one row."""
-    return {"preset": "basalt-bench --community", "runs": [row(False)]}
+    return {"preset": "granite-bench --community", "runs": [row(False)]}
 
 
 def read(p):
@@ -64,10 +64,10 @@ def load(p):
 failed = 0
 with tempfile.TemporaryDirectory() as d:
     empty = os.path.join(d, "empty.json")
-    write(empty, json.dumps({"preset": "basalt-bench --community", "runs": []}, indent=2))
+    write(empty, json.dumps({"preset": "granite-bench --community", "runs": []}, indent=2))
     # earlier rows of other setups, in the canonical format
     rows = os.path.join(d, "rows.json")
-    write(rows, json.dumps({"preset": "basalt-bench --community", "runs": [earlier("earlier", False), earlier("older", True)]}))
+    write(rows, json.dumps({"preset": "granite-bench --community", "runs": [earlier("earlier", False), earlier("older", True)]}))
     subprocess.run([sys.executable, checker, "--fix", rows], capture_output=True, text=True, check=True)
     # those rows with CRLF line endings, as a checkout that translates them gives
     crlf = os.path.join(d, "rows_crlf.json")
@@ -209,7 +209,7 @@ def cpp_pairs(path):
 def dup_fixture(change):
     r = row(False)
     change(r)
-    return {"preset": "basalt-bench --community", "runs": [row(False), r]}
+    return {"preset": "granite-bench --community", "runs": [row(False), r]}
 
 
 with tempfile.TemporaryDirectory() as d:

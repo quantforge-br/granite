@@ -1,4 +1,4 @@
-// include/granite/program/probe_derive.hpp - values basalt-probe computes from what it measured and suggests when they
+// include/granite/program/probe_derive.hpp - values granite-probe computes from what it measured and suggests when they
 // beat the engine's built-in defaults on this machine. Pure functions, unit tested; the probe prints, it applies nothing.
 #pragma once
 

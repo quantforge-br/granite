@@ -1,6 +1,6 @@
 // include/granite/platform/process.hpp - starting a child and stopping one, so Win32 stays out of the engine.
 //
-// The engine wants two shapes. `exec_replacing` is what `basalt serve` does: the child takes this process's place,
+// The engine wants two shapes. `exec_replacing` is what `granite serve` does: the child takes this process's place,
 // and this one is gone when the child ends. `spawn_and_wait` is what a tool that runs a child to completion and
 // keeps its own process wants. A caller that starts the child itself - because it is wiring the child's standard
 // descriptors to pipes it owns - gets `Child` plus the wait/stop calls and the signal helpers, which is the Ctrl+C

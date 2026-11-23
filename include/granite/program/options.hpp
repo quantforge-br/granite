@@ -1,4 +1,4 @@
-// granite/program/options.hpp - the `basalt generate` flag set, resolved into one struct.
+// granite/program/options.hpp - the `granite generate` flag set, resolved into one struct.
 #pragma once
 
 #include <cstdint>

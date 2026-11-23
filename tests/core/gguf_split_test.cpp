@@ -30,7 +30,7 @@ struct TempDir {
     fs::path path;
     TempDir() {
         path = fs::temp_directory_path() /
-               ("basalt-gguf-split-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+               ("granite-gguf-split-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         fs::create_directories(path);
     }
     ~TempDir() {

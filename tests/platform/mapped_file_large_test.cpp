@@ -23,7 +23,7 @@ int main() {
     std::string err;
     // A sparse file past 4 GiB: a section at a 64-bit offset must land on the right bytes.
     {
-        const std::string big = granite::platform::temp_dir() + "/basalt_mapped_file_large_test.bin";
+        const std::string big = granite::platform::temp_dir() + "/granite_mapped_file_large_test.bin";
         const uint64_t at = (4ull << 30) + 8192;
         std::FILE* f = granite::platform::open_file_utf8(big, "wb");
         if (f && granite::platform::fseek64(f, (int64_t) at, SEEK_SET) == 0) {

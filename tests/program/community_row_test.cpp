@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
     std::string out, err;
     check(community_row_text(plain_row()) == one, "the row text", community_row_text(plain_row()));
 
-    const std::string head = "{\n  \"preset\": \"basalt-bench --community\",\n  \"runs\": [\n";
+    const std::string head = "{\n  \"preset\": \"granite-bench --community\",\n  \"runs\": [\n";
     const std::string prev = "    {\n      \"submitter\": \"a\"\n    }";
     check(community_add_row(head + prev + "\n  ]\n}", plain_row(), out, err) && out == head + prev + ",\n" + one + "\n  ]\n}",
           "a row is added after the last one with a comma", out);

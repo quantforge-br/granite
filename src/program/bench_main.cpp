@@ -781,7 +781,7 @@ int main(int argc, char** argv) {
         std::vector<std::string> plan_args = {"--model", fs::absolute(o.model).string(), "--gpu", probe_gpu};
         merge_args(plan_args, extra);
         std::string answer;
-        const std::string plan_log = granite::platform::temp_dir() + "/basalt-bench-plan-" + std::to_string((long long) granite::platform::process_id());
+        const std::string plan_log = granite::platform::temp_dir() + "/granite-bench-plan-" + std::to_string((long long) granite::platform::process_id());
         (void) engine_plan(engine_bin, plan_args, plan_log, answer);
         std::error_code rm_ec;
         fs::remove(plan_log, rm_ec);
@@ -799,7 +799,7 @@ int main(int argc, char** argv) {
     std::string community_kv;   // the cache format a community run passes; empty when the model takes neither
     if (o.fixtures.empty() || o.community) {   // the model's own fixtures, when it has them; the community row's model name
         std::string answer;
-        const std::string plan_log = granite::platform::temp_dir() + "/basalt-bench-plan-" + std::to_string((long long) granite::platform::process_id());
+        const std::string plan_log = granite::platform::temp_dir() + "/granite-bench-plan-" + std::to_string((long long) granite::platform::process_id());
         const std::string abs_model = fs::absolute(o.model).string();
         const int asked = o.model.empty() ? 0 : engine_plan(engine_bin, {"--model", abs_model, "--gpu", probe_gpu}, plan_log, answer);
         if (o.community) {
@@ -821,7 +821,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> quality_flags;
     if (do_quality && !o.model.empty()) {   // what the gate starts this model with, and the window it scores
         std::string answer;
-        const std::string plan_log = granite::platform::temp_dir() + "/basalt-bench-plan-" + std::to_string((long long) granite::platform::process_id()) + ".log";
+        const std::string plan_log = granite::platform::temp_dir() + "/granite-bench-plan-" + std::to_string((long long) granite::platform::process_id()) + ".log";
         const int asked = engine_plan(engine_bin, {"--model", fs::absolute(o.model).string(), "--gpu", probe_gpu, "--ppl-base", o.kld_base}, plan_log, answer);
         std::error_code rm_ec;
         fs::remove(plan_log, rm_ec);
@@ -885,7 +885,7 @@ int main(int argc, char** argv) {
     std::string work = o.logs;
     bool temp_work = false;
     if (work.empty()) {
-        work = granite::platform::temp_dir() + "/basalt-bench-" + std::to_string((long long) granite::platform::process_id());
+        work = granite::platform::temp_dir() + "/granite-bench-" + std::to_string((long long) granite::platform::process_id());
         temp_work = true;
     }
     std::error_code ec;

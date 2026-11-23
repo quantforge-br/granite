@@ -20,7 +20,7 @@ bool has(const std::string& s, const char* part) { return s.find(part) != std::s
 
 int main() {
     namespace fs = std::filesystem;
-    const fs::path root = fs::temp_directory_path() / "basalt_shipped_profiles_test";
+    const fs::path root = fs::temp_directory_path() / "granite_shipped_profiles_test";
     fs::remove_all(root);
     const std::string dir = (root / "data" / "profiles").string();
     using granite::core::missing_shipped_profile;

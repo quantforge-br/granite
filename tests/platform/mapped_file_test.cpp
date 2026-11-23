@@ -28,7 +28,7 @@ int main() {
     using granite::platform::MapOptions;
     using granite::platform::MappedFile;
 
-    const std::string path = granite::platform::temp_dir() + "/basalt_mapped_file_test.bin";
+    const std::string path = granite::platform::temp_dir() + "/granite_mapped_file_test.bin";
     // an odd size, past two granularity units, so a section can start inside the file and end short of it
     const uint64_t total = 3 * 65536 + 1234;
     {

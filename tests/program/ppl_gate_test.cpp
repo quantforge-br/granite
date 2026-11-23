@@ -50,7 +50,7 @@ static void write_base(const std::string& path) {
 }
 
 int main() {
-    const auto dir = std::filesystem::temp_directory_path() / ("basalt-ppl-gate-" + std::to_string((long long) granite::platform::process_id()));
+    const auto dir = std::filesystem::temp_directory_path() / ("granite-ppl-gate-" + std::to_string((long long) granite::platform::process_id()));
     std::filesystem::create_directories(dir);
     const std::string base = (dir / "base.kld").string(), out = (dir / "rows.tsv").string();
     write_base(base);

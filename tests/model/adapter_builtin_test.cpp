@@ -27,7 +27,7 @@ int main() {
                   "a model left out is refused with the option that adds it");
         }
     };
-    // Basalt's other models are not granite's: unknown architectures, refused as such
+    // upstream's other models are not granite's: unknown architectures, refused as such
     for (const char* arch : {"qwen4exp", "deepseek41", "qwen35", "hy4flash", "hy_v4_flash"}) {
         check(model::find_adapter(arch) == nullptr, "a model granite does not ship is not registered");
         check(model::unavailable_architecture(arch).find("no model adapter is registered") != std::string::npos,

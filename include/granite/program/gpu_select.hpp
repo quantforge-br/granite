@@ -105,7 +105,7 @@ std::string gpu_plan_json(const std::vector<GpuCard>& visible, const GpuChoice& 
                           const std::string& model_name = {}, const std::string& lossy = {},
                           const std::string& community_kv = {});
 
-/// For a launcher (basalt-bench, basalt-probe): resolves `text` ("" = unset), prints its lines under `label`, narrows
+/// For a launcher (granite-bench, granite-probe): resolves `text` ("" = unset), prints its lines under `label`, narrows
 /// the environment the engine inherits, and returns the engine's `gpu` value in `engine_value` and the chosen cards in
 /// `used`. False with `err` set when the setting cannot run.
 bool select_gpus(const std::string& text, const char* label, std::string& engine_value, std::vector<GpuCard>& used,

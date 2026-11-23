@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Block layouts and codebook tables of the ggml quantization formats Basalt reads, taken from ggml-common.h of
+// Block layouts and codebook tables of the ggml quantization formats granite reads, taken from ggml-common.h of
 // llama.cpp commit 3cf03257f219afbe7334045ff7c6a06ac68c627d (https://github.com/ggml-org/llama.cpp).
 // Copyright (c) 2023-2026 The ggml authors.  MIT licence: see THIRD_PARTY_LICENSES.
 //
