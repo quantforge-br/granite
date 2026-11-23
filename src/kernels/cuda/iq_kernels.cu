@@ -2407,11 +2407,12 @@ __device__ __forceinline__ void row_dot_sub8(const uint8_t* row, const block_q8_
 }
 
 // native_down_multi_kernel's generic path with four rows a warp (32 a block) through row_dot_sub8, for a down row of
-// kDownSub8Calls calls (n_ff 2304 of 256-value blocks): the same bits.  DEP: launched as a programmatic dependent, the
-// block's first group's rows are prefetched into L2 before the wait.
+// kDownSub8Calls calls (n_ff 2304 of 256-value blocks): the same bits.  KC > 0: a row of KC calls, unrolled (n_ff 1152,
+// and the 576 of a card's half of an expert, NVFP4 and Q8_0).  DEP: launched as a programmatic dependent, the block's
+// first group's rows are prefetched into L2 before the wait.
 constexpr int kDownSub8Calls = 72;
 constexpr int kDownSub8Rows = 32;
-template<int TD, bool DEP = false>
+template<int TD, bool DEP = false, int KC = 0>
 __global__ void __launch_bounds__(256) native_down_sub8_kernel(const unsigned long long* __restrict__ grp_ptr,
                                                                const int32_t* __restrict__ grp_start,
                                                                const int32_t* __restrict__ n_groups,
@@ -2431,7 +2432,6 @@ __global__ void __launch_bounds__(256) native_down_sub8_kernel(const unsigned lo
     const int r = blockIdx.x * kDownSub8Rows + (threadIdx.x >> 3), t = threadIdx.x & 7;
     if (r >= L.n_embd) return;   // whole 8-lane groups leave together: the shuffles stay within the group
     const int K = (int) (L.n_ff / Fmt<TD>::qk) * Fmt<TD>::ipb, hb = (int) (L.n_ff / 32);
-    constexpr int kSub8Kc = TD == 40 ? kDownSub8Calls : TD == 8 ? 144 : 0;   // n_ff 1152 (NVFP4, Q8_0): the unrolled row
     const size_t w_off = L.down_off + (size_t) r * L.d_row;
     for (int g = blockIdx.y; g < ng; g += gridDim.y) {
         const uint8_t* wr = (const uint8_t*) grp_ptr[g] + w_off;
@@ -2442,13 +2442,13 @@ __global__ void __launch_bounds__(256) native_down_sub8_kernel(const unsigned lo
             if (n == 1) {
                 const int off1[1] = { e * hb };
                 float s1[1];
-                row_dot_sub8<TD, 1, true, kSub8Kc>(wr, hq, off1, 1, K, t, s1);
+                row_dot_sub8<TD, 1, true, KC>(wr, hq, off1, 1, K, t, s1);
                 tail_scale<TD>(s1, sc);
                 if (t == 0) out[(size_t) ent_dst[e] * L.n_embd + r] = s1[0];
             } else if (n == 2) {
                 const int off2[2] = { e * hb, (e + 1) * hb };
                 float s2[2];
-                row_dot_sub8<TD, 2, true, kSub8Kc>(wr, hq, off2, 2, K, t, s2);
+                row_dot_sub8<TD, 2, true, KC>(wr, hq, off2, 2, K, t, s2);
                 tail_scale<TD>(s2, sc);
                 if (t < 2) out[(size_t) ent_dst[e + t] * L.n_embd + r] = t == 0 ? s2[0] : s2[1];
             } else {
@@ -2456,7 +2456,7 @@ __global__ void __launch_bounds__(256) native_down_sub8_kernel(const unsigned lo
 #pragma unroll
                 for (int c = 0; c < GRP_NC; ++c) off[c] = (e + min(c, n - 1)) * hb;
                 float s[GRP_NC];
-                row_dot_sub8<TD, GRP_NC, false, kSub8Kc>(wr, hq, off, n, K, t, s);
+                row_dot_sub8<TD, GRP_NC, false, KC>(wr, hq, off, n, K, t, s);
                 tail_scale<TD>(s, sc);
 #pragma unroll
                 for (int c = 0; c < GRP_NC; ++c)
@@ -3063,13 +3063,23 @@ void launch_gu(dim3 grid, cudaStream_t s, const unsigned long long* grp_ptr, con
 }
 
 // The rows native_down_sub8_kernel takes: kDownSub8Calls calls of a split format that native_down_multi_kernel runs
-// through its generic path (not the n_ff 640 paths): n_ff 2304 of 256-value blocks, or NVFP4 at n_ff 1152.
+// through its generic path (not the n_ff 640 paths): n_ff 2304 of 256-value blocks, or NVFP4 and Q8_0 at n_ff 1152 and
+// at 576 (a card's half of an expert under tensor parallelism).
 template<int TD>
 bool down_sub8(const NativeExpertLayout& L) {
-    if constexpr (TD == 40) return L.n_ff == 1152;
-    else if constexpr (TD == 8) return L.n_ff == 1152 && L.n_embd == 2304;   // Q8_0 at 1152 x 2304: 144 calls
+    if constexpr (TD == 40) return L.n_ff == 1152 || L.n_ff == 576;
+    else if constexpr (TD == 8) return (L.n_ff == 1152 || L.n_ff == 576) && L.n_embd == 2304;   // Q8_0 x 2304: 144 / 72 calls
     else if constexpr (kDown40<TD> || TD == 42) return false;
     else return L.n_ff % Fmt<TD>::qk == 0 && (L.n_ff / Fmt<TD>::qk) * Fmt<TD>::ipb == kDownSub8Calls;
+}
+
+// native_down_sub8_kernel with a row of KC calls unrolled (0: the row's calls counted at run time)
+template<int TD, int KC>
+void launch_sub8(dim3 g8, cudaStream_t s, const unsigned long long* grp_ptr, const int32_t* grp_start,
+                 const int32_t* n_groups, const int32_t* ent_dst, const block_q8_1* hq, const NativeExpertLayout& L,
+                 float* out, bool dep) {
+    if (dep) launch_dependent(native_down_sub8_kernel<TD, true, KC>, g8, s, grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+    else native_down_sub8_kernel<TD, false, KC><<<g8, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
 }
 
 template<int TD>
@@ -3080,8 +3090,13 @@ void launch_down(dim3 grid, cudaStream_t s, const unsigned long long* grp_ptr, c
     else if (g_old_kernels) native_down_kernel<TD><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
     else if (!g_grouped_v1 && down_sub8<TD>(L)) {
         const dim3 g8((unsigned) ((L.n_embd + kDownSub8Rows - 1) / kDownSub8Rows), grid.y);
-        if (dep) launch_dependent(native_down_sub8_kernel<TD, true>, g8, s, grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
-        else native_down_sub8_kernel<TD><<<g8, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+        constexpr int kc = TD == 40 ? 36 : TD == 8 ? 72 : 0;   // the calls of 576 values (NVFP4, Q8_0)
+        if constexpr (kc > 0) {
+            if (L.n_ff == 1152) launch_sub8<TD, 2 * kc>(g8, s, grp_ptr, grp_start, n_groups, ent_dst, hq, L, out, dep);
+            else launch_sub8<TD, kc>(g8, s, grp_ptr, grp_start, n_groups, ent_dst, hq, L, out, dep);
+        } else {
+            launch_sub8<TD, 0>(g8, s, grp_ptr, grp_start, n_groups, ent_dst, hq, L, out, dep);
+        }
     }
     else if (dep) launch_dependent(native_down_multi_kernel<TD, true>, grid, s, grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
     else native_down_multi_kernel<TD><<<grid, 256, 0, s>>>(grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);

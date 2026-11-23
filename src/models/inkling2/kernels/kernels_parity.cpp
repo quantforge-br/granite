@@ -4,7 +4,8 @@
 // cache, the post-sublayer convolutions, the experts with the softcapped SwiGLU and their weighted sum, and the softcap;
 // and the decode window's fused kernels against the references and the kernels they replace, their q8_1 blocks against a
 // CPU rounding of their own fp32 rows. Every kernel is checked for a row's bits not depending on the rows beside it, and
-// timed. Exit 77 without a GPU.
+// timed; and the experts cut in the two halves tensor parallelism gives each card, against the whole experts. Exit 77
+// without a GPU.
 #include "basalt/ggml/ggml.h"
 #include "basalt/kernels/iq_kernels.hpp"
 #include "basalt/kernels/native_mmvq.hpp"
@@ -577,6 +578,186 @@ void test_experts() {
     }
     std::printf("%-34s %s\n", "  the experts' tally", tally_ok ? "counted" : "FAIL");
     failures += !tally_ok;
+}
+
+// Two cards' halves of the experts (tensor parallelism): expert blobs of `type` at n_ff 1152 cut into two blobs at n_ff 576,
+// half c the gate and up rows [576c, 576c + 576) and the down matrix's columns [576c, 576c + 576) (NVFP4's per-tensor
+// scale tail copied). Each half's weighted sum, added in card order, against the plain reference and against the whole
+// experts' sum.
+void test_expert_halves(int type) {
+    const int H = E, FF = 1152, HF = FF / 2, NE = 6, R = 3, K = 4;
+    const auto* tr = ggml_get_type_traits((ggml_type) type);
+    bk::NativeExpertLayout L = bk::native_expert_layout(type, type, H, FF), Lh = bk::native_expert_layout(type, type, H, HF);
+    for (bk::NativeExpertLayout* l : {&L, &Lh}) {
+        l->gate_softcap = 4.f;
+        l->up_softcap = 25.f;
+    }
+    const size_t tail = type == 40 ? 16 : 0;
+    std::vector<uint8_t> blobs((size_t) NE * L.bytes), halves[2];
+    std::vector<std::vector<float>> wg(NE), wu(NE), wd(NE);
+    for (int e = 0; e < NE; ++e) {
+        uint8_t* b = blobs.data() + (size_t) e * L.bytes;
+        auto put = [&](std::vector<float>& deq, int rows, int k, size_t row_bytes, uint8_t* dst) {
+            const std::vector<float> w = randn((size_t) rows * k, 0.05f);
+            deq.resize((size_t) rows * k);
+            for (int r = 0; r < rows; ++r) {
+                tr->from_float_ref(&w[(size_t) r * k], dst + (size_t) r * row_bytes, k);
+                tr->to_float(dst + (size_t) r * row_bytes, &deq[(size_t) r * k], k);
+            }
+        };
+        put(wg[e], FF, H, L.gu_row, b);
+        put(wu[e], FF, H, L.up_row, b + L.up_off);
+        put(wd[e], H, FF, L.d_row, b + L.down_off);
+        if (tail) {
+            const float t[4] = {0.8f + 0.01f * e, 1.2f - 0.02f * e, 0.9f + 0.03f * e, 0.f};
+            std::memcpy(b + L.bytes - 16, t, 16);
+            for (int f = 0; f < FF * H; ++f) {
+                wg[e][(size_t) f] *= t[0];
+                wu[e][(size_t) f] *= t[1];
+                wd[e][(size_t) f] *= t[2];
+            }
+        }
+    }
+    if (Lh.d_row * 2 != L.d_row) {
+        std::printf("%-34s FAIL (a down row of %zu bytes does not halve)\n", "expert halves", (size_t) L.d_row);
+        ++failures;
+        return;
+    }
+    for (int c = 0; c < 2; ++c) {
+        halves[c].assign((size_t) NE * Lh.bytes, 0);
+        for (int e = 0; e < NE; ++e) {
+            const uint8_t* b = blobs.data() + (size_t) e * L.bytes;
+            uint8_t* h = halves[c].data() + (size_t) e * Lh.bytes;
+            std::memcpy(h, b + (size_t) c * HF * L.gu_row, (size_t) HF * L.gu_row);
+            std::memcpy(h + Lh.up_off, b + L.up_off + (size_t) c * HF * L.up_row, (size_t) HF * L.up_row);
+            for (int r = 0; r < H; ++r)
+                std::memcpy(h + Lh.down_off + (size_t) r * Lh.d_row, b + L.down_off + (size_t) r * L.d_row + (size_t) c * Lh.d_row, Lh.d_row);
+            if (tail) std::memcpy(h + Lh.bytes - 16, b + L.bytes - 16, 16);
+        }
+    }
+    const std::vector<int32_t> ids = {0, 2, 5, 1, 2, 3, 4, 0, 5, 1, 0, 3};   // [R][K]
+    const std::vector<float> w = randn((size_t) R * K, 0.5f, 1.f), x = randn((size_t) R * H, 1.0f);
+    int32_t *dids = dev(ids), *start = zeros<int32_t>(R * K + 2), *ng = zeros<int32_t>(4), *dst = zeros<int32_t>(R * K), *tok = zeros<int32_t>(R * K);
+    unsigned long long* ptr = zeros<unsigned long long>(R * K);
+    float *dw = dev(w), *dx = dev(x), *rows = zeros<float>((size_t) R * K * H), *y = zeros<float>((size_t) R * H);
+    void* xq = zeros<uint8_t>(bk::native_q8_1_bytes(H, R));
+    void* scr = zeros<uint8_t>(bk::native_expert_scratch_bytes(R * K, FF));
+    cudaStream_t st;
+    cudaStreamCreate(&st);
+    bk::native_quantize_q8_1(dx, xq, H, R, st);
+    // the whole experts, then each half
+    auto run = [&](const std::vector<uint8_t>& set, const bk::NativeExpertLayout& l) {
+        uint8_t* d = dev(set);
+        std::vector<unsigned long long> table(NE);
+        for (int e = 0; e < NE; ++e) table[(size_t) e] = (unsigned long long) (d + (size_t) e * l.bytes);
+        unsigned long long* dt = dev(table);
+        moe_plan(dids, R, K, NE, dt, ptr, start, ng, dst, tok, st);
+        bk::native_expert_grouped(l, ptr, start, ng, dst, tok, NE, R * K, xq, scr, rows, st);
+        moe_combine(rows, dw, R, K, y, st);
+        cudaStreamSynchronize(st);
+        std::vector<float> out = host(y, (size_t) R * H);
+        cudaFree(dt);
+        cudaFree(d);
+        return out;
+    };
+    const std::vector<float> whole = run(blobs, L), p0 = run(halves[0], Lh), p1 = run(halves[1], Lh);
+    std::vector<float> got(whole.size());
+    for (size_t i = 0; i < got.size(); ++i) got[i] = p0[i] + p1[i];
+    std::vector<double> ref(got.size(), 0.0), ref_whole(whole.begin(), whole.end());
+    for (int r = 0; r < R; ++r)
+        for (int s = 0; s < K; ++s) {
+            const int e = ids[(size_t) r * K + s];
+            std::vector<double> h(FF);
+            for (int f = 0; f < FF; ++f) {
+                double g = 0, u = 0;
+                for (int c = 0; c < H; ++c) {
+                    g += (double) wg[e][(size_t) f * H + c] * x[(size_t) r * H + c];
+                    u += (double) wu[e][(size_t) f * H + c] * x[(size_t) r * H + c];
+                }
+                h[f] = 4.0 * tanhd(g / 4.0) * sig(g) * 25.0 * tanhd(u / 25.0);
+            }
+            for (int c = 0; c < H; ++c) {
+                double o = 0;
+                for (int f = 0; f < FF; ++f) o += (double) wd[e][(size_t) c * FF + f] * h[f];
+                ref[(size_t) r * H + c] += (double) w[(size_t) r * K + s] * o;
+            }
+        }
+    char what[64];
+    std::snprintf(what, sizeof what, "expert halves (%s), reference", type == 40 ? "NVFP4" : "Q8_0");
+    report(what, got, ref, 2e-2);   // q8_1 activations
+    // the halves' sum is the whole experts' up to the order of the down product's sums (the same q8_1 rows of h)
+    std::snprintf(what, sizeof what, "  against the whole experts");
+    report(what, got, ref_whole, 1e-5);
+    // timed as a decode window runs them: 8 experts a row out of 64, one row and eight, in a graph, whole and half
+    {
+        const int TE = 64, TK = 8, TR = 8;
+        std::vector<int32_t> tids((size_t) TR * TK);
+        for (int r = 0; r < TR; ++r) {
+            std::vector<int32_t> pick(TE);
+            for (int e = 0; e < TE; ++e) pick[(size_t) e] = e;
+            std::shuffle(pick.begin(), pick.end(), rng);
+            for (int s = 0; s < TK; ++s) tids[(size_t) r * TK + s] = pick[(size_t) s];
+        }
+        int32_t *d_ids = dev(tids), *t_start = zeros<int32_t>(TR * TK + 2), *t_ng = zeros<int32_t>(4), *t_dst = zeros<int32_t>(TR * TK),
+                *t_tok = zeros<int32_t>(TR * TK);
+        unsigned long long* t_ptr = zeros<unsigned long long>(TR * TK);
+        const std::vector<float> tx = randn((size_t) TR * H, 1.0f);
+        float *d_tx = dev(tx), *t_rows = zeros<float>((size_t) TR * TK * H);
+        void* t_xq = zeros<uint8_t>(bk::native_q8_1_bytes(H, TR));
+        void* t_scr = zeros<uint8_t>(bk::native_expert_scratch_bytes(TR * TK, FF));
+        bk::native_quantize_q8_1(d_tx, t_xq, H, TR, st);
+        double us[2][2] = {};
+        for (int c = 0; c < 2; ++c) {
+            const bk::NativeExpertLayout& l = c ? Lh : L;
+            const std::vector<uint8_t>& src = c ? halves[0] : blobs;
+            uint8_t* d = zeros<uint8_t>((size_t) TE * l.bytes);
+            for (int e = 0; e < TE; ++e)   // the six experts' bytes over the 64
+                cudaMemcpy(d + (size_t) e * l.bytes, src.data() + (size_t) (e % NE) * l.bytes, l.bytes, cudaMemcpyHostToDevice);
+            std::vector<unsigned long long> table(TE);
+            for (int e = 0; e < TE; ++e) table[(size_t) e] = (unsigned long long) (d + (size_t) e * l.bytes);
+            unsigned long long* dt = dev(table);
+            for (int ri = 0; ri < 2; ++ri) {
+                const int rws = ri ? TR : 1, pairs = rws * TK;
+                moe_plan(d_ids, rws, TK, TE, dt, t_ptr, t_start, t_ng, t_dst, t_tok, st);
+                constexpr int kCalls = 16, kReps = 20;
+                cudaGraph_t gr;
+                cudaGraphExec_t ex;
+                cudaStreamBeginCapture(st, cudaStreamCaptureModeRelaxed);
+                for (int i = 0; i < kCalls; ++i)
+                    bk::native_expert_grouped(l, t_ptr, t_start, t_ng, t_dst, t_tok, std::min(pairs, TE), pairs, t_xq, t_scr, t_rows, st);
+                cudaStreamEndCapture(st, &gr);
+                cudaGraphInstantiate(&ex, gr, 0);
+                cudaGraphLaunch(ex, st);
+                cudaStreamSynchronize(st);
+                cudaEvent_t e0, e1;
+                cudaEventCreate(&e0);
+                cudaEventCreate(&e1);
+                cudaEventRecord(e0, st);
+                for (int i = 0; i < kReps; ++i) cudaGraphLaunch(ex, st);
+                cudaEventRecord(e1, st);
+                cudaEventSynchronize(e1);
+                float ms = 0.f;
+                cudaEventElapsedTime(&ms, e0, e1);
+                us[c][ri] = 1000.0 * ms / (kCalls * kReps);
+                cudaEventDestroy(e0);
+                cudaEventDestroy(e1);
+                cudaGraphExecDestroy(ex);
+                cudaGraphDestroy(gr);
+            }
+            cudaFree(dt);
+            cudaFree(d);
+        }
+        for (int ri = 0; ri < 2; ++ri)
+            std::printf("  %d row%s of %d experts, a graph: whole %.2f us, half %.2f us (%.0f%%)\n", ri ? TR : 1, ri ? "s" : "", TK,
+                        us[0][ri], us[1][ri], 100.0 * us[1][ri] / us[0][ri]);
+        for (void* p : {(void*) d_ids, (void*) t_start, (void*) t_ng, (void*) t_dst, (void*) t_tok, (void*) t_ptr, (void*) d_tx,
+                        (void*) t_rows, t_xq, t_scr})
+            cudaFree(p);
+    }
+    cudaStreamDestroy(st);
+    for (void* p : {(void*) dids, (void*) start, (void*) ng, (void*) dst, (void*) tok, (void*) ptr, (void*) dw, (void*) dx,
+                    (void*) rows, (void*) y, xq, scr})
+        cudaFree(p);
 }
 
 void test_softcap() {
@@ -1192,6 +1373,8 @@ int main() {
     test_attention();
     test_post_conv();
     test_experts();
+    test_expert_halves(40);
+    test_expert_halves(8);
     test_softcap();
     test_mix_norm();
     test_controllers();
