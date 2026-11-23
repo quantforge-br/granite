@@ -214,7 +214,8 @@ void mix_norm(const MixNorm& a, int n_out, int rows, void* stream);
 /// Up to kMaxStreams loop controllers over the same rows: stream s blends dest[s] with msg[s] (rows at r * kWidth),
 /// out = (1 - tanh f) dest + tanh g msg with [g | f] = up_s . (down_s . [rms(dest) | rms(msg)]), then norms the blend with
 /// norm[s] (eps) into q8_1 at q8[s]; stream 0's normed rows also in fp32 at norm_out when set. down_s is BF16
-/// [rank][2 kWidth], up_s BF16 [2 kWidth][rank] (the gain rows, then the forget rows). `scratch`: ctrl_scratch_floats.
+/// [rank][2 kWidth], up_s BF16 [2 kWidth][rank] (the gain rows, then the forget rows). `scratch`: ctrl_scratch_floats,
+/// zeroed before its first call (it holds counters that every call leaves at 0).
 struct CtrlArgs {
     const float* dest[kMaxStreams] = {};
     const float* msg[kMaxStreams] = {};

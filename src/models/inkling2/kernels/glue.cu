@@ -286,39 +286,40 @@ __global__ void __launch_bounds__(kThreads) mix_norm_kernel(MixNorm a) {
 
 // ---- loop controllers --------------------------------------------------------------------------------------------------
 
-// hid[s][r][o] = down_s[o] . [rms(dest_s[r]) | rms(msg_s[r])]: block (o0 / O, s) takes the O outputs o0.., warp w a
-// slice of the 2 kWidth inputs (the first half of the warps dest's, the second msg's); each warp's dots and sums of squares
-// over its slice, then the halves' sums in warp order, each half's dot scaled by its row's norm. A window's inputs are read
-// once for O outputs; each output's sums are added in the same order whatever O is, so every O gives the same bits.
-constexpr int kDownWarps = 8;
-constexpr int kSlice = 2 * kWidth / kDownWarps;   // 576 inputs a warp
-static_assert(kWidth % (kSlice / 2) == 0 && kSlice % 64 == 0, "a slice is whole pairs of every lane, inside one half");
-// RMAX: the rows a launch takes at most (2, 4 or kDecodeRows). A lane loads all of its input pairs of up to 4 rows before
-// their first sum; 8 rows take two such passes (registers).
+// hid[s][r][o] = down_s[o] . [rms(dest_s[r]) | rms(msg_s[r])]. The 2 kWidth inputs are kDownSlices slices of kSlice (the
+// first half dest's, the second msg's). Each output's dot and sum of squares over a slice is lane l's sum of the pairs
+// l + 32 b in order of b, then warp_sum; the slices' are added in order in each half, and each half's dot is scaled by its
+// row's norm. Both kernels below add every sum in that order whatever the rows, so a row's bits do not depend on the
+// others or on the kernel that took it.
+constexpr int kDownSlices = 8;
+constexpr int kSlice = 2 * kWidth / kDownSlices;   // 576 inputs
+constexpr int kSlicePairs = kSlice / 64;           // a lane's input pairs in a slice
+static_assert(kWidth % kSlice == 0 && kSlice % 64 == 0, "a slice is whole pairs of every lane, inside one half");
+
+// A few rows: block (o0 / O, s) takes the O outputs o0.. whole, warp w slice w, and adds the slices from shared memory.
+// A lane loads its input pairs of every row before their first sum, so the loads overlap; its weights before pdl_wait.
 template<int O, int RMAX>
-__global__ void __launch_bounds__(kDownWarps * 32) ctrl_down_kernel(CtrlArgs a, int rows) {
-    __shared__ float part[kDownWarps][O][RMAX][2];
+__global__ void __launch_bounds__(kDownSlices * 32) ctrl_down_whole_kernel(CtrlArgs a, int rows) {
+    static_assert(RMAX <= 4, "a lane holds the input pairs of at most 4 rows (registers)");
+    __shared__ float part[kDownSlices][O][RMAX][2];
     const int o0 = blockIdx.x * O, s = blockIdx.y, w = threadIdx.x >> 5, lane = threadIdx.x & 31;
-    const bool second = w >= kDownWarps / 2;
-    const int c0 = (w % (kDownWarps / 2)) * kSlice;   // the slice's first channel in its half
-    const float* in = second ? a.msg[s] : a.dest[s];
+    const bool second = w >= kDownSlices / 2;
+    const int c0 = (w % (kDownSlices / 2)) * kSlice;   // the slice's first channel in its half
+    const float* in = (second ? a.msg[s] : a.dest[s]) + c0;
     const uint32_t* wr = reinterpret_cast<const uint32_t*>(a.down[s] + (size_t) o0 * 2 * kWidth + (second ? kWidth : 0) + c0);
-    // kIn of a lane's input pairs of every row are loaded before their sums, so the loads overlap instead of each waiting
-    // for the one before it (a window's 8 rows were 72 loads in a row); the sums are added in the same order as one at a
-    // time. The lane's weights are all read before pdl_wait, while the kernel before finishes.
-    constexpr int kIn = 9;
-    constexpr int kPass = RMAX < 4 ? RMAX : 4;   // rows whose inputs are loaded together
-    constexpr int kIters = kSlice / 2 / (32 * kIn);
-    static_assert((kSlice / 2) % (32 * kIn) == 0, "a lane's pairs split into whole batches");
-    uint32_t wu[kIters][kIn][O];
+    uint32_t wu[kSlicePairs][O];   // output o0 + j: 2 kWidth bf16, kWidth words
 #pragma unroll
-    for (int it = 0; it < kIters; ++it)
+    for (int b = 0; b < kSlicePairs; ++b)
 #pragma unroll
-        for (int b = 0; b < kIn; ++b)
-#pragma unroll
-            for (int j = 0; j < O; ++j) wu[it][b][j] = wr[(size_t) j * kWidth + lane + 32 * (it * kIn + b)];   // output o0 + j: 2 kWidth bf16, kWidth words
+        for (int j = 0; j < O; ++j) wu[b][j] = wr[(size_t) j * kWidth + lane + 32 * b];
     bk::pdl_wait();
     bk::pdl_launch_dependents();
+    float2 x[kSlicePairs][RMAX];
+#pragma unroll
+    for (int b = 0; b < kSlicePairs; ++b)
+#pragma unroll
+        for (int t = 0; t < RMAX; ++t)
+            if (t < rows) x[b][t] = reinterpret_cast<const float2*>(in + (size_t) t * kWidth)[lane + 32 * b];
     float dot[O][RMAX], sq[RMAX];
 #pragma unroll
     for (int t = 0; t < RMAX; ++t) {
@@ -327,33 +328,19 @@ __global__ void __launch_bounds__(kDownWarps * 32) ctrl_down_kernel(CtrlArgs a, 
         for (int j = 0; j < O; ++j) dot[j][t] = 0.f;
     }
 #pragma unroll
-    for (int it = 0; it < kIters; ++it) {
-        const int i0 = lane + it * 32 * kIn;
+    for (int b = 0; b < kSlicePairs; ++b) {
+        float w0[O], w1[O];
 #pragma unroll
-        for (int h = 0; h < RMAX; h += kPass) {   // rows h.. h + kPass: their batch of inputs loaded, then summed
-            float2 x[kIn][kPass];
+        for (int j = 0; j < O; ++j) {
+            w0[j] = __uint_as_float(wu[b][j] << 16);
+            w1[j] = __uint_as_float(wu[b][j] & 0xffff0000u);
+        }
 #pragma unroll
-            for (int b = 0; b < kIn; ++b)
+        for (int t = 0; t < RMAX; ++t) {
+            if (t < rows) {
 #pragma unroll
-                for (int t = 0; t < kPass; ++t)
-                    if (h + t < rows) x[b][t] = reinterpret_cast<const float2*>(in + (size_t) (h + t) * kWidth + c0)[i0 + 32 * b];
-#pragma unroll
-            for (int b = 0; b < kIn; ++b) {
-                float w0[O], w1[O];
-#pragma unroll
-                for (int j = 0; j < O; ++j) {
-                    const uint32_t u = wu[it][b][j];
-                    w0[j] = __uint_as_float(u << 16);
-                    w1[j] = __uint_as_float(u & 0xffff0000u);
-                }
-#pragma unroll
-                for (int t = 0; t < kPass; ++t) {
-                    if (h + t < rows) {
-#pragma unroll
-                        for (int j = 0; j < O; ++j) dot[j][h + t] = fmaf(w1[j], x[b][t].y, fmaf(w0[j], x[b][t].x, dot[j][h + t]));
-                        sq[h + t] = fmaf(x[b][t].y, x[b][t].y, fmaf(x[b][t].x, x[b][t].x, sq[h + t]));
-                    }
-                }
+                for (int j = 0; j < O; ++j) dot[j][t] = fmaf(w1[j], x[b][t].y, fmaf(w0[j], x[b][t].x, dot[j][t]));
+                sq[t] = fmaf(x[b][t].y, x[b][t].y, fmaf(x[b][t].x, x[b][t].x, sq[t]));
             }
         }
     }
@@ -375,13 +362,134 @@ __global__ void __launch_bounds__(kDownWarps * 32) ctrl_down_kernel(CtrlArgs a, 
         const int t = threadIdx.x % rows, j = threadIdx.x / rows;
         float dd = 0.f, sd = 0.f, dm = 0.f, sm = 0.f;
 #pragma unroll
-        for (int k = 0; k < kDownWarps / 2; ++k) {
+        for (int k = 0; k < kDownSlices / 2; ++k) {
             dd += part[k][j][t][0];
             sd += part[k][j][t][1];
-            dm += part[kDownWarps / 2 + k][j][t][0];
-            sm += part[kDownWarps / 2 + k][j][t][1];
+            dm += part[kDownSlices / 2 + k][j][t][0];
+            sm += part[kDownSlices / 2 + k][j][t][1];
         }
         a.scratch[((size_t) s * kDecodeRows + t) * a.rank + o0 + j] =
+            dd * rsqrtf(sd / (float) kWidth + 1e-6f) + dm * rsqrtf(sm / (float) kWidth + 1e-6f);
+    }
+}
+
+// More rows: block (g, w, s) takes slice w of stream s for the kDownOut outputs from g kDownOut, so a row's slice is read
+// once for them (staged in shared memory) instead of once for every few outputs. Each warp takes kDownOut / WARPS
+// outputs; the slices' partials go to the scratch, and the last of a group's kDownSlices blocks (counted in the group's
+// counter, which it resets) adds them.
+constexpr int kDownOut = 8;   // outputs a block
+static_assert(16 % kDownOut == 0, "a rank the controllers take (a multiple of 16) is whole groups");
+
+// The controllers' scratch after hid [kMaxStreams][kDecodeRows][rank] and gf [kMaxStreams][kDecodeRows][2 kWidth]: the
+// slices' dots [kMaxStreams][kDownSlices][kDecodeRows][rank], their sums of squares [kMaxStreams][rank / kDownOut]
+// [kDownSlices][kDecodeRows] (each group's own copy) and the groups' counters [kMaxStreams][rank / kDownOut]: their
+// offsets in floats, and the scratch's size.
+struct CtrlLayout {
+    size_t dot, sq, done, size;
+};
+__host__ __device__ constexpr CtrlLayout ctrl_layout(int rank) {
+    const size_t dot = (size_t) kMaxStreams * kDecodeRows * ((size_t) rank + 2 * kWidth);
+    const size_t sq = dot + (size_t) kMaxStreams * kDownSlices * kDecodeRows * rank;
+    const size_t done = sq + (size_t) kMaxStreams * (rank / kDownOut) * kDownSlices * kDecodeRows;
+    return {dot, sq, done, done + (size_t) kMaxStreams * (rank / kDownOut)};
+}
+
+template<int WARPS>
+__global__ void __launch_bounds__(WARPS * 32) ctrl_down_slice_kernel(CtrlArgs a, int rows) {
+    constexpr int kWarpOut = kDownOut / WARPS;   // outputs a warp
+    static_assert(kDownOut % WARPS == 0 && WARPS * 32 >= kDecodeRows * kDownOut, "whole outputs a warp, a thread a sum");
+    __shared__ alignas(16) float xs[kDecodeRows][kSlice];
+    __shared__ bool last;
+    const int g = blockIdx.x, w = blockIdx.y, s = blockIdx.z, warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    const int o0 = g * kDownOut + warp * kWarpOut;   // the warp's first output
+    const int groups = a.rank / kDownOut;
+    const bool second = w >= kDownSlices / 2;
+    const int c0 = (w % (kDownSlices / 2)) * kSlice;   // the slice's first channel in its half
+    const uint32_t* wr = reinterpret_cast<const uint32_t*>(a.down[s] + (size_t) o0 * 2 * kWidth + (second ? kWidth : 0) + c0);
+    uint32_t wu[kWarpOut][kSlicePairs];   // output o0 + j: 2 kWidth bf16, kWidth words; constant, so read before pdl_wait
+#pragma unroll
+    for (int j = 0; j < kWarpOut; ++j)
+#pragma unroll
+        for (int b = 0; b < kSlicePairs; ++b) wu[j][b] = wr[(size_t) j * kWidth + lane + 32 * b];
+    bk::pdl_wait();
+    bk::pdl_launch_dependents();
+    const float* in = (second ? a.msg[s] : a.dest[s]) + c0;
+    for (int i = threadIdx.x; i < rows * (kSlice / 4); i += WARPS * 32) {   // every copy in flight at once
+        const int t = i / (kSlice / 4), c = 4 * (i - t * (kSlice / 4));
+        asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" ::"r"((unsigned) __cvta_generic_to_shared(&xs[t][c])),
+                     "l"(in + (size_t) t * kWidth + c));
+    }
+    asm volatile("cp.async.wait_all;\n" ::: "memory");
+    __syncthreads();
+    float dot[kWarpOut][kDecodeRows];
+#pragma unroll
+    for (int t = 0; t < kDecodeRows; ++t)
+#pragma unroll
+        for (int j = 0; j < kWarpOut; ++j) dot[j][t] = 0.f;
+#pragma unroll
+    for (int b = 0; b < kSlicePairs; ++b) {
+        float w0[kWarpOut], w1[kWarpOut];
+#pragma unroll
+        for (int j = 0; j < kWarpOut; ++j) {
+            w0[j] = __uint_as_float(wu[j][b] << 16);
+            w1[j] = __uint_as_float(wu[j][b] & 0xffff0000u);
+        }
+#pragma unroll
+        for (int t = 0; t < kDecodeRows; ++t) {
+            if (t < rows) {
+                const float2 x = reinterpret_cast<const float2*>(xs[t])[lane + 32 * b];
+#pragma unroll
+                for (int j = 0; j < kWarpOut; ++j) dot[j][t] = fmaf(w1[j], x.y, fmaf(w0[j], x.x, dot[j][t]));
+            }
+        }
+    }
+    const CtrlLayout l = ctrl_layout(a.rank);
+    float* const pdot = a.scratch + l.dot;
+    float* const psq = a.scratch + l.sq;
+    for (int t = warp; t < rows; t += WARPS) {   // warp t % WARPS: row t's sum of squares over the slice
+        float q = 0.f;
+#pragma unroll
+        for (int b = 0; b < kSlicePairs; ++b) {
+            const float2 x = reinterpret_cast<const float2*>(xs[t])[lane + 32 * b];
+            q = fmaf(x.y, x.y, fmaf(x.x, x.x, q));
+        }
+        q = warp_sum(q);
+        if (lane == 0) psq[(((size_t) s * groups + g) * kDownSlices + w) * kDecodeRows + t] = q;
+    }
+#pragma unroll
+    for (int t = 0; t < kDecodeRows; ++t) {
+        if (t >= rows) break;
+#pragma unroll
+        for (int j = 0; j < kWarpOut; ++j) {
+            const float d = warp_sum(dot[j][t]);
+            if (lane == 0) pdot[(((size_t) s * kDownSlices + w) * kDecodeRows + t) * a.rank + o0 + j] = d;
+        }
+    }
+    __syncthreads();   // the block's partials are thread 0's to release
+    if (threadIdx.x == 0) {
+        unsigned* done = reinterpret_cast<unsigned*>(a.scratch + l.done) + (size_t) s * groups + g;
+        unsigned prior;
+        asm volatile("atom.acq_rel.gpu.global.add.u32 %0, [%1], 1;\n" : "=r"(prior) : "l"(done) : "memory");
+        last = prior == (unsigned) (kDownSlices - 1);
+        if (last) *done = 0u;   // every slice has counted: ready for the next launch
+    }
+    __syncthreads();   // the other slices' partials, acquired by thread 0, are the block's
+    if (!last) return;
+    if (threadIdx.x < rows * kDownOut) {
+        const int t = threadIdx.x % rows, o = g * kDownOut + threadIdx.x / rows;
+        const float* dt = pdot + ((size_t) s * kDownSlices * kDecodeRows + t) * a.rank + o;   // slice 0's, then + slice
+        const float* qt = psq + ((size_t) s * groups + g) * kDownSlices * kDecodeRows + t;
+        const size_t dk = (size_t) kDecodeRows * a.rank;
+        constexpr int kHalf = kDownSlices / 2;
+        float dd = 0.f, sd = 0.f, dm = 0.f, sm = 0.f;
+#pragma unroll
+        for (int k = 0; k < kHalf; ++k) {
+            dd += __ldcg(dt + k * dk);
+            sd += __ldcg(qt + k * kDecodeRows);
+            dm += __ldcg(dt + (kHalf + k) * dk);
+            sm += __ldcg(qt + (kHalf + k) * kDecodeRows);
+        }
+        a.scratch[((size_t) s * kDecodeRows + t) * a.rank + o] =
             dd * rsqrtf(sd / (float) kWidth + 1e-6f) + dm * rsqrtf(sm / (float) kWidth + 1e-6f);
     }
 }
@@ -630,20 +738,22 @@ void mix_norm(const MixNorm& a, int n_out, int rows, void* stream) {
     check("mix_norm");
 }
 
-size_t ctrl_scratch_floats(int rank) {
-    return (size_t) kMaxStreams * kDecodeRows * ((size_t) rank + 2 * kWidth);
-}
+size_t ctrl_scratch_floats(int rank) { return ctrl_layout(rank).size; }
 
 void controllers(const CtrlArgs& a, int streams, int rows, void* stream) {
     if (rows <= 0) return;
     check_rows(rows, "controllers");
     if (streams < 1 || streams > kMaxStreams || a.rank <= 0 || a.rank % 16) throw std::runtime_error("inkling2 controllers: streams or rank");
     cudaStream_t s = (cudaStream_t) stream;
-    // 3-4 rows read their inputs once for 4 outputs (they are 8 rows x 18 KB), 5-8 rows once for 2 (twice the blocks, half
-    // the dots and sums on each one's chain), a lone row keeps rank blocks
-    if (rows >= 5) bk::launch_pdl(ctrl_down_kernel<2, kDecodeRows>, dim3((unsigned) a.rank / 2, (unsigned) streams), dim3(kDownWarps * 32), 0, s, a, rows);
-    else if (rows >= 3) bk::launch_pdl(ctrl_down_kernel<4, 4>, dim3((unsigned) a.rank / 4, (unsigned) streams), dim3(kDownWarps * 32), 0, s, a, rows);
-    else bk::launch_pdl(ctrl_down_kernel<1, 2>, dim3((unsigned) a.rank, (unsigned) streams), dim3(kDownWarps * 32), 0, s, a, rows);
+    // The pick for the rows and streams measured fastest: a few rows read each input once for a block's outputs and need
+    // no merge, more rows read it once for a group's; one stream's launches have a third of the blocks, so their blocks
+    // take fewer outputs, and their slices more warps
+    const dim3 whole(kDownSlices * 32), slices((unsigned) (a.rank / kDownOut), kDownSlices, (unsigned) streams);
+    if (rows <= 2 && streams == 1) bk::launch_pdl(ctrl_down_whole_kernel<1, 2>, dim3((unsigned) a.rank, 1u), whole, 0, s, a, rows);
+    else if (rows <= 4 && streams > 1)
+        bk::launch_pdl(ctrl_down_whole_kernel<4, 4>, dim3((unsigned) a.rank / 4, (unsigned) streams), whole, 0, s, a, rows);
+    else if (streams == 1) bk::launch_pdl(ctrl_down_slice_kernel<8>, slices, dim3(8 * 32), 0, s, a, rows);
+    else bk::launch_pdl(ctrl_down_slice_kernel<4>, slices, dim3(4 * 32), 0, s, a, rows);
     check("controllers/down");
     bk::launch_pdl(ctrl_up_kernel, dim3((unsigned) (2 * kWidth / 32), (unsigned) streams), dim3(256), (size_t) rows * a.rank * 4, s, a, rows);
     check("controllers/up");

@@ -155,6 +155,10 @@ struct Shared {
         x.mix_ = f(3 * R * E);
         x.msg_ = f((int64_t) (g.loop_end - g.loop_start) * kStreams * R * E);
         x.ctrl_scr_ = f((int64_t) ctrl_scratch_floats(g.gate_rank));
+        // the controllers' counters start at 0 (the device's streams do not wait for the default one)
+        if (ok && (cudaMemset(x.ctrl_scr_, 0, ctrl_scratch_floats(g.gate_rank) * 4) != cudaSuccess ||
+                   cudaDeviceSynchronize() != cudaSuccess))
+            ok = false;
         x.nrm_ = f(R * E);
         x.y_ = f(R * kProj);
         x.q_ = f(R * kHeads * kHeadDim); x.r_ = f(R * kHeads * kRel); x.sink_ = f(R * kHeads);
