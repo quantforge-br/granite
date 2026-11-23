@@ -101,12 +101,15 @@ class ConfigFile(unittest.TestCase):
         self.assertEqual(entry.own_words, ["--max-context", "32768"])
 
     def test_paths_are_relative_to_the_file(self):
-        p = conf({"server": {"tokenizer": "tok"}, "models": [{"model": "m/x.granite"}]})
+        p = conf({"server": {"tokenizer": "tok"}, "engine": {"drafter": "d/a.gguf"},
+                  "models": [{"model": "m/x.granite", "drafter": "/abs/b.gguf"}]})
         cfg = load_config_file(p, build_parser())
         here = Path(p).resolve().parent
         self.assertEqual(cfg.server_argv, ["--tokenizer", str(here / "tok")])
         self.assertEqual(cfg.models[0].argv, ["--model", str(here / "m" / "x.granite")])
         self.assertEqual(cfg.models[0].path, str(here / "m" / "x.granite"))
+        self.assertEqual(cfg.models[0].shared_words, ["--drafter", str(here / "d" / "a.gguf")])
+        self.assertEqual(cfg.models[0].own_words, ["--drafter", "/abs/b.gguf"])
 
     def test_the_exact_shape(self):
         p = conf({"engine": {"conversation-cache-disk-mib": 32768, "idle-sleep": 300, "pool-workers": 8, "vram-reserve-mib": 500},

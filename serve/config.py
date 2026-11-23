@@ -20,6 +20,7 @@ MIN_SLOT_CONTEXT = 256          # the least context a slot is given when --max-c
 CONFIG_VERSION = 2                          # the config file's "version"; a file without one is this format's first
 PARALLEL_MAX = 8                            # the engine's batch slots
 CONFIG_PATHS = ("model", "tokenizer", "image-dir")       # relative to the config file
+ENGINE_PATHS = ("drafter",)                               # engine flags that name a file: relative to the config file too
 # a model entry's own, and what it may also inherit from the top-level "engine"; other server options are the server's
 ENTRY_OPTIONS = frozenset({"model", "alias"})
 MODEL_OPTIONS = frozenset({
@@ -72,10 +73,10 @@ def split_engine_extras(extras: list[str]) -> list[str]:
 ENGINE_VALUE_FORMS = {"control-vector-layer-range": ["start", "end"]}
 
 
-def engine_words(key: str, value) -> list[str]:
+def engine_words(key: str, value, here: Path) -> list[str]:
     """The engine words for one config entry: a switch is true (the flag) or false (nothing), a string or number is
-    one value, and a flag that takes several values (`ENGINE_VALUE_FORMS`) is a list of exactly that many. ValueError
-    otherwise."""
+    one value, and a flag that takes several values (`ENGINE_VALUE_FORMS`) is a list of exactly that many. A file an
+    engine flag names (`ENGINE_PATHS`) is relative to `here`, the config file's directory. ValueError otherwise."""
     name = str(key).strip().lower().replace("_", "-").removeprefix("--")
     flag = "--" + name
     if isinstance(value, bool):
@@ -90,6 +91,8 @@ def engine_words(key: str, value) -> list[str]:
     for item in items:
         if isinstance(item, bool) or not isinstance(item, (str, int, float)) or str(item).strip() == "":
             raise ValueError(f"engine.{key}: expected a string or number, or true/false for a switch, not {value!r}")
+    if name in ENGINE_PATHS:
+        items = [str(here / os.path.expanduser(str(item))) for item in items]
     return [flag, *(str(item) for item in items)]
 
 
@@ -213,7 +216,7 @@ def load_config_file(path: str, ap: argparse.ArgumentParser) -> ConfigFile:
         elif name in known:
             raise ValueError(f'engine.{key}: a server option, set it under "server"')
         else:
-            shared_words += engine_words(key, value)
+            shared_words += engine_words(key, value, here)
     models: list[ModelEntry] = []
     for i, entry in enumerate(entries):
         where = f"models[{i}]"
@@ -227,7 +230,7 @@ def load_config_file(path: str, ap: argparse.ArgumentParser) -> ConfigFile:
             elif name in known:
                 raise ValueError(f'{where}.{key}: a server option, set it under "server"')
             else:
-                out.own_words += engine_words(key, value)
+                out.own_words += engine_words(key, value, here)
         models.append(out)
     return ConfigFile(server_argv, models)
 

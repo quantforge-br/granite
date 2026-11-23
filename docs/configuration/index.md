@@ -104,7 +104,8 @@ Output is exactly plain decoding's.
 
 | Setting | Where | Type, values | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `spec` | engine | integer | 8 with the pack's DSpark drafter, else 0 | Verify windows of at most N tokens: the last accepted token plus up to N-1 drafts. `0` or `1` turns it off. [guide](../models/inkling2.md#drafting) |
+| `spec` | engine | integer | 8 with a DSpark drafter, else 0 | Verify windows of at most N tokens: the last accepted token plus up to N-1 drafts. `0` or `1` turns it off. [guide](../models/inkling2.md#drafting) |
+| `drafter` | engine | path | the model file's drafter | The DSpark drafter from this file instead: a `.granite` that carries one, or Unsloth's DSpark GGUF of the model. Relative to the config file. [guide](../models/inkling2.md#drafting) |
 
 ## Parallel slots
 

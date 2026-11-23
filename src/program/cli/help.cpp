@@ -11,7 +11,7 @@ void usage() {
                  "    runs the Python server (serve/) over this binary: the server reads its options and the engine flags\n"
                  "    from the config file and the command line (the model is the config's or MODEL.granite, which stands\n"
                  "    for --model); --python defaults to .venv/bin/python in the source tree, else python3; the other\n"
-                 "    arguments go to the server.  It runs in the source tree; --model and --config paths are made absolute.\n"
+                 "    arguments go to the server.  It runs in the source tree; --model, --config and --drafter paths are made absolute.\n"
                  "granite generate --model FILE.granite --tokens \"1,2,3\" [options]\n"
                  "\n"
                  "  --model FILE         the .granite model file, or llama.cpp's GGUF of the model (required): the\n"
