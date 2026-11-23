@@ -5,9 +5,14 @@
 // caches (kernels/attn_prompt.cu), the rest are the decode forward's kernels over all the rows. A chunk leaves the caches as
 // the decode forward leaves them: a full visit's cells, a sliding-window visit's ring (the chunk's keys are staged, then
 // its last positions moved in) and the convolution rings' last kConvRing positions.
+//
+// Tensor parallelism (model.hpp cards()): each card runs every visit over the chunk with its half of the experts; each
+// writes its experts' sum into the other's receive buffer as it writes its own, and adds the two (IEEE addition commutes,
+// so both cards hold the same bits).
 #include "models/inkling2/prompt.hpp"
 
 #include "basalt/kernels/dense_ops.hpp"
+#include "basalt/kernels/elementwise.hpp"
 #include "basalt/kernels/iq_kernels.hpp"
 #include "basalt/kernels/router.hpp"
 #include "basalt/kernels/row_norm.hpp"
@@ -21,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <stdexcept>
 
 namespace basalt::models::inkling2 {
@@ -56,6 +62,7 @@ struct Bufs {
     float *yq = nullptr, *yk = nullptr, *yv = nullptr, *q = nullptr, *r = nullptr, *sink = nullptr, *attn = nullptr, *o = nullptr;
     void* xq = nullptr;          // the experts' q8_1 rows (their input, then H)
     float *gu = nullptr, *h = nullptr, *moe = nullptr;   // gu also holds the experts' outputs, h the sum
+    float* recv[2] = {};         // tensor parallelism: the other card's experts' sums, by the exchange's parity
     void* xqd = nullptr;         // a dense product's q8_1 rows
     float* rlog = nullptr;
     float* rw = nullptr;
@@ -65,7 +72,8 @@ struct Bufs {
     int32_t *pos = nullptr, *tokd = nullptr, *ident = nullptr, *dbounds = nullptr;
 };
 
-void carve(Carve& c, Bufs& b, const Geometry& g) {
+// `F`: the card's experts' width; `tp`: with the receive buffers.
+void carve(Carve& c, Bufs& b, const Geometry& g, int64_t F, bool tp) {
     const size_t E = (size_t) g.n_embd, R = kChunk, P = R * (size_t) g.n_used;
     for (float*& p : b.role) p = c.take<float>(R * E);
     b.resid = c.take<float>(R * E);
@@ -84,17 +92,20 @@ void carve(Carve& c, Bufs& b, const Geometry& g) {
     b.attn = c.take<float>(R * kOut);
     b.o = c.take<float>(R * E);
     const size_t end_a = c.at;
-    // the experts' buffers, from the arena's base: the MLP's input (mix, its controller, nrm) is read before any is written
+    // the experts' buffers, from the arena's base: the MLP's input (mix, its controller, nrm) is read before any is written.
+    // gu holds the pairs' gate and up rows [P][2F], then their down rows [P][E]; h their SwiGLU [P][F], then the sum [R][E]
     Carve x = c;
     x.at = arena;
     b.xq = x.take<uint8_t>(mmq::q8_bytes((int64_t) P, (int64_t) E));
-    b.gu = x.take<float>(P * 2 * (size_t) g.n_ff_exp);
-    b.h = x.take<float>(P * (size_t) g.n_ff_exp);
+    b.gu = x.take<float>(P * std::max<size_t>(2 * (size_t) F, E));
+    b.h = x.take<float>(std::max(P * (size_t) F, R * E));
     b.moe = b.h;
     // the experts' input rows are rounded from nrm while it is read, so they end before it
     if (c.base && (uint8_t*) b.xq + mmq::q8_bytes((int64_t) P, (int64_t) E) > (uint8_t*) b.nrm)
         throw std::logic_error("inkling2 prompt: the experts' input rows overlap the MLP's normed rows");
     c.at = std::max(end_a, x.at);
+    if (tp)
+        for (float*& p : b.recv) p = c.take<float>(R * E);
     b.xqd = c.take<uint8_t>(mmq::q8_bytes((int64_t) R, std::max<int64_t>((int64_t) E, kOut)));
     b.rlog = c.take<float>(R * (size_t) g.n_expert);
     b.rw = c.take<float>(P);
@@ -113,48 +124,88 @@ void carve(Carve& c, Bufs& b, const Geometry& g) {
     b.dbounds = c.take<int32_t>(2);
 }
 
-// The card's side of the prompt path: its chunk buffers, products and stream (the reading session's).
+// A card's side of the prompt path: its chunk buffers, products and stream (the reading session's), the reading session's
+// caches there, and the event behind its experts' sum (tensor parallelism).
 struct Lane {
+    int device = 0;
     Bufs b;
     void* mem = nullptr;
-    mmq::Context mmq;
+    std::unique_ptr<mmq::Context> mmq;
     cudaStream_t stream = nullptr;
+    const std::vector<VisitCache>* vc = nullptr;
+    cudaEvent_t sent = nullptr;
+};
+
+// The current device for a scope.
+struct OnCard {
+    int prev = 0;
+    explicit OnCard(int dev) {
+        cudaGetDevice(&prev);
+        if (dev != prev) cudaSetDevice(dev);
+    }
+    ~OnCard() {
+        int now = 0;
+        cudaGetDevice(&now);
+        if (now != prev) cudaSetDevice(prev);
+    }
 };
 
 class Prompt final : public PromptRunner {
 public:
-    Prompt(InklingModel& m, cudaStream_t s) : m_(m), g_(m.geo()) { lane_.stream = s; }
+    Prompt(InklingModel& m, void* const streams[2]) : m_(m), g_(m.geo()), nc_(m.cards()) {
+        for (int c = 0; c < nc_; ++c) {
+            lane_[c].device = m.card_device(c);
+            lane_[c].stream = (cudaStream_t) streams[c];
+        }
+    }
     ~Prompt() override {   // every read synced its streams before it returned
+        OnCard on(lane_[0].device);
         for (cudaEvent_t& e : done_)
             if (e) cudaEventDestroy(e);
-        if (lane_.mem) cudaFree(lane_.mem);
+        if (fork_) cudaEventDestroy(fork_);
+        for (int c = 0; c < nc_; ++c) {
+            cudaSetDevice(lane_[c].device);
+            if (lane_[c].sent) cudaEventDestroy(lane_[c].sent);
+            lane_[c].mmq.reset();
+            if (lane_[c].mem) cudaFree(lane_[c].mem);
+        }
     }
 
     bool init(std::string& err) {
         if (!walk(g_, walk_, err)) return false;
+        OnCard on(lane_[0].device);
         for (cudaEvent_t& e : done_)
             if (cudaEventCreateWithFlags(&e, cudaEventDisableTiming) != cudaSuccess) {
                 err = "cannot create the prompt path's events";
                 return false;
             }
-        return init_lane(err);
+        if (cudaEventCreateWithFlags(&fork_, cudaEventDisableTiming) != cudaSuccess) {
+            err = "cannot create the prompt path's events";
+            return false;
+        }
+        for (int c = 0; c < nc_; ++c)
+            if (!init_lane(c, err)) return false;
+        return true;
     }
 
-    // The card's chunk buffers and products.
-    bool init_lane(std::string& err) {
+    // Card c's chunk buffers and products.
+    bool init_lane(int card, std::string& err) {
+        Lane& ln = lane_[card];
+        OnCard on(ln.device);
+        const int E = g_.n_embd, F = (int) m_.layer(0, card).n_ff;
         Carve c;
-        carve(c, b(), g_);
-        if (cudaMalloc(&lane().mem, c.at) != cudaSuccess) {
+        carve(c, ln.b, g_, F, nc_ > 1);
+        if (cudaMalloc(&ln.mem, c.at) != cudaSuccess || cudaEventCreateWithFlags(&ln.sent, cudaEventDisableTiming) != cudaSuccess) {
             cudaGetLastError();
-            err = "out of device memory for the prompt path (" + std::to_string(c.at >> 20) + " MiB)";
+            err = "out of device memory for the prompt path (" + std::to_string(c.at >> 20) + " MiB on CUDA" + std::to_string(ln.device) + ")";
             return false;
         }
         c = Carve{};
-        c.base = static_cast<uint8_t*>(lane().mem);
-        carve(c, b(), g_);
-        mmq::iota(b().ident, (int64_t) kChunk * g_.n_used, strm());
-        // the products' tiles
-        const int E = g_.n_embd, F = g_.n_ff_exp;
+        c.base = static_cast<uint8_t*>(ln.mem);
+        carve(c, ln.b, g_, F, nc_ > 1);
+        ln.mmq = std::make_unique<mmq::Context>();
+        mmq::iota(ln.b.ident, (int64_t) kChunk * g_.n_used, ln.stream);
+        // the products' tiles (each card raises its own kernels' shared memory)
         const auto ready = [&](int type, int64_t rows) {
             if (!mmq::fits(type, rows)) {
                 err = "the prompt path's MMQ has no tile for type " + std::to_string(type) + " at " + std::to_string(rows) + " rows";
@@ -165,25 +216,24 @@ public:
         };
         if (!ready(8, kProj) || !ready(8, kProjQ) || !ready(8, kProjKV) || !ready(8, kKvHeads * kHeadDim) || !ready(8, E)) return false;
         for (int l = 0; l < g_.n_layers; ++l) {
-            const LayerWeights& w = m_.layer(l);
-            if (!ready(w.gu_type, 2 * (int64_t) F) || !ready(w.d_type, E)) return false;
+            const LayerWeights& w = m_.layer(l, card);
+            if (!ready(w.gu_type, 2 * w.n_ff) || !ready(w.d_type, E)) return false;
         }
-        if (cudaStreamSynchronize(strm()) != cudaSuccess) {
+        if (cudaStreamSynchronize(ln.stream) != cudaSuccess) {
             err = "the prompt path's setup failed";
             return false;
         }
         return true;
     }
 
-    model::Result read(const model::PrefillRequest& r, std::vector<int32_t>& hist, const std::vector<VisitCache>& caches,
-                       DsparkHook& dspark, void* stream) override {
-        bind(caches, dspark, stream);
+    model::Result read(const model::PrefillRequest& r, std::vector<int32_t>& hist, const PromptTarget& t) override {
+        bind(t);
         return run(r.tokens, nullptr, r.n_tokens, r.pos, r, hist, 0);
     }
 
     model::Result read_rows(const float* rows, int n, int64_t pos, int32_t pad, std::vector<int32_t>& hist,
-                            const std::vector<VisitCache>& caches, DsparkHook& dspark, void* stream) override {
-        bind(caches, dspark, stream);
+                            const PromptTarget& t) override {
+        bind(t);
         model::PrefillRequest r;
         r.n_tokens = n;
         r.pos = pos;
@@ -191,20 +241,26 @@ public:
     }
 
 private:
-    Lane& lane() { return lane_; }
-    Bufs& b() { return lane_.b; }
-    cudaStream_t strm() const { return lane_.stream; }
-    float* buf(Buf x) { return b().role[(int) x]; }
-    void bind(const std::vector<VisitCache>& caches, DsparkHook& dspark, void* stream) {
-        vc_ = &caches;
-        ds_ = &dspark;
-        lane_.stream = (cudaStream_t) stream;
+    Bufs& b(int c) { return lane_[c].b; }
+    cudaStream_t strm(int c) const { return lane_[c].stream; }
+    float* buf(int c, Buf x) { return lane_[c].b.role[(int) x]; }
+    void bind(const PromptTarget& t) {
+        ds_ = t.dspark;
+        for (int c = 0; c < nc_; ++c) {
+            lane_[c].vc = t.caches[c];
+            lane_[c].stream = (cudaStream_t) t.stream[c];
+        }
     }
 
     // `n` rows (tokens, or host embedding rows) in chunks of about equal size; one chunk stays queued ahead of the host,
     // which reports a chunk once the card has run it.
     model::Result run(const int32_t* tokens, const float* emb, int n, int64_t pos, const model::PrefillRequest& r,
                       std::vector<int32_t>& hist, int32_t pad) {
+        OnCard on(lane_[0].device);
+        if (nc_ > 1) {   // the second card's stream after what the first's has queued (a decode graph runs both cards there)
+            cudaEventRecord(fork_, strm(0));
+            cudaStreamWaitEvent(strm(1), fork_, 0);
+        }
         const int chunks = (n + kChunk - 1) / kChunk;
         const int per = (n + chunks - 1) / chunks;
         std::string err;
@@ -217,14 +273,16 @@ private:
             ds_->note(pos + t0, rows);
             if (tokens) hist.insert(hist.end(), tokens + t0, tokens + t0 + rows);
             else hist.insert(hist.end(), (size_t) rows, pad);
-            cudaEventRecord(done_[k % 2], strm());
+            cudaEventRecord(done_[k % 2], strm(0));
             if (k > 0) {   // the chunk before this one has run
                 cudaEventSynchronize(done_[(k - 1) % 2]);
                 if (r.progress) r.progress(reported);
             }
             reported = t0 + rows;
         }
-        if (cudaStreamSynchronize(strm()) != cudaSuccess) return {model::Status::Error, "inkling2: the prompt failed"};
+        bool ok = true;
+        for (int c = 0; c < nc_; ++c) ok = cudaStreamSynchronize(strm(c)) == cudaSuccess && ok;
+        if (!ok) return {model::Status::Error, "inkling2: the prompt failed"};
         if (r.progress && reported > 0) r.progress(reported);
         return {};
     }
@@ -232,35 +290,47 @@ private:
     // One chunk of `rows` rows at pos0..: the embedding, the visits, the caches.
     bool chunk(const int32_t* tokens, const float* emb, int rows, int64_t pos0, std::string& err) {
         const int E = g_.n_embd;
-        prompt_rows(b().pos, pos0, rows, b().dbounds, strm());
-        float* x0 = buf(Buf::X0);
-        if (emb) {
-            cudaMemcpyAsync(x0, emb, (size_t) rows * E * 4, cudaMemcpyHostToDevice, strm());
-        } else {
-            cudaMemcpyAsync(b().tokd, tokens, (size_t) rows * 4, cudaMemcpyHostToDevice, strm());
-            bk::iq_embed_rows(kTypeBF16, m_.embedding(), (size_t) E * 2, b().tokd, rows, E, b().mix, strm());
-            bk::rms_norm_rows(b().mix, m_.embed_norm(), rows, E, g_.rms_eps, x0, strm());
+        for (int c = 0; c < nc_; ++c) {
+            OnCard on(lane_[c].device);
+            prompt_rows(b(c).pos, pos0, rows, b(c).dbounds, strm(c));
+            float* x0 = buf(c, Buf::X0);
+            if (emb) {
+                cudaMemcpyAsync(x0, emb, (size_t) rows * E * 4, cudaMemcpyHostToDevice, strm(c));
+            } else {
+                cudaMemcpyAsync(b(c).tokd, tokens, (size_t) rows * 4, cudaMemcpyHostToDevice, strm(c));
+                bk::iq_embed_rows(kTypeBF16, m_.embedding(), (size_t) E * 2, b(c).tokd, rows, E, b(c).mix, strm(c));
+                bk::rms_norm_rows(b(c).mix, m_.embed_norm(c), rows, E, g_.rms_eps, x0, strm(c));
+            }
         }
         for (const Step& s : walk_.steps) {
             if (const int k = ds_->slot_of_visit(s.visit); k >= 0)   // the drafter's features: the visit's input rows
-                cudaMemcpyAsync(ds_->tap(k), buf(s.hid), (size_t) rows * E * 4, cudaMemcpyDeviceToDevice, strm());
-            layer(s, rows, pos0);
+                cudaMemcpyAsync(ds_->tap(k), buf(0, s.hid), (size_t) rows * E * 4, cudaMemcpyDeviceToDevice, strm(0));
+            // both cards' layers up to their experts' sums, then each adds the other's
+            const int parity = (int) (exchanges_++ & 1);
+            for (int c = 0; c < nc_; ++c) {
+                OnCard on(lane_[c].device);
+                layer(c, s, rows, pos0, parity);
+            }
+            for (int c = 0; c < nc_; ++c) {
+                OnCard on(lane_[c].device);
+                finish(c, s, rows, parity);
+            }
         }
         if (ds_->on()) {   // and every row's final normed state, then the rows' context keys and values
             MixStates st;
-            for (int i = 0; i < walk_.n_blocks; ++i) st.s[st.n++] = buf(walk_.blocks[i]);
-            st.s[st.n++] = buf(walk_.final_hid);
-            attnres_mix(st, m_.output_query(), 1, rows, 1e-6f, b().mix, (int64_t) rows * E, strm());
-            bk::rms_norm_rows(b().mix, m_.output_norm(), rows, E, g_.rms_eps, ds_->tap(kDsTargets - 1), strm());
+            for (int i = 0; i < walk_.n_blocks; ++i) st.s[st.n++] = buf(0, walk_.blocks[i]);
+            st.s[st.n++] = buf(0, walk_.final_hid);
+            attnres_mix(st, m_.output_query(), 1, rows, 1e-6f, b(0).mix, (int64_t) rows * E, strm(0));
+            bk::rms_norm_rows(b(0).mix, m_.output_norm(), rows, E, g_.rms_eps, ds_->tap(kDsTargets - 1), strm(0));
             DsparkHook::PromptScratch ps;
-            ps.mix = b().mix;
-            ps.kb = b().yk;
-            ps.vb = b().yv;
-            ps.xq = b().xqd;
-            ps.pos3 = reinterpret_cast<int32_t*>(b().rlog);
-            ps.bounds = b().dbounds;
-            ps.ident = b().ident;
-            ds_->commit_prompt(b().pos, rows, lane().mmq, ps, strm());
+            ps.mix = b(0).mix;
+            ps.kb = b(0).yk;
+            ps.vb = b(0).yv;
+            ps.xq = b(0).xqd;
+            ps.pos3 = reinterpret_cast<int32_t*>(b(0).rlog);
+            ps.bounds = b(0).dbounds;
+            ps.ident = b(0).ident;
+            ds_->commit_prompt(b(0).pos, rows, *lane_[0].mmq, ps, strm(0));
         }
         const cudaError_t e = cudaGetLastError();
         if (e != cudaSuccess) {
@@ -271,9 +341,9 @@ private:
     }
 
     // x (rows of `cols` values) as MMQ's q8_1 rows for products of `type`
-    void quant(const float* x, int cols, int rows, int type) { mmq::quantize(x, nullptr, b().xqd, type, cols, cols, rows, strm()); }
+    void quant(int c, const float* x, int cols, int rows, int type) { mmq::quantize(x, nullptr, b(c).xqd, type, cols, cols, rows, strm(c)); }
     // y[rows][n_out] = W x for the rows quant() rounded: one Q8_0 matrix [n_out][cols] at w
-    void product(const uint8_t* w, int n_out, int cols, int rows, float* y) {
+    void product(int c, const uint8_t* w, int n_out, int cols, int rows, float* y) {
         mmq::Product p;
         p.w = w;
         p.type = 8;
@@ -281,81 +351,82 @@ private:
         p.w_cols = cols;
         p.expert_bytes = mmq::matrix_bytes(8, n_out, cols);
         p.n = 1;
-        p.xq = b().xqd;
-        p.bounds = b().dbounds;
-        p.ids = b().ident;
+        p.xq = b(c).xqd;
+        p.bounds = b(c).dbounds;
+        p.ids = b(c).ident;
         p.total_rows = rows;
         p.max_rows = rows;
         p.dst = y;
         p.ld_dst = n_out;
-        lane().mmq.run(p, strm());
+        lane_[c].mmq->run(p, strm(c));
     }
 
     // A loop controller over the chunk: out = blend(dest, msg) of stream `st` (out may be dest).
-    void controller(const LayerWeights& w, int st, const float* dest, const float* msg, int rows, float* out) {
+    void controller(int c, const LayerWeights& w, int st, const float* dest, const float* msg, int rows, float* out) {
         const int rank = g_.gate_rank;
-        ctrl_down_prompt(dest, msg, w.ctrl_down[st], rows, rank, b().hid, strm());
-        ctrl_up_blend_prompt(dest, msg, b().hid, w.ctrl_gf[st], rows, rank, out, strm());
+        ctrl_down_prompt(dest, msg, w.ctrl_down[st], rows, rank, b(c).hid, strm(c));
+        ctrl_up_blend_prompt(dest, msg, b(c).hid, w.ctrl_gf[st], rows, rank, out, strm(c));
     }
 
     // All four streams' messages of the previous pass into b().msg[0..3] in one read of bank[0..1].
-    void messages(const Step& s, const LayerWeights& w, int rows) {
+    void messages(int c, const Step& s, const LayerWeights& w, int rows) {
         MixStates st;
-        st.s[st.n++] = buf(s.bank[0]);
-        st.s[st.n++] = buf(s.bank[1]);
-        attnres_mix(st, w.msg_query, 4, rows, 1e-6f, b().msg, (int64_t) rows * g_.n_embd, strm());
+        st.s[st.n++] = buf(c, s.bank[0]);
+        st.s[st.n++] = buf(c, s.bank[1]);
+        attnres_mix(st, w.msg_query, 4, rows, 1e-6f, b(c).msg, (int64_t) rows * g_.n_embd, strm(c));
     }
 
-    void layer(const Step& s, int rows, int64_t pos0) {
+    // Card c's visit of step s up to its experts' sum (with two cards, into the other's receive buffer too).
+    void layer(int c, const Step& s, int rows, int64_t pos0, int parity) {
         const Visit& v = g_.visits[(size_t) s.visit];
         const int l = v.layer;
-        const LayerWeights& w = m_.layer(l);
+        const LayerWeights& w = m_.layer(l, c);
         const bool full = !g_.swa[(size_t) l];
         const int E = g_.n_embd;
         const size_t RE = (size_t) rows * E;
-        const VisitCache& c = (*vc_)[(size_t) v.slot];
-        const float* hid = buf(s.hid);
-        float* out = buf(s.out);
+        const VisitCache& vc = (*lane_[c].vc)[(size_t) v.slot];
+        Bufs& B = b(c);
+        const float* hid = buf(c, s.hid);
         const float* blocks[kMaxMix];
-        for (int i = 0; i < s.n_blocks; ++i) blocks[i] = buf(s.blocks[i]);
+        for (int i = 0; i < s.n_blocks; ++i) blocks[i] = buf(c, s.blocks[i]);
         // the attention's inputs
         const float* in[3] = {hid, hid, hid};
         if (w.attn_query) {
             MixStates st;
             for (int i = 0; i < s.n_blocks; ++i) st.s[st.n++] = blocks[i];
             st.s[st.n++] = hid;
-            attnres_mix(st, w.attn_query, full ? 3 : 1, rows, 1e-6f, b().mix, (int64_t) RE, strm());
-            for (int j = 0; j < 3; ++j) in[j] = b().mix + (full ? j : 0) * RE;
+            attnres_mix(st, w.attn_query, full ? 3 : 1, rows, 1e-6f, B.mix, (int64_t) RE, strm(c));
+            for (int j = 0; j < 3; ++j) in[j] = B.mix + (full ? j : 0) * RE;
         }
         if (s.msgs) {
-            messages(s, w, rows);
+            messages(c, s, w, rows);
             // controller j writes mix slot j; a sliding-window layer's one input feeds all three, so slot 0 goes last
-            for (const int j : {1, 2, 0}) controller(w, j, in[j], b().msg + (size_t) j * RE, rows, b().mix + (size_t) j * RE);
-            for (int j = 0; j < 3; ++j) in[j] = b().mix + (size_t) j * RE;
+            for (const int j : {1, 2, 0}) controller(c, w, j, in[j], B.msg + (size_t) j * RE, rows, B.mix + (size_t) j * RE);
+            for (int j = 0; j < 3; ++j) in[j] = B.mix + (size_t) j * RE;
         }
         const bool one = !full && in[0] == in[1] && in[1] == in[2];
-        // the projections: fused RMSNorm + Q8_1 quantization directly into b().xqd, and fused Q+K+V when streams are shared
+        // the projections: fused RMSNorm + Q8_1 quantization directly into xqd, and fused Q+K+V when streams are shared
         const size_t row_bytes = (size_t) E / 32 * 34;
         if (one) {
-            rms_norm_q8_1_prompt(in[0], w.attn_norm, rows, g_.rms_eps, b().xqd, strm());
-            product(w.proj, kProj, E, rows, b().yq);
+            rms_norm_q8_1_prompt(in[0], w.attn_norm, rows, g_.rms_eps, B.xqd, strm(c));
+            product(c, w.proj, kProj, E, rows, B.yq);
         } else {
             const float* wn[3] = {full ? w.q_norm : w.attn_norm, full ? w.k_norm : w.attn_norm, full ? w.v_norm : w.attn_norm};
-            rms_norm_q8_1_prompt(in[0], wn[0], rows, g_.rms_eps, b().xqd, strm());
-            product(w.proj, kProjQ, E, rows, b().yq);
-            rms_norm_q8_1_prompt(in[1], wn[1], rows, g_.rms_eps, b().xqd, strm());
-            product(w.proj + (size_t) kRowK * row_bytes, kProjKV, E, rows, b().yk);
-            rms_norm_q8_1_prompt(in[2], wn[2], rows, g_.rms_eps, b().xqd, strm());
-            product(w.proj + (size_t) kRowV * row_bytes, kProjKV, E, rows, b().yv);
+            rms_norm_q8_1_prompt(in[0], wn[0], rows, g_.rms_eps, B.xqd, strm(c));
+            product(c, w.proj, kProjQ, E, rows, B.yq);
+            rms_norm_q8_1_prompt(in[1], wn[1], rows, g_.rms_eps, B.xqd, strm(c));
+            product(c, w.proj + (size_t) kRowK * row_bytes, kProjKV, E, rows, B.yk);
+            rms_norm_q8_1_prompt(in[2], wn[2], rows, g_.rms_eps, B.xqd, strm(c));
+            product(c, w.proj + (size_t) kRowV * row_bytes, kProjKV, E, rows, B.yv);
         }
         // convolutions, clips and the keys: a sliding-window visit stages the chunk's own, a full visit writes its cells
         const bool fp8 = m_.cache_fp8();
         AttnPrep ap;
-        ap.yq = b().yq;
-        ap.yk = one ? b().yq + kProjQ : b().yk;
-        ap.yv = one ? b().yq + kProjQ + kProjKV : b().yv;
+        ap.yq = B.yq;
+        ap.yk = one ? B.yq + kProjQ : B.yk;
+        ap.yv = one ? B.yq + kProjQ + kProjKV : B.yv;
         if (one) ap.ldq = ap.ldk = ap.ldv = kProj;
-        ap.pos = b().pos;
+        ap.pos = B.pos;
         ap.full = full;
         ap.k_conv = w.k_conv;
         ap.v_conv = w.v_conv;
@@ -366,71 +437,86 @@ private:
         ap.eps = g_.rms_eps;
         ap.log_floor = g_.log_floor;
         ap.log_alpha = g_.log_alpha;
-        ap.k_ring = c.k_ring;
-        ap.v_ring = c.v_ring;
-        ap.k_cache = c.ring ? b().k_stage : c.k;
-        ap.v_cache = c.ring ? b().v_stage : c.v;
-        ap.cap = c.ring ? kChunk : c.cap;
+        ap.k_ring = vc.k_ring;
+        ap.v_ring = vc.v_ring;
+        ap.k_cache = vc.ring ? B.k_stage : vc.k;
+        ap.v_cache = vc.ring ? B.v_stage : vc.v;
+        ap.cap = vc.ring ? kChunk : vc.cap;
         ap.fp8 = fp8;
-        ap.q = b().q;
-        ap.r = b().r;
-        ap.sink = b().sink;
-        attn_prepare(ap, rows, strm());
+        ap.q = B.q;
+        ap.r = B.r;
+        ap.sink = B.sink;
+        attn_prepare(ap, rows, strm(c));
         AttnPromptArgs aa;
-        aa.q = b().q;
-        aa.r = b().r;
-        aa.sink = b().sink;
+        aa.q = B.q;
+        aa.r = B.r;
+        aa.sink = B.sink;
         aa.rel_table = w.rel_table;
         aa.pos0 = pos0;
-        aa.k_cache = c.k;
-        aa.v_cache = c.v;
-        aa.cap = c.cap;
+        aa.k_cache = vc.k;
+        aa.v_cache = vc.v;
+        aa.cap = vc.cap;
         aa.k_chunk = ap.k_cache;
         aa.v_chunk = ap.v_cache;
         aa.chunk_cap = ap.cap;
         aa.fp8 = fp8;
-        aa.window = c.ring ? g_.window : 0;
+        aa.window = vc.ring ? g_.window : 0;
         aa.scale = 1.0f / std::sqrt((float) kHeadDim);
-        attention_prompt(aa, rows, b().attn, strm());
-        if (c.ring) stage_to_ring(b().k_stage, b().v_stage, kChunk, c.k, c.v, c.cap, pos0, rows, g_.window, fp8 ? 1 : 2, strm());
-        attn_gate_q8_1_prompt(b().attn, b().yq, one ? kProj : kProjQ, rows, b().xqd, strm());
-        product(w.out, E, kOut, rows, b().o);
+        attention_prompt(aa, rows, B.attn, strm(c));
+        if (vc.ring) stage_to_ring(B.k_stage, B.v_stage, kChunk, vc.k, vc.v, vc.cap, pos0, rows, g_.window, fp8 ? 1 : 2, strm(c));
+        attn_gate_q8_1_prompt(B.attn, B.yq, one ? kProj : kProjQ, rows, B.xqd, strm(c));
+        product(c, w.out, E, kOut, rows, B.o);
         // the attention's convolution and the residual: a block's first layer starts a new sum
         const bool boundary = g_.boundary(l);
-        post_conv(b().o, b().pos, w.attn_post_conv, c.a_ring, boundary ? nullptr : hid, rows, b().resid, strm());
+        post_conv(B.o, B.pos, w.attn_post_conv, vc.a_ring, boundary ? nullptr : hid, rows, B.resid, strm(c));
         // the MLP's input
         MixStates st;
         for (int i = 0; i < s.n_blocks; ++i) st.s[st.n++] = blocks[i];
         if (boundary) st.s[st.n++] = hid;
-        st.s[st.n++] = b().resid;
-        attnres_mix(st, w.ffn_query, 1, rows, 1e-6f, b().mix, (int64_t) RE, strm());
-        if (s.msgs) controller(w, 3, b().mix, b().msg + 3 * RE, rows, b().mix);
-        bk::rms_norm_rows(b().mix, w.ffn_norm, rows, E, g_.rms_eps, b().nrm, strm());
-        experts(w, l, rows);
-        post_conv(b().moe, b().pos, w.ffn_post_conv, c.m_ring, b().resid, rows, out, strm());
+        st.s[st.n++] = B.resid;
+        attnres_mix(st, w.ffn_query, 1, rows, 1e-6f, B.mix, (int64_t) RE, strm(c));
+        if (s.msgs) controller(c, w, 3, B.mix, B.msg + 3 * RE, rows, B.mix);
+        bk::rms_norm_rows(B.mix, w.ffn_norm, rows, E, g_.rms_eps, B.nrm, strm(c));
+        experts(c, w, l, rows, parity);
+    }
+
+    // Card c's end of step s's visit: the two cards' experts' sums added (tensor parallelism), the MLP's convolution and
+    // the residual into the visit's output.
+    void finish(int c, const Step& s, int rows, int parity) {
+        const Visit& v = g_.visits[(size_t) s.visit];
+        const LayerWeights& w = m_.layer(v.layer, c);
+        const VisitCache& vc = (*lane_[c].vc)[(size_t) v.slot];
+        Bufs& B = b(c);
+        if (nc_ > 1) {
+            cudaStreamWaitEvent(strm(c), lane_[1 - c].sent, 0);
+            bk::add_inplace(B.moe, B.recv[parity], (int64_t) rows * g_.n_embd, strm(c));
+        }
+        post_conv(B.moe, B.pos, w.ffn_post_conv, vc.m_ring, B.resid, rows, buf(c, s.out), strm(c));
     }
 
     // The routed experts of the chunk's normed MLP inputs (nrm) into moe: the router's scores as one product, the pairs
     // sorted by expert, the gate/up and down products per expert in two MMQ launches over the experts in place.
-    void experts(const LayerWeights& w, int l, int rows) {
-        const int E = g_.n_embd, F = g_.n_ff_exp, k = g_.n_used, pairs = rows * k;
-        bk::f32_rows_dot(b().nrm, w.router, b().rlog, rows, g_.n_expert, E, strm());
+    void experts(int c, const LayerWeights& w, int l, int rows, int parity) {
+        const int E = g_.n_embd, F = (int) w.n_ff, k = g_.n_used, pairs = rows * k;
+        Bufs& B = b(c);
+        const cudaStream_t st = strm(c);
+        bk::f32_rows_dot(B.nrm, w.router, B.rlog, rows, g_.n_expert, E, st);
         bk::RouterArgs ra;
         ra.n_expert = g_.n_expert;
         ra.n_embd = E;
         ra.k = k;
         ra.weight_scale = g_.expert_scale;
         ra.gate = bk::RouterGate::Sigmoid;
-        bk::router_select(b().rlog, w.router_bias, rows, ra, b().ids, b().rw, strm());
+        bk::router_select(B.rlog, w.router_bias, rows, ra, B.ids, B.rw, st);
         if (w.slot_map) {   // a layer with experts in RAM (spill.hpp): its pairs by slot, its RAM experts copied into the staging
-            remap_ids(b().ids, pairs, w.slot_map, strm());
+            remap_ids(B.ids, pairs, w.slot_map, st);
             const uint64_t kept = (uint64_t) (g_.n_expert - w.n_spill) * w.expert_stride;
-            if (!m_.stage_from_card(l, strm()))   // the elastic spill's card copies when the layer has them all
-                cudaMemcpyAsync(w.experts + kept, w.spill_host, (size_t) w.n_spill * w.expert_stride, cudaMemcpyHostToDevice, strm());
-            cudaMemsetAsync(w.experts + (uint64_t) g_.n_expert * w.expert_stride, 0, kSlotGuard, strm());   // spill.hpp
+            if (!m_.stage_from_card(l, st))   // the elastic spill's card copies when the layer has them all
+                cudaMemcpyAsync(w.experts + kept, w.spill_host, (size_t) w.n_spill * w.expert_stride, cudaMemcpyHostToDevice, st);
+            cudaMemsetAsync(w.experts + (uint64_t) g_.n_expert * w.expert_stride, 0, kSlotGuard, st);   // spill.hpp
         }
-        moe_sort(b().ids, rows, k, g_.n_expert, b().sort_scr, b().bounds, b().tok, b().dst, b().exp, strm());
-        mmq::quantize(b().nrm, b().tok, b().xq, w.gu_type, E, E, pairs, strm());
+        moe_sort(B.ids, rows, k, g_.n_expert, B.sort_scr, B.bounds, B.tok, B.dst, B.exp, st);
+        mmq::quantize(B.nrm, B.tok, B.xq, w.gu_type, E, E, pairs, st);
         mmq::Product p;
         p.w = w.experts;
         p.type = w.gu_type;
@@ -438,60 +524,65 @@ private:
         p.w_cols = E;
         p.expert_bytes = w.expert_stride;
         p.n = g_.n_expert;
-        p.xq = b().xq;
-        p.bounds = b().bounds;
-        p.ids = b().ident;
+        p.xq = B.xq;
+        p.bounds = B.bounds;
+        p.ids = B.ident;
         p.total_rows = pairs;
         p.max_rows = rows;
         p.opt_rows = (pairs + g_.n_expert - 1) / g_.n_expert;
-        p.dst = b().gu;
+        p.dst = B.gu;
         p.ld_dst = 2 * F;
-        lane().mmq.run(p, strm());
+        lane_[c].mmq->run(p, st);
         // an NVFP4 expert's {s_gate, s_up, s_down, 0} tail is read in its blob
         const bk::NativeExpertLayout L = bk::native_expert_layout(w.gu_type, w.d_type, E, F);
         mmq::SwigluForm form;
         form.gate_softcap = g_.gate_softcap;
         form.up_softcap = g_.up_softcap;
-        form.row_expert = b().exp;
+        form.row_expert = B.exp;
         form.tail_stride = w.expert_stride;
         const bool nvfp4 = w.gu_type == kTypeNvfp4;
-        mmq::swiglu(b().gu, b().h, pairs, F, false, strm(), nvfp4 ? (const float*) (w.experts + L.bytes - 16) : nullptr, nullptr, 0,
-                    form);
-        mmq::quantize(b().h, nullptr, b().xq, w.d_type, F, F, pairs, strm());
+        mmq::swiglu(B.gu, B.h, pairs, F, false, st, nvfp4 ? (const float*) (w.experts + L.bytes - 16) : nullptr, nullptr, 0, form);
+        mmq::quantize(B.h, nullptr, B.xq, w.d_type, F, F, pairs, st);
         mmq::Product d = p;
         d.w = w.experts + L.down_off;
         d.type = w.d_type;
         d.w_rows = E;
         d.w_cols = F;
-        d.ids = b().dst;
-        d.dst = b().gu;
+        d.ids = B.dst;
+        d.dst = B.gu;
         d.ld_dst = E;
-        lane().mmq.run(d, strm());
-        moe_combine(b().gu, b().rw, rows, k, b().moe, strm());
+        lane_[c].mmq->run(d, st);
+        moe_combine(B.gu, B.rw, rows, k, B.moe, st, nc_ > 1 ? b(1 - c).recv[parity] : nullptr);
+        if (nc_ > 1) cudaEventRecord(lane_[c].sent, st);
     }
 
     InklingModel& m_;
     const Geometry& g_;
-    const std::vector<VisitCache>* vc_ = nullptr;   // the reading session's caches, drafter and stream
-    DsparkHook* ds_ = nullptr;
+    const int nc_;                // the cards (tensor parallelism: 2)
+    DsparkHook* ds_ = nullptr;    // the reading session's drafter
     Walk walk_;
-    Lane lane_;                   // the card's buffers, products and stream
+    Lane lane_[2];                // each card's buffers, products and stream
     cudaEvent_t done_[2] = {};
+    cudaEvent_t fork_ = nullptr;  // the second card's stream after the first's
+    uint64_t exchanges_ = 0;      // the receive buffers alternate: a card writes one while the other may still read the other
 };
 
 }  // namespace
 
-std::unique_ptr<PromptRunner> make_prompt(InklingModel& m, void* stream, std::string& err) {
-    auto p = std::make_unique<Prompt>(m, (cudaStream_t) stream);
+std::unique_ptr<PromptRunner> make_prompt(InklingModel& m, void* const streams[2], std::string& err) {
+    auto p = std::make_unique<Prompt>(m, streams);
     if (!p->init(err)) return nullptr;
     return p;
 }
 
 uint64_t prompt_bytes(const Geometry& g) {
+    // the whole experts' width bounds a card's half with its receive buffers (P F / 2 == 2 R E at n_used 8)
     Carve c;
     Bufs b;
-    carve(c, b, g);
-    return (uint64_t) c.at + kMmqSpare;
+    carve(c, b, g, g.n_ff_exp, false);
+    Carve h;
+    carve(h, b, g, g.n_ff_exp / 2, true);
+    return (uint64_t) std::max(c.at, h.at) + kMmqSpare;
 }
 
 }  // namespace basalt::models::inkling2

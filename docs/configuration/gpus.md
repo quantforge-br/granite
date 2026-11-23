@@ -3,6 +3,8 @@
 Flash-Next uses every mechanism on this page. DeepSeek takes up to four second cards as expert tiers and nothing else, each
 holding the experts of its own block of layers ([DeepSeek memory](../models/deepseek41.md#memory)).
 Qwen3.8-27B uses a second card for long prompts, or for its later layers when it does not fit the main card.
+Inkling 2 Mini runs two alike cards with peer access as one tensor-parallel pair, half of every expert on each
+([Inkling 2 Mini](../models/inkling2.md#two-cards)).
 
 One setting picks the cards: `gpu`. It means the same in the server (`"gpu"` in the config's `server` section, or
 `--gpu`), in `basalt` itself, in `basalt-bench` and in `basalt-probe`.

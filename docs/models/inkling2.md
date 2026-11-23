@@ -37,7 +37,7 @@ the text model.
 ## Memory
 
 - **One card.** The main card holds the weights: 1.10 GiB dense, 14.71 GiB experts, the drafter 0.48 GiB. The token
-  embedding (0.86 GiB) stays in page-locked RAM and the card gathers its rows. Two cards: [one idles](#two-cards).
+  embedding (0.86 GiB) stays in page-locked RAM and the card gathers its rows. Two cards: [half of every expert on each](#two-cards).
 - **Context:** `--max-context` from 1,024 to 1,048,576, default 8,192.
 - **Per position:** the 8 full-attention visits keep every position, 32 KiB with `--kv fp16`, 16 KiB with `--kv fp8`, plus the
   drafter's full layer; the window layers' rings do not grow.
@@ -60,7 +60,21 @@ the text model.
 
 ## Two cards
 
-A second card (`--gpu 0,1`) idles: the first runs alone (`CUDA1 idles: CUDA0 runs alone`).
+Two alike cards (the same SM count and shared memory per block) with peer access both ways (`--gpu 0,1`) run every token
+together (`tensor parallelism on CUDA0 and CUDA1`):
+
+- **Weights:** each card holds every dense weight and half of every routed expert: gate and up rows 0 to 575 on the first
+  card, 576 to 1,151 on the second, with the matching half of each down row (about 7.36 GiB of experts a card).
+- **A layer:** both cards run the attention, the router and the mixes on the same rows, then their halves of the routed
+  experts. Each card writes its experts' sum into the other's memory, and both add the two sums, the first card's first, so
+  both cards hold the same bits. Prompt chunks split the same way.
+- **First card only:** the head, the sampler, the drafter and the image encoder. The first card keeps the encoder's region
+  (1.37 GiB) free: there is no expert memory to lend.
+- **Context:** it must fit beside the weights on both cards: no experts in RAM, no `--expert-cache`. On two 24 GiB cards
+  with images on, 262,144 positions fit; 524,288 do not, even with `--kv fp8` (the start says how much is missing).
+
+A pair that is not alike, has no peer access, or asks for `--expert-cache` runs on the first card alone
+(`CUDA1 idles (...): CUDA0 runs alone`).
 
 ## Long prompts
 
@@ -120,7 +134,7 @@ checkerboard (8 x 8 squares of 204 and 153), as the model saw in training; the m
 
 ## Limits
 
-- One card: a second idles (no expert tier, no third card). Experts in RAM run on the CPU,
+- At most two cards, as one tensor-parallel pair (no expert tier, no third card). Experts in RAM run on the CPU,
   so a spilled card decodes slower than a full one: an RTX 5060 Ti alone at 180 W with a Ryzen 9 9950X and about 1,100 experts in RAM decodes conversation at 59 tok/s,
   struct at 118 and prose at 53, about 2.6 times as fast as reading them over the bus; prompts read as before (2,430 tok/s
   at 16K).

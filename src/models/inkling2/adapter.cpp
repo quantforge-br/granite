@@ -45,7 +45,7 @@ public:
         return f;
     }
     PreTokenizer pretokenizer() const override { return {"inkling2", pretok_inkling2, kIgnoreMerges}; }
-    int max_expert_cards() const override { return 1; }   // a second card is taken and idles (model.cpp)
+    int max_expert_cards() const override { return 1; }   // a second card: tensor parallelism (model.cpp plan_cards)
     const char* model_name() const override { return "Inkling-2-Mini"; }
     const char* community_quant() const override { return "NVFP4"; }   // NVFP4 experts, Q8_0 dense
 

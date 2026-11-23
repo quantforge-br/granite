@@ -1,6 +1,7 @@
 // src/models/inkling2/model.hpp - a loaded Inkling 2 pack: every weight on the main card (the projections of a layer fused
 // into one Q8_0 matrix, the experts of a layer in one run of blobs at a stride of whole blocks in a reserved address range,
-// the head rounded to Q8_0 as it loads), the token embedding in mapped host memory.
+// the head rounded to Q8_0 as it loads), the token embedding in mapped host memory. With two cards (tensor parallelism)
+// each holds every dense weight and its half of every expert (cards(), layer(l, card)).
 #pragma once
 
 #include "basalt/model/adapter.hpp"
@@ -36,7 +37,8 @@ struct LayerWeights {
     const float* router_bias = nullptr;
     uint8_t* experts = nullptr;              ///< n_expert blobs, expert e's at experts + e * expert_stride
     int gu_type = 0, d_type = 0;
-    size_t blob_bytes = 0;
+    int64_t n_ff = 0;                        ///< the blobs' intermediate width: the experts', or a card's half (cards())
+    size_t blob_bytes = 0;                   ///< a blob's bytes at that width (native_expert_layout)
     size_t expert_stride = 0;                ///< blob_bytes rounded up to whole blocks of its type and 16 bytes
     unsigned long long* blob_table = nullptr;   ///< device [n_expert]: each expert's blob address on the card (its copy's), 0: in RAM
     int n_spill = 0;                         ///< experts in RAM (spill.hpp): the layer's last slots
@@ -59,15 +61,23 @@ public:
 
     const Pack& pack() const { return pack_; }
     const Geometry& geo() const { return pack_.geo; }
-    const LayerWeights& layer(int l) const { return layers_[(size_t) l]; }
+    /// Layer l's weights on card `card`.
+    const LayerWeights& layer(int l, int card = 0) const { return layers_[card][(size_t) l]; }
     const uint8_t* head() const { return head_; }              ///< Q8_0 [n_vocab][n_embd]
     const uint16_t* embedding() const { return embd_dev_; }    ///< BF16 [n_vocab][n_embd], mapped host memory
-    const float* embed_norm() const { return embed_norm_; }
+    const float* embed_norm(int card = 0) const { return embed_norm_[card]; }
     const float* output_norm() const { return output_norm_; }
     const float* output_query() const { return output_query_; }
-    /// [core layers][kStreams][n_embd]: every core layer's message queries, layer loop_start first
-    const float* msg_queries() const { return msg_queries_; }
+    /// [core layers][kStreams][n_embd]: every core layer's message queries, layer loop_start first, on card `card`
+    const float* msg_queries(int card = 0) const { return msg_queries_[card]; }
     int device() const { return device_; }
+    /// Tensor parallelism (docs/models/inkling2.md): with two cards each holds every layer's attention, glue and router
+    /// weights and its half of every expert, card c the gate and up rows [c F, c F + F) and the down matrix's columns
+    /// there (F = layer(l, c).n_ff, half the experts' width). Both run every visit on the same rows, and each adds the
+    /// two cards' sums of their halves in card order, so both hold the same bits. The head, the drafter and the image
+    /// encoder are the first card's. One card: card 0, whole experts.
+    int cards() const { return second_ >= 0 ? 2 : 1; }
+    int card_device(int card) const { return card == 0 ? device_ : second_; }
     int sessions() const { return flags_.sessions > 0 ? flags_.sessions : 1; }
     const model::LoadRequest& flags() const { return flags_; }
     bool cache_fp8() const { return fp8_; }
@@ -126,20 +136,36 @@ private:
                  float* dst = nullptr);
     uint16_t* small_bf16(const std::string& name, uint64_t values, core::LoadPlan& reads, int file, std::string& err,
                          uint16_t* dst = nullptr);
+    /// Card `card`'s dense weights of every layer and the experts' layout there (its device, its plan's file `file`); their
+    /// bytes into `dense` on the first.
+    model::Result plan_layers(int card, core::LoadPlan& to, int file, uint64_t& dense);
     /// Every layer's experts, the ones `spill_` sends to RAM there; their bytes on the card into `experts`.
     model::Result load_experts(core::LoadPlan& reads, int file, uint64_t& experts);
+    /// Tensor parallelism: each card's half of every layer's experts (the down matrices staged in RAM, then
+    /// place_down_halves); their bytes on both cards into `experts`.
+    model::Result load_expert_halves(core::LoadPlan& reads, int file, uint64_t& experts);
+    /// Each card's half of the down matrices and their tails, from the whole ones the reads staged in RAM (a step of the
+    /// plan, once the reads have landed).
+    bool place_down_halves(std::string& err);
+    /// Two cards: whether they run tensor parallelism (sets second_), else the first runs alone (logged).
+    void plan_cards(const model::LoadRequest& req);
 
     Pack pack_;
     model::ModelDesc desc_;
-    std::vector<LayerWeights> layers_;
+    std::vector<LayerWeights> layers_[2];   ///< each card's (the second: tensor parallelism)
     std::vector<void*> dev_;                 ///< every device allocation, freed with the model
     uint8_t* head_ = nullptr;
     uint16_t* embd_host_ = nullptr;          ///< pinned, mapped
     uint16_t* embd_dev_ = nullptr;           ///< its device address
-    const float* embed_norm_ = nullptr;
+    const float* embed_norm_[2] = {};
     const float* output_norm_ = nullptr;
     const float* output_query_ = nullptr;
-    float* msg_queries_ = nullptr;
+    float* msg_queries_[2] = {};
+    int second_ = -1;                        ///< tensor parallelism's second card (-1: one card)
+    // tensor parallelism: every expert's whole down rows and tail as the reads land them, [layer][expert] from each
+    // layer's down_stage_at_, freed once both cards have their halves (place_down_halves)
+    std::unique_ptr<uint8_t[]> down_stage_;
+    std::vector<uint64_t> down_stage_at_;
     model::LoadRequest flags_;
     int device_ = 0, fd_ = -1;
     int ldev_ = 0;                           ///< the card the weights being planned load to

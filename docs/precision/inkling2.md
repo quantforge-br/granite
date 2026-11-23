@@ -47,6 +47,8 @@ BF16 instead of Q8_0 scored 0.00218 for 1.2 GB more reads a token; it was not ta
 | Short-convolution state | fp32 | fp32 |
 
 A decode row's arithmetic does not depend on how many rows share its window. Prompt chunks round differently from decoded rows.
+On two cards ([tensor parallelism](../models/inkling2.md#two-cards)) each card sums its half of every routed expert's
+intermediate (fp32), and the two sums are added, the first card's first; everything else rounds as on one card.
 
 The prompt path's NVFP4 experts, measured over 20 chunks: one FP4 term per activation (the release's W4A4) 0.00407 KLD, two
 terms 0.00264; the same chunks through MMQ (q8_1 activations) 0.00252. Two terms were taken: the prompt reads about 1.5 times
@@ -71,7 +73,8 @@ PPL 7.0714. transformers' implementation on the CPU agrees with it (chunks 0 and
 | 20 chunks (the quick gate) | 0.00264 | 97.80% | 7.6642 (base 7.6534) |
 | 90 chunks, RTX 5060 Ti alone, 1,047 experts in RAM on the CPU | 0.00298 | 97.70% | |
 | the same 90 chunks, the whole model on the card | 0.00304 | 97.76% | |
-| 100 chunks, layer split: 0 to 11 on the RTX 5090, 12 to 23 on an RTX 5060 Ti | 0.00304 | 97.70% | 7.0718 (base 7.0633) |
+| 100 chunks, one RTX 3090, against a base made the same way on that machine | 0.00289 | 97.76% | 7.0758 (base 7.0655) |
+| the same, tensor parallel on two RTX 3090s | 0.00290 | 97.74% | 7.0721 (base 7.0655) |
 
 RTX 5090 at 400 W, the whole model on the card, unless the row says otherwise. On the 5060 Ti the CPU computes the experts in
 RAM (a Ryzen 9 9950X, AVX-512).
