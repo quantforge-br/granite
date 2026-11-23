@@ -92,11 +92,7 @@ __device__ __forceinline__ unsigned s8x2_bf16(unsigned x) {
     asm("cvt.rn.bf16x2.f32 %0, %1, %2;" : "=r"(h) : "f"(f1), "f"(f0));
     return h;
 }
-__device__ __forceinline__ unsigned bf16x2_mul(unsigned a, unsigned b) {
-    unsigned d;
-    asm("mul.rn.bf16x2 %0, %1, %2;" : "=r"(d) : "r"(a), "r"(b));
-    return d;
-}
+__device__ __forceinline__ unsigned bf16x2_mul(unsigned a, unsigned b) { return bf16x2_mul_rn(a, b); }
 __device__ __forceinline__ uint4 ld_nc16(const void* p) {
     uint4 v;
     asm volatile("ld.global.nc.v4.u32 {%0, %1, %2, %3}, [%4];" : "=r"(v.x), "=r"(v.y), "=r"(v.z), "=r"(v.w) : "l"(p));
