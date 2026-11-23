@@ -284,12 +284,23 @@ __global__ void __launch_bounds__(128) f32_rows_dot_kernel(const float* __restri
 // bf16_gdn_gating_proj_gemm_mma fuses the same gating into the a/b projection's epilogue over a split K.
 constexpr int GP_AHEAD = 1;   // K / GP_S must be a multiple of 32 GP_AHEAD
 constexpr int GP_HV = 48, GP_S = 8, GP_TT = 64, GP_LD = 2 * GP_HV + 8, GP_NF = 2 * GP_HV / 8;
-// In: FP32 x (two BF16 terms) or BF16 x (exact: one term)
+// In: FP32 x (two BF16 terms) or BF16 x (exact: one term).  Thread-block clusters need sm_90: on an older card the
+// kernel traps (the Qwen GDN models that launch it do not run there).
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 900
+#define GP_NO_CLUSTERS 1
+#define GP_CLUSTER_DIMS
+#else
+#define GP_NO_CLUSTERS 0
+#define GP_CLUSTER_DIMS __cluster_dims__(1, 1, GP_S)
+#endif
 template <class In>
-__global__ void __cluster_dims__(1, 1, GP_S) __launch_bounds__(128)
+__global__ void GP_CLUSTER_DIMS __launch_bounds__(128)
     gdn_gating_proj_kernel(const In* __restrict__ x, const uint16_t* __restrict__ w, const float* __restrict__ dt,
                            const float* __restrict__ ssm_a, float* __restrict__ gate, float* __restrict__ beta, int64_t T,
                            int64_t K) {
+#if GP_NO_CLUSTERS
+    __trap();
+#else
     namespace cg = cooperative_groups;
     __shared__ __align__(16) float part[GP_TT * GP_LD];
     const int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31, g = lane >> 2, c = lane & 3;
@@ -390,6 +401,7 @@ __global__ void __cluster_dims__(1, 1, GP_S) __launch_bounds__(128)
         beta[t * GP_HV + h] = 1.0f / (1.0f + __expf(-b));
     }
     cluster.sync();   // no block leaves while another still reads its partial sums
+#endif
 }
 
 // Block (row t, head j): j < n_head a query head, else a key/value head; one thread per head dim.

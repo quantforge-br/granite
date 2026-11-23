@@ -70,6 +70,8 @@ int main() {
     int n_dev = 0;
     if (cudaGetDeviceCount(&n_dev) != cudaSuccess || n_dev == 0) return 77;
     cudaStreamCreate(&S);
+    int cc_major = 0;
+    cudaDeviceGetAttribute(&cc_major, cudaDevAttrComputeCapabilityMajor, 0);
     const int H = 5120, FF = 17408, T = 8;
     {   // rms_norm_rows into a strided output
         auto x = randn((size_t) T * H), w = randn(H, 0.2f);
@@ -125,7 +127,8 @@ int main() {
             }
         report("bf16_rows_dot", y, want, 3e-4);   // tf32 tensor cores: two-term x, but the mma accumulates below fp32
     }
-    {   // gdn_gating_proj against bf16_rows_dot + gdn_gates and a double reference, a 2,048-row chunk and a ragged one
+    if (cc_major < 9) std::printf("gdn_gating_proj: skipped (thread-block clusters need compute capability 9.0)\n");
+    else {   // gdn_gating_proj against bf16_rows_dot + gdn_gates and a double reference, a 2,048-row chunk and a ragged one
         const int HV = 48, N = 2 * HV;
         std::vector<uint16_t> w((size_t) N * H);
         for (auto& v : w) v = bf(0.02f * nd(rng));
