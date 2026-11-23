@@ -233,9 +233,7 @@ void controllers(const CtrlArgs& a, int streams, int rows, void* stream);
 void decode_prepare(const AttnPrep& a, int rows, void* stream);
 
 /// A decode window's attention from its projections: decode_prepare(pa) then attention_decode(a) into a.q8 (which must be
-/// set; a's q, r and sink are pa's outputs), the same bits. A window of up to 3 rows whose keys split in at most 8 slices
-/// (max_keys up to 1024) runs as one kernel: a cluster of blocks a row and key/value head prepares, attends and merges. A
-/// batch window (pa.seg and a.seg set alike) keeps the two calls.
+/// set; a's q, r and sink are pa's outputs).
 void attention_window(const AttnPrep& pa, const AttnArgs& a, int rows, int64_t max_keys, void* scratch, void* stream);
 
 /// After the attention's output projection: its convolution over `o` (the ring for the positions before the window) plus
