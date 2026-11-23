@@ -72,8 +72,9 @@ class DsparkWeights {
 public:
     ~DsparkWeights();
     /// After the start's reads have landed: the recurrence's projection split, the head folds made from the target's
-    /// Q8_0 head (`head`, n_vocab rows), and the target's embedding (BF16 rows, device-readable) and embedding norm noted.
-    model::Result finish(const void* head, const uint16_t* embedding, const float* embed_norm, void* stream);
+    /// Q8_0 head (`head`, n_vocab rows), and the target's embedding (BF16 rows, or Q8_0 rows with `embed_q8`;
+    /// device-readable) and embedding norm noted.
+    model::Result finish(const void* head, const void* embedding, bool embed_q8, const float* embed_norm, void* stream);
     uint64_t bytes() const { return bytes_; }
     DsHead head_args() const;
 
@@ -92,7 +93,8 @@ public:
     float* fold_bp = nullptr;            ///< fold_b in the screen's row order
     void *head_sc = nullptr, *fold_sc = nullptr;   ///< the head's and the fold's 2-bit copies (the draft head's screen)
     const void* head = nullptr;          ///< the target's Q8_0 head [n_vocab][width]
-    const uint16_t* embedding = nullptr; ///< the target's BF16 embedding rows
+    const void* embedding = nullptr;     ///< the target's embedding rows: BF16, or Q8_0 (embed_q8)
+    bool embed_q8 = false;
     const float* embed_norm = nullptr;
 
 private:

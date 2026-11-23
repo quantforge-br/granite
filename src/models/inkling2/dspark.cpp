@@ -229,9 +229,10 @@ model::Result dspark_plan(const Pack& pack, core::LoadPlan& reads, int file, int
     return {};
 }
 
-model::Result DsparkWeights::finish(const void* head_q8, const uint16_t* emb, const float* en, void* stream) {
+model::Result DsparkWeights::finish(const void* head_q8, const void* emb, bool emb_q8, const float* en, void* stream) {
     head = head_q8;
     embedding = emb;
+    embed_q8 = emb_q8;
     embed_norm = en;
     if (finished_) return {};
     const cudaStream_t s = (cudaStream_t) stream;
@@ -526,8 +527,9 @@ void DsparkHook::stage(int k, int n, void* stream) {
     bk::PdlScope pdl(true);   // each kernel may start while the one before it finishes: a product stages its first weights
     const DsparkWeights& w = *w_;
     const DsparkGeometry& d = w.geo;
-    if (k == 0) dspark_block_inputs(w.embedding, meta_d_, w.embed_norm, d.rms_eps, w.mask, kDsBlock, x_, pos3b_, prev_, state_, fr_,
-                                    kFrRing, frc_, w.w1, w1_row_, stream);
+    if (k == 0)
+        dspark_block_inputs(w.embedding, w.embed_q8, meta_d_, w.embed_norm, d.rms_eps, w.mask, kDsBlock, x_, pos3b_, prev_, state_, fr_,
+                            kFrRing, frc_, w.w1, w1_row_, stream);
     namespace wg = bk::wgemm;
     const auto mat = [](const void* p, int64_t rows, const float* scale, float* y, int64_t ld_y) {
         return wg::Matrix{(const uint8_t*) p, rows, scale, y, ld_y};

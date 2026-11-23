@@ -76,6 +76,21 @@ double q8_value(const uint8_t* rows, int n, int64_t r, int i) {
     return (double) __half2float(hd) * (double) (int8_t) blk[2 + i % 32];
 }
 
+// Q8_0 rows with random codes and scales of `scale` (1 to 2 times)
+std::vector<uint8_t> q8_0_rows(int64_t rows, int n, float scale, uint32_t seed) {
+    std::vector<uint8_t> w((size_t) rows * (n / 32) * 34);
+    uint32_t s = seed;
+    for (size_t blk = 0; blk < w.size() / 34; ++blk) {
+        const __half hd = __float2half(scale * (1.f + (float) (blk % 13) / 13.f));
+        std::memcpy(&w[blk * 34], &hd, 2);
+        for (int i = 0; i < 32; ++i) {
+            s = s * 1664525u + 1013904223u;
+            w[blk * 34 + 2 + i] = (uint8_t) (s >> 24);
+        }
+    }
+    return w;
+}
+
 void report(const char* what, const std::vector<float>& got, const std::vector<double>& ref, double tol) {
     double max_abs = 0, max_ref = 0;
     for (size_t i = 0; i < got.size(); ++i) {
@@ -192,7 +207,8 @@ void test_block_inputs() {
     uint16_t* d_w1 = dev(w1);
     uint16_t* d_w1r = zeros<uint16_t>(kDsRank);
     auto run = [&] {
-        dspark_block_inputs(d_emb, d_meta, d_norm, 1e-6f, d_mask, kBlock, d_x, d_pos3, d_prev, d_state, d_fr, 16, d_frc, d_w1, d_w1r, nullptr);
+        dspark_block_inputs(d_emb, false, d_meta, d_norm, 1e-6f, d_mask, kBlock, d_x, d_pos3, d_prev, d_state, d_fr, 16, d_frc, d_w1, d_w1r,
+                            nullptr);
     };
     run();
     const auto x = host(d_x, (size_t) kBlock * E);
@@ -206,6 +222,25 @@ void test_block_inputs() {
         ref.push_back(from_bf16(embb[(size_t) anchor * E + c]) * inv * norm[c]);
     }
     report("block inputs (anchor row)", got, ref, 2e-6);
+    {   // a Q8_0 embedding (a GGUF's): the anchor's row as the target reads it, d * q
+        const auto embq = q8_0_rows(V, E, 4e-4f, 99u);
+        uint8_t* d_embq = dev(embq);
+        dspark_block_inputs(d_embq, true, d_meta, d_norm, 1e-6f, d_mask, kBlock, d_x, d_pos3, d_prev, d_state, d_fr, 16, d_frc, d_w1,
+                            d_w1r, nullptr);
+        const auto xq = host(d_x, E);
+        std::vector<float> gq;
+        std::vector<double> rq;
+        double sq = 0;
+        for (int c = 0; c < E; ++c) sq += q8_value(embq.data(), E, anchor, c) * q8_value(embq.data(), E, anchor, c);
+        const double iq = 1.0 / std::sqrt(sq / E + 1e-6);
+        for (int c = 0; c < E; ++c) {
+            gq.push_back(xq[c]);
+            rq.push_back(q8_value(embq.data(), E, anchor, c) * iq * norm[c]);
+        }
+        report("block inputs (anchor row, Q8_0 embedding)", gq, rq, 2e-6);
+        cudaFree(d_embq);
+        run();
+    }
     bool ok = std::memcmp(x.data() + E, mask.data(), E * 4) == 0 && std::memcmp(x.data() + 7 * E, mask.data(), E * 4) == 0;
     const auto pos3 = host(d_pos3, kBlock * 3);
     for (int t = 0; t < kBlock; ++t) ok = ok && pos3[t * 3] == pos0 + t && pos3[t * 3 + 2] == pos0 + t;
@@ -281,21 +316,6 @@ double q8_1_value(const uint8_t* x, int i) {
     std::memcpy(&hd, x + (i / 32) * 36, 2);
     return (double) __half2float(hd) * (double) (int8_t) x[(i / 32) * 36 + 4 + i % 32];
 }
-// Q8_0 rows with random codes and scales of `scale` (1 to 2 times)
-std::vector<uint8_t> q8_0_rows(int64_t rows, int n, float scale, uint32_t seed) {
-    std::vector<uint8_t> w((size_t) rows * (n / 32) * 34);
-    uint32_t s = seed;
-    for (size_t blk = 0; blk < w.size() / 34; ++blk) {
-        const __half hd = __float2half(scale * (1.f + (float) (blk % 13) / 13.f));
-        std::memcpy(&w[blk * 34], &hd, 2);
-        for (int i = 0; i < 32; ++i) {
-            s = s * 1664525u + 1013904223u;
-            w[blk * 34 + 2 + i] = (uint8_t) (s >> 24);
-        }
-    }
-    return w;
-}
-
 // The screened head over the real vocabulary: planted drafts (the activation leans toward a chosen row, so the best leads by a
 // few units, as a confident draft's does) against the exact head's first argmax (dspark_head_exact, itself checked against a
 // CPU reference), the pick's probability against the exact softmax, a tie, and unplanted (flat) drafts counted.

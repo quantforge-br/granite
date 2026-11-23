@@ -100,9 +100,16 @@ __global__ void __launch_bounds__(kThreads) mix_kernel(const float* __restrict__
 
 // ---- the block's inputs -------------------------------------------------------------------------------------------------
 
+// Value c of token `tok`'s embedding row: BF16 rows, or Q8_0 rows (emb_q8)
+__device__ __forceinline__ float embed_value(const void* __restrict__ emb, bool emb_q8, int32_t tok, int c) {
+    if (!emb_q8) return bf16f(static_cast<const uint16_t*>(emb)[(int64_t) tok * kWidth + c]);
+    const uint8_t* blk = static_cast<const uint8_t*>(emb) + (int64_t) tok * kQ8Row + (int64_t) (c / 32) * kQ8Block;
+    return __half2float(*reinterpret_cast<const __half*>(blk)) * (float) (int8_t) blk[2 + c % 32];
+}
+
 // Block row t: the anchor's normed embedding (row 0) or the mask row. Row 2's block also copies the Markov head's context
 // of position pos0 - 1 out of its ring.
-__device__ __forceinline__ void block_inputs_stage(int t, const uint16_t* __restrict__ emb, const int32_t* __restrict__ meta,
+__device__ __forceinline__ void block_inputs_stage(int t, const void* __restrict__ emb, bool emb_q8, const int32_t* __restrict__ meta,
                                                    const float* __restrict__ norm, float eps, const float* __restrict__ mask,
                                                    float* __restrict__ x, int32_t* __restrict__ pos3, int32_t* __restrict__ prev,
                                                    float* __restrict__ state, const float* __restrict__ fr, int fr_cap,
@@ -127,12 +134,11 @@ __device__ __forceinline__ void block_inputs_stage(int t, const uint16_t* __rest
         for (int i = 0; i < kPer; ++i) row[threadIdx.x + i * kThreads] = mask[threadIdx.x + i * kThreads];
         return;
     }
-    const uint16_t* e = emb + (int64_t) anchor * kWidth;
     float v[kPer];
     float ss = 0.f;
 #pragma unroll
     for (int i = 0; i < kPer; ++i) {
-        v[i] = bf16f(e[threadIdx.x + i * kThreads]);
+        v[i] = embed_value(emb, emb_q8, anchor, threadIdx.x + i * kThreads);
         ss += v[i] * v[i];
     }
     const float inv = rsqrtf(block_sum(ss, red) / (float) kWidth + eps);
@@ -143,15 +149,15 @@ __device__ __forceinline__ void block_inputs_stage(int t, const uint16_t* __rest
     }
 }
 
-__global__ void __launch_bounds__(kThreads) block_inputs_kernel(const uint16_t* __restrict__ emb, const int32_t* __restrict__ meta,
-                                                                const float* __restrict__ norm, float eps,
+__global__ void __launch_bounds__(kThreads) block_inputs_kernel(const void* __restrict__ emb, bool emb_q8,
+                                                                const int32_t* __restrict__ meta, const float* __restrict__ norm, float eps,
                                                                 const float* __restrict__ mask, float* __restrict__ x,
                                                                 int32_t* __restrict__ pos3, int32_t* __restrict__ prev,
                                                                 float* __restrict__ state, const float* __restrict__ fr, int fr_cap,
                                                                 float* __restrict__ fr_out, const uint16_t* __restrict__ w1,
                                                                 uint16_t* __restrict__ w1_row) {
     __shared__ float red[kThreads / 32];
-    block_inputs_stage((int) blockIdx.x, emb, meta, norm, eps, mask, x, pos3, prev, state, fr, fr_cap, fr_out, w1, w1_row, red);
+    block_inputs_stage((int) blockIdx.x, emb, emb_q8, meta, norm, eps, mask, x, pos3, prev, state, fr, fr_cap, fr_out, w1, w1_row, red);
 }
 
 // ---- the Markov head's recurrence ---------------------------------------------------------------------------------------
@@ -635,11 +641,11 @@ void dspark_mix(const float* tap, int64_t tap_stride, int rows, const DsMixArgs&
     check("mix");
 }
 
-void dspark_block_inputs(const uint16_t* embedding, const int32_t* meta, const float* embed_norm, float eps, const float* mask,
-                         int block, float* x, int32_t* pos3, int32_t* prev, float* state, const float* fr, int fr_cap, float* fr_out,
-                         const uint16_t* w1, uint16_t* w1_row, void* stream) {
+void dspark_block_inputs(const void* embedding, bool embed_q8, const int32_t* meta, const float* embed_norm, float eps,
+                         const float* mask, int block, float* x, int32_t* pos3, int32_t* prev, float* state, const float* fr, int fr_cap,
+                         float* fr_out, const uint16_t* w1, uint16_t* w1_row, void* stream) {
     if (block < 3) throw std::runtime_error("inkling2 dspark block inputs: a block of at least three rows");
-    block_inputs_kernel<<<(unsigned) block, kThreads, 0, (cudaStream_t) stream>>>(embedding, meta, embed_norm, eps, mask, x, pos3, prev,
+    block_inputs_kernel<<<(unsigned) block, kThreads, 0, (cudaStream_t) stream>>>(embedding, embed_q8, meta, embed_norm, eps, mask, x, pos3, prev,
                                                                                     state, fr, fr_cap, fr_out, w1, w1_row);
     check("block inputs");
 }

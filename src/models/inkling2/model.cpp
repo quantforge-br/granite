@@ -768,8 +768,7 @@ model::Result InklingModel::attach(const model::LoadRequest&, std::vector<std::u
         cudaSetDevice(device_);
     }
     if (dspark_) {   // DSPARK HOOK: the drafter's head folds, once the reads have landed
-        if (embd_type_ != kTypeBF16) return {model::Status::Error, "inkling2: the drafter reads a BF16 token embedding"};
-        if (model::Result r = dspark_->finish(head_[0], reinterpret_cast<const uint16_t*>(embd_dev_), embed_norm_[0], nullptr); !r.ok())
+        if (model::Result r = dspark_->finish(head_[0], embd_dev_, embd_type_ == kTypeQ8_0, embed_norm_[0], nullptr); !r.ok())
             return r;
     }
     for (auto& s : sessions)

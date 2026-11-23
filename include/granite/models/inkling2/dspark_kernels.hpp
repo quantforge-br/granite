@@ -33,12 +33,13 @@ void dspark_mix(const float* tap, int64_t tap_stride, int rows, const DsMixArgs&
                 const int32_t* pos, float* fr, int fr_cap, int32_t* pos3, void* stream);
 
 /// A block's input rows, its anchor and position read from the device (meta = {anchor, pos0}, so a captured block takes any):
-/// row 0 = rms(embedding row anchor) * embed_norm (BF16 rows, device-readable), rows 1..block-1 = `mask`; pos3[t] =
-/// {pos0 + t} x 3. The Markov head starts from them: *prev = anchor, state[0..kDsRank) = 0, fr_out = its context of position
-/// pos0 - 1, ring row (pos0 - 1) % fr_cap of fr, w1_row = the anchor's row of w1 (BF16 [vocab][kDsRank], device-readable).
-void dspark_block_inputs(const uint16_t* embedding, const int32_t* meta, const float* embed_norm, float eps, const float* mask,
-                         int block, float* x, int32_t* pos3, int32_t* prev, float* state, const float* fr, int fr_cap, float* fr_out,
-                         const uint16_t* w1, uint16_t* w1_row, void* stream);
+/// row 0 = rms(embedding row anchor) * embed_norm (BF16 rows, or Q8_0 rows with embed_q8; device-readable), rows
+/// 1..block-1 = `mask`; pos3[t] = {pos0 + t} x 3. The Markov head starts from them: *prev = anchor, state[0..kDsRank) = 0,
+/// fr_out = its context of position pos0 - 1, ring row (pos0 - 1) % fr_cap of fr, w1_row = the anchor's row of w1 (BF16
+/// [vocab][kDsRank], device-readable).
+void dspark_block_inputs(const void* embedding, bool embed_q8, const int32_t* meta, const float* embed_norm, float eps,
+                         const float* mask, int block, float* x, int32_t* pos3, int32_t* prev, float* state, const float* fr, int fr_cap,
+                         float* fr_out, const uint16_t* w1, uint16_t* w1_row, void* stream);
 
 /// One step of the Markov head's recurrence. raw = ctx_h + ctx_f + bias + w_sp [state_in ; w1_row] (w_sp BF16
 /// [kDsRnn][2 kDsRank], w1_row the previous token's row of w1, BF16 [kDsRank] on the device); gate = sigmoid(raw[0:r]); state_out = gate * state_in + (1 - gate) *
