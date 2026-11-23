@@ -955,7 +955,7 @@ endif()
 target_link_libraries(kernels_cpu PUBLIC ggml_quants)
 # MMQ (ggml-cuda) for the prompt path's experts: the kernel, one instance per format the packs use, and the
 # activation quantizer; mmq_host.cu holds its few host symbols
-set(_mmq_types q2_0 iq1_s iq1_m iq2_xxs iq2_xs iq2_s iq3_xxs iq3_s iq4_nl iq4_xs q8_0 q5_0 q5_1 q2_k q3_k q4_k q5_k q6_k nvfp4)
+set(_mmq_types q2_0 iq1_s iq1_m iq2_xxs iq2_xs iq2_s iq3_xxs iq3_s iq4_nl mxfp4 iq4_xs q8_0 q5_0 q5_1 q2_k q3_k q4_k q5_k q6_k nvfp4)
 # the Q2_0 pack's prompt experts on the engine's own int8 kernels (moe_fused.cu)
 add_library(mmq STATIC src/prefill/moe_mmq.cu
             src/prefill/mmq/mmq_host.cu src/prefill/mmq/quantize.cu)
@@ -988,6 +988,10 @@ if(BUILD_TESTING)
   target_link_libraries(prefill_mmq_nvfp4_test PRIVATE mmq ${_gpu_runtime_target})
   granite_gpu_test(NAME prefill_mmq_nvfp4_test COMMAND prefill_mmq_nvfp4_test --no-bench)
   set_tests_properties(prefill_mmq_nvfp4_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+  add_executable(prefill_mmq_mxfp4_test tests/cuda/prefill_mmq_mxfp4_test.cpp)
+  target_link_libraries(prefill_mmq_mxfp4_test PRIVATE mmq ${_gpu_runtime_target})
+  granite_gpu_test(NAME prefill_mmq_mxfp4_test COMMAND prefill_mmq_mxfp4_test)
+  set_tests_properties(prefill_mmq_mxfp4_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
 if(BUILD_TESTING)
   # NVFP4 block decode against the E2M1/UE4M3 spec (exhaustive) and ggml's row dequantizer; with an experts.bin,

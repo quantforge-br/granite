@@ -153,6 +153,7 @@ void with_type(ggml_type t, F&& f) {
         case GGML_TYPE_IQ3_XXS: f(std::integral_constant<ggml_type, GGML_TYPE_IQ3_XXS>{}); break;
         case GGML_TYPE_IQ3_S: f(std::integral_constant<ggml_type, GGML_TYPE_IQ3_S>{}); break;
         case GGML_TYPE_IQ4_NL: f(std::integral_constant<ggml_type, GGML_TYPE_IQ4_NL>{}); break;
+        case GGML_TYPE_MXFP4: f(std::integral_constant<ggml_type, GGML_TYPE_MXFP4>{}); break;
         case GGML_TYPE_IQ4_XS: f(std::integral_constant<ggml_type, GGML_TYPE_IQ4_XS>{}); break;
         case GGML_TYPE_Q8_0: f(std::integral_constant<ggml_type, GGML_TYPE_Q8_0>{}); break;
         case GGML_TYPE_Q5_1: f(std::integral_constant<ggml_type, GGML_TYPE_Q5_1>{}); break;
@@ -185,6 +186,7 @@ bool supported(int t) {
         case GGML_TYPE_Q2_K: case GGML_TYPE_Q3_K:   // the UD packs' 2- and 3-bit K-quant layers
         case GGML_TYPE_Q6_K:   // the UD-Q5_K_XL and UD-Q6_K_XL gate/up
         case GGML_TYPE_NVFP4:  // the products leave out the per-expert tail scales (see swiglu)
+        case GGML_TYPE_MXFP4:  // the GSQ GGUFs' down layers
             return true;
         default:
             return false;
