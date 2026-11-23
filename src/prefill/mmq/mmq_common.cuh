@@ -25,8 +25,9 @@
 #define GGML_COMMON_IMPL_CUDA
 #include "basalt/ggml/ggml_common.h"
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 890
-#error "the MMQ kernels are built for compute capability 8.9 (an Ada peer) and 12.0 only"
+// The kernels use int8 mma.sync, ldmatrix and cp.async: Ampere (8.0) and newer. granite builds them for 8.6.
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
+#error "the MMQ kernels need compute capability 8.0 or newer"
 #endif
 
 #define WARP_SIZE 32
