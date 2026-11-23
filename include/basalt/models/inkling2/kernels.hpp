@@ -170,8 +170,9 @@ void expert_read_ahead(const unsigned long long* blobs, const int32_t* n, uint64
 /// address, 0 when it is not on the card: skipped; a guess at a visit's experts), by 16-byte loads over every block: run on a side stream while the attention and the glue
 /// before the experts run. Reads only; `sink` (4 bytes) is written on a 2^-32 chance so the loads are kept.
 void expert_prefetch(const int32_t* ids, int n, const unsigned long long* blobs, uint64_t bytes, uint32_t* sink, void* stream);
-/// y[r] = sum_slot w[r][slot] * out[r * k + slot] in slot order (fp32).
-void moe_combine(const float* out, const float* w, int rows, int k, float* y, void* stream);
+/// y[r] = sum_slot w[r][slot] * out[r * k + slot] in slot order (fp32); `y_peer` set: the same rows into it too (the
+/// other card's receive buffer under tensor parallelism, a peer address).
+void moe_combine(const float* out, const float* w, int rows, int k, float* y, void* stream, float* y_peer = nullptr);
 
 // ---- a decode window's fused glue (kernels/glue.cu): at most kDecodeRows rows --------------------------------------------
 //
@@ -266,6 +267,9 @@ struct MoeFinish {
     const float* rows = nullptr;       ///< [rows][k][kWidth]
     const float* w = nullptr;          ///< [rows][k]
     int k = 0;
+    /// set (tensor parallelism): the experts' sum is part[0][r] + part[1][r], card 0's half experts' sum (moe_combine)
+    /// and card 1's, in that order on both cards; rows and w unread
+    const float* part[2] = {};
     const int32_t* pos = nullptr;
     const float* taps = nullptr;
     float* ring = nullptr;

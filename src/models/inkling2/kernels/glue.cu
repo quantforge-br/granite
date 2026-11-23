@@ -593,7 +593,10 @@ __global__ void __launch_bounds__(256) moe_finish_kernel(MoeFinish a) {
 #pragma unroll
         for (int j = 0; j < kConv; ++j) {
             float x;
-            if (r - j >= first) {
+            if (r - j >= first && a.part[0]) {   // two cards: card 0's half experts' sum, then card 1's
+                const size_t i = (size_t) (r - j) * kWidth + c;
+                x = a.part[0][i] + a.part[1][i];
+            } else if (r - j >= first) {
                 x = 0.f;
                 for (int s = 0; s < a.k; ++s) x = fmaf(a.w[(r - j) * a.k + s], a.rows[((size_t) (r - j) * a.k + s) * kWidth + c], x);
             } else {

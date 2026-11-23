@@ -1115,6 +1115,30 @@ void test_moe_finish() {
     moe_finish(t, R, nullptr);
     same_bits("  with a tap: the output", host(t.out, (size_t) R * E).data(), got.data(), (size_t) R * E * 4);
     same_bits("  with a tap: the tap", host(t.tap, (size_t) R * E).data(), got.data(), (size_t) R * E * 4);
+    {   // two cards: each half experts' sum (moe_combine, the peer copy too), then the finish of their sum in card order
+        const std::vector<float> rows1 = randn((size_t) R * K * E, 0.3f);
+        float *p0 = zeros<float>((size_t) R * E), *p0_peer = zeros<float>((size_t) R * E), *p1 = zeros<float>((size_t) R * E);
+        moe_combine(a.rows, a.w, R, K, p0, nullptr, p0_peer);
+        moe_combine(dev(rows1), a.w, R, K, p1, nullptr);
+        const std::vector<float> h0 = host(p0, (size_t) R * E), h1 = host(p1, (size_t) R * E);
+        same_bits("  the partial's peer copy", host(p0_peer, (size_t) R * E).data(), h0.data(), (size_t) R * E * 4);
+        MoeFinish tp = a;
+        tp.rows = nullptr;
+        tp.w = nullptr;
+        tp.part[0] = p0_peer;
+        tp.part[1] = p1;
+        tp.ring = dev(ring);
+        tp.out = zeros<float>((size_t) R * E);
+        moe_finish(tp, R, nullptr);
+        std::vector<float> sum((size_t) R * E);
+        for (size_t i = 0; i < sum.size(); ++i) sum[i] = h0[i] + h1[i];
+        float *ysum = dev(sum), *out3 = zeros<float>((size_t) R * E), *ring3 = dev(ring);
+        post_conv(ysum, a.pos, a.taps, ring3, a.resid, R, out3, nullptr);
+        same_bits("  two cards' parts = post_conv of their sum", host(tp.out, (size_t) R * E).data(), host(out3, (size_t) R * E).data(),
+                  (size_t) R * E * 4);
+        same_bits("  two cards' parts: the ring", host(tp.ring, (size_t) kConvRing * E).data(), host(ring3, (size_t) kConvRing * E).data(),
+                  (size_t) kConvRing * E * 4);
+    }
     MoeFinish one = a;
     one.rows = a.rows + (size_t) 3 * K * E; one.w = a.w + 3 * K; one.pos = a.pos + 3; one.resid = a.resid + 3 * E; one.out = zeros<float>(E);
     std::printf("  %.1f us a call (1 row)\n", time_us([&] { moe_finish(one, 1, nullptr); }));
