@@ -929,8 +929,8 @@ private:
             controllers(ca, 3, rows, k.stream);
         }
         // tensor parallelism: card c the query heads of key/value groups [g0, g0 + ng) (their q, r, gate and sink rows) and
-        // every group's keys and values, as both cards hold whole caches; the heads' outputs meet on both cards before the
-        // output projection, which each card runs whole on the same rows (both keep one card's bits)
+        // every group's keys and values, as both cards hold whole caches; each card's output projection reads only its
+        // heads' columns, and post_attn adds the two cards' sums
         const int ng = kKvHeads / m_.cards(), g0 = card * ng;
         // the projections: one product over every row of the fused matrix when the three inputs are one
         AttnPrep ap;
