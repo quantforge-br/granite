@@ -13,7 +13,7 @@
 #include <cmath>
 #include <cstring>
 
-#define BASALT_NVFP4_VNNI_INT8 1
-#define BASALT_NVFP4_EXPORT(name) name##_vnni
+#define GRANITE_NVFP4_VNNI_INT8 1
+#define GRANITE_NVFP4_EXPORT(name) name##_vnni
 #include "nvfp4_avx2_rows.inc"
 

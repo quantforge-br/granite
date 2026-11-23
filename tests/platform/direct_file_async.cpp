@@ -34,8 +34,8 @@ static void call_ok(bool ok, const std::string& error, const char* what) {
 /// the test needs. The build directory is where CMake points it, since a temporary directory is not always
 /// writable for a test run from a build tree.
 static std::string temp_path() {
-#if defined(BASALT_TEST_TMPDIR)
-    const std::string base = BASALT_TEST_TMPDIR;
+#if defined(GRANITE_TEST_TMPDIR)
+    const std::string base = GRANITE_TEST_TMPDIR;
 #elif defined(_WIN32)
     char dir[MAX_PATH];
     const DWORD n = GetTempPathA((DWORD) sizeof dir, dir);

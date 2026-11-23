@@ -1,7 +1,7 @@
 // src/program/serve/protocol.cpp - protocol operations for the persistent engine.
 #include "granite/protocol.hpp"
 #include "state.hpp"
-#include "basalt_git.h"
+#include "granite_git.h"
 #include "granite/platform/cpu.hpp"
 
 namespace granite::program::serve {
@@ -44,7 +44,7 @@ void disk_wait_threads(std::FILE* f) {
 void stall_report(std::FILE* f, uint64_t layers_during) {
     granite::core::Progress& p = granite::core::progress();
     std::fprintf(f, "granite serve: error: stall report (engine %s): stage \"%s\" for %lld s; %llu layers served since the "
-                    "last finished step (0 = stopped, more = slow)\n", BASALT_VERSION, stage_text().c_str(),
+                    "last finished step (0 = stopped, more = slow)\n", GRANITE_VERSION, stage_text().c_str(),
                  (long long) ((granite::core::progress_now_ms() - p.since_ms.load()) / 1000),
                  (unsigned long long) layers_during);
     for (int pass = 0; pass < 2; ++pass) {
@@ -318,7 +318,7 @@ int Runtime::announce() {
             }
             l3 += (l3.empty() ? "" : ";") + part;
         }
-        std::printf("INFO commit=%s%s%s%s\n", BASALT_BENCH_GIT, BASALT_BENCH_DIRTY ? "-dirty" : "",
+        std::printf("INFO commit=%s%s%s%s\n", GRANITE_BENCH_GIT, GRANITE_BENCH_DIRTY ? "-dirty" : "",
                     l3.empty() ? "" : " cpu_l3=", l3.c_str());
     }
     if (!o.lossy.empty()) {   // the flags that change the output, for a client that labels what it measures

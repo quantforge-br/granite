@@ -6,9 +6,9 @@
 #include <cstdint>
 
 #if defined(__CUDACC__)
-#define BASALT_SEGS_HD __host__ __device__
+#define GRANITE_SEGS_HD __host__ __device__
 #else
-#define BASALT_SEGS_HD
+#define GRANITE_SEGS_HD
 #endif
 
 namespace granite::kernels {
@@ -23,7 +23,7 @@ struct WindowSegs {
 };
 
 /// The segment row r is in (0 when n is 0).
-BASALT_SEGS_HD inline int seg_of(const WindowSegs& s, int r) {
+GRANITE_SEGS_HD inline int seg_of(const WindowSegs& s, int r) {
     int k = 0;
     while (k + 1 < s.n && r >= s.row0[k + 1]) ++k;
     return k;
@@ -31,8 +31,8 @@ BASALT_SEGS_HD inline int seg_of(const WindowSegs& s, int r) {
 
 /// The first row of row r's segment: the rows before it in the call that its convolutions may read start there (0 when n
 /// is 0).
-BASALT_SEGS_HD inline int seg_first(const WindowSegs& s, int r) { return s.n > 0 ? s.row0[seg_of(s, r)] : 0; }
+GRANITE_SEGS_HD inline int seg_first(const WindowSegs& s, int r) { return s.n > 0 ? s.row0[seg_of(s, r)] : 0; }
 
 }  // namespace granite::kernels
 
-#undef BASALT_SEGS_HD
+#undef GRANITE_SEGS_HD

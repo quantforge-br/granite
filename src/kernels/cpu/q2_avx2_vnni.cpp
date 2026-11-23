@@ -6,6 +6,6 @@
 
 #include <cstring>
 
-#define BASALT_Q2_VNNI 1
-#define BASALT_Q2_EXPORT(name) name##_vnni
+#define GRANITE_Q2_VNNI 1
+#define GRANITE_Q2_EXPORT(name) name##_vnni
 #include "q2_avx2_rows.inc"

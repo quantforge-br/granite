@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<!-- src/platform/basalt.exe.manifest - embedded in the programs this build produces.
+<!-- src/platform/granite.exe.manifest - embedded in the programs this build produces.
      activeCodePage UTF-8 makes the process's ANSI code page UTF-8, so argv and the CRT's narrow entry points read
      the same bytes the engine carries in a path (Windows 10 1903 / build 18362 and later; an earlier Windows
      ignores the element and keeps the machine's ANSI code page).

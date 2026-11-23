@@ -14,8 +14,8 @@
 
 #include "granite/kernels/cpu/expert_layout.hpp"
 
-#define BASALT_NVFP4_VNNI_INT8 0
-#define BASALT_NVFP4_EXPORT(name) name##_base
+#define GRANITE_NVFP4_VNNI_INT8 0
+#define GRANITE_NVFP4_EXPORT(name) name##_base
 #include "nvfp4_avx2_rows.inc"
 
 namespace granite::kernels::cpu {

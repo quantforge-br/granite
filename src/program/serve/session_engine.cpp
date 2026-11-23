@@ -128,7 +128,7 @@ public:
         const std::string slots = o.batch > 0 ? " batch_slots=" + std::to_string(o.batch) + " slot_cache=" +
                                                     std::to_string(o.prompt_cache > 0 ? 1 : 0) + " slot0_solo=1 solo_any_slot=1"
                                               : std::string();
-        std::printf("INFO logit_bias=%lld context=%lld spec=%d mtp_max=0 lookup=0%s engine=" BASALT_VERSION "\n",
+        std::printf("INFO logit_bias=%lld context=%lld spec=%d mtp_max=0 lookup=0%s engine=" GRANITE_VERSION "\n",
                     (long long) n_vocab, (long long) o.max_context, o.spec, slots.c_str());
     }
     bool windows_in_flight() override { return false; }

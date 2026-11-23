@@ -36,30 +36,30 @@
 
 #include <errno.h>
 
-#ifndef BASALT_VERSION
-#define BASALT_VERSION "unknown"
+#ifndef GRANITE_VERSION
+#define GRANITE_VERSION "unknown"
 #endif
-#ifndef BASALT_BENCH_ENGINE
-#define BASALT_BENCH_ENGINE ""
+#ifndef GRANITE_BENCH_ENGINE
+#define GRANITE_BENCH_ENGINE ""
 #endif
-#ifndef BASALT_BENCH_FIXTURES
-#define BASALT_BENCH_FIXTURES "data/bench"
+#ifndef GRANITE_BENCH_FIXTURES
+#define GRANITE_BENCH_FIXTURES "data/bench"
 #endif
-#if __has_include("basalt_git.h")
-#include "basalt_git.h"
+#if __has_include("granite_git.h")
+#include "granite_git.h"
 #include "granite/log.hpp"
 #endif
-#ifndef BASALT_BENCH_GIT
-#define BASALT_BENCH_GIT "unknown"
+#ifndef GRANITE_BENCH_GIT
+#define GRANITE_BENCH_GIT "unknown"
 #endif
-#ifndef BASALT_BENCH_DIRTY
-#define BASALT_BENCH_DIRTY 0
+#ifndef GRANITE_BENCH_DIRTY
+#define GRANITE_BENCH_DIRTY 0
 #endif
-#ifndef BASALT_BENCH_BUILD_TYPE
-#define BASALT_BENCH_BUILD_TYPE "unknown"
+#ifndef GRANITE_BENCH_BUILD_TYPE
+#define GRANITE_BENCH_BUILD_TYPE "unknown"
 #endif
-#ifndef BASALT_BENCH_CUDA
-#define BASALT_BENCH_CUDA "unknown"
+#ifndef GRANITE_BENCH_CUDA
+#define GRANITE_BENCH_CUDA "unknown"
 #endif
 
 namespace fs = std::filesystem;
@@ -71,8 +71,8 @@ namespace {
 // ---------------------------------------------------------------------------------------------- small helpers
 
 // Without --engine / --fixtures: the install's own (an unpacked release has them beside this program), else the build's.
-std::string engine_default() { return default_engine(granite::platform::module_path(), BASALT_BENCH_ENGINE); }
-std::string fixtures_default() { return default_fixtures(granite::platform::install_root(), BASALT_BENCH_FIXTURES); }
+std::string engine_default() { return default_engine(granite::platform::module_path(), GRANITE_BENCH_ENGINE); }
+std::string fixtures_default() { return default_fixtures(granite::platform::install_root(), GRANITE_BENCH_FIXTURES); }
 
 std::string fmt(const char* f, ...) {
     va_list ap;
@@ -644,7 +644,7 @@ Hardware measure_hardware() {
     const granite::platform::CpuInfo c = granite::platform::cpu_info();
     h.cpu = granite::program::cpu_label(c.name, c.physical_cores);
     h.ram_gbps = granite::program::measure_ram_read_gbps();
-    const std::string dev = BASALT_BENCH_DEVICE;
+    const std::string dev = GRANITE_BENCH_DEVICE;
     if (!dev.empty() && fs::exists(dev))
         if (const auto out = granite::platform::capture_output({dev, "--link-rates"}, false)) h.h2d = granite::program::parse_link_rates(*out);
     return h;
@@ -910,12 +910,12 @@ int main(int argc, char** argv) {
                              "VRAM and enforced power limits for the row; it could not be loaded");
         return 1;
     }
-    if (o.community && std::string(BASALT_BENCH_GIT).find_first_not_of("0123456789abcdef") != std::string::npos) {
+    if (o.community && std::string(GRANITE_BENCH_GIT).find_first_not_of("0123456789abcdef") != std::string::npos) {
         granite::log::error("granite-bench", "--community needs a build from a git checkout: the row records the commit");
         return 1;
     }
-    if (o.community && BASALT_BENCH_DIRTY)
-        granite::log::warn("granite-bench", "tracked files differ from commit %s; the row names that commit", BASALT_BENCH_GIT);
+    if (o.community && GRANITE_BENCH_DIRTY)
+        granite::log::warn("granite-bench", "tracked files differ from commit %s; the row names that commit", GRANITE_BENCH_GIT);
     Hardware hw;
     if (o.community) {
         hw = measure_hardware();
@@ -1243,7 +1243,7 @@ int main(int argc, char** argv) {
 
     std::string rep;
     if (o.format == "md" && do_perf) {
-        rep += fmt("granite-bench  build %s  power limit %s%s\n\n", BASALT_BENCH_GIT, power.c_str(), lossy.empty() ? "" : "  LOSSY");
+        rep += fmt("granite-bench  build %s  power limit %s%s\n\n", GRANITE_BENCH_GIT, power.c_str(), lossy.empty() ? "" : "  LOSSY");
         std::vector<std::array<std::string, 4>> cells;
         cells.push_back({"test", "t/s", "accept %", "draft len"});
         for (const Row& r : rows) {
@@ -1319,7 +1319,7 @@ int main(int argc, char** argv) {
         std::strftime(day, sizeof day, "%Y-%m-%d", std::localtime(&now));
         crow.submitter = o.submitter;
         crow.date = day;
-        crow.commit = BASALT_BENCH_GIT;
+        crow.commit = GRANITE_BENCH_GIT;
         crow.preset = "community-1";
         crow.model = community_model;
         if (!info.count("kv") || info["kv"].empty()) {
@@ -1369,10 +1369,10 @@ int main(int argc, char** argv) {
     if (o.format == "json") {
         JW j;
         j.begin_obj();
-        j.key("engine_version"); j.str(BASALT_VERSION);
-        j.key("commit"); j.str(BASALT_BENCH_GIT);
-        j.key("build_type"); j.str(BASALT_BENCH_BUILD_TYPE);
-        j.key("cuda_toolkit"); j.str(BASALT_BENCH_CUDA);
+        j.key("engine_version"); j.str(GRANITE_VERSION);
+        j.key("commit"); j.str(GRANITE_BENCH_GIT);
+        j.key("build_type"); j.str(GRANITE_BENCH_BUILD_TYPE);
+        j.key("cuda_toolkit"); j.str(GRANITE_BENCH_CUDA);
         j.key("power_limit"); j.str(power);
         j.key("repetitions"); j.integer(o.reps);
         j.key("driver"); j.str(nvml.driver());
@@ -1492,7 +1492,7 @@ int main(int argc, char** argv) {
     }
     std::fputs(rep.c_str(), stdout);
     if (!community_row.empty()) {
-        const std::string path = o.community_file.empty() ? std::string(BASALT_BENCH_SOURCE_DIR) + "/docs/community/benchmarks.json"
+        const std::string path = o.community_file.empty() ? std::string(GRANITE_BENCH_SOURCE_DIR) + "/docs/community/benchmarks.json"
                                                           : o.community_file;
         std::string why;
         granite::program::CommunityEdit edit;

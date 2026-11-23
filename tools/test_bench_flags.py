@@ -1,6 +1,6 @@
 """Every flag the engine lists in its help reaches the engine through granite-bench.
 
-    BASALT_BIN=bin/granite BASALT_BENCH_BIN=bin/granite-bench python3 -m unittest tools.test_bench_flags
+    GRANITE_BIN=bin/granite GRANITE_BENCH_BIN=bin/granite-bench python3 -m unittest tools.test_bench_flags
 """
 import json
 import os
@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ENGINE = Path(os.environ.get("BASALT_BIN", ROOT / "bin" / "granite"))
-BENCH = Path(os.environ.get("BASALT_BENCH_BIN", ROOT / "bin" / "granite-bench"))
+ENGINE = Path(os.environ.get("GRANITE_BIN", ROOT / "bin" / "granite"))
+BENCH = Path(os.environ.get("GRANITE_BENCH_BIN", ROOT / "bin" / "granite-bench"))
 # bench's own options that share an engine flag's name
 BENCH_OWNED = {"--help", "--model", "--engine", "--spec", "--set", "--seed", "--gpu"}
 

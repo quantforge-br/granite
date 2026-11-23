@@ -63,7 +63,7 @@ inline std::string render_v(Level level, const char* tag, const char* fmt, std::
     return line(level, tag, detail::format(fmt, ap)) + "\n";
 }
 
-inline std::string render(Level level, const char* tag, const char* fmt, ...) BASALT_PRINTF_FORMAT(3, 4);
+inline std::string render(Level level, const char* tag, const char* fmt, ...) GRANITE_PRINTF_FORMAT(3, 4);
 inline std::string render(Level level, const char* tag, const char* fmt, ...) {
     std::va_list ap;
     va_start(ap, fmt);
@@ -76,10 +76,10 @@ inline void emit_v(Level level, const char* tag, const char* fmt, std::va_list a
     detail::write_all(render_v(level, tag, fmt, ap));
 }
 
-inline void info(const char* tag, const char* fmt, ...) BASALT_PRINTF_FORMAT(2, 3);
-inline void warn(const char* tag, const char* fmt, ...) BASALT_PRINTF_FORMAT(2, 3);
-inline void error(const char* tag, const char* fmt, ...) BASALT_PRINTF_FORMAT(2, 3);
-inline void raw(const char* fmt, ...) BASALT_PRINTF_FORMAT(1, 2);
+inline void info(const char* tag, const char* fmt, ...) GRANITE_PRINTF_FORMAT(2, 3);
+inline void warn(const char* tag, const char* fmt, ...) GRANITE_PRINTF_FORMAT(2, 3);
+inline void error(const char* tag, const char* fmt, ...) GRANITE_PRINTF_FORMAT(2, 3);
+inline void raw(const char* fmt, ...) GRANITE_PRINTF_FORMAT(1, 2);
 
 inline void info(const char* tag, const char* fmt, ...) {
     std::va_list ap;

@@ -60,7 +60,7 @@ for name, sources in targets.items():
 
 for name, words in statements(text, "target_link_libraries"):
     who = owner(name)
-    if name not in targets or is_test(name, targets[name]) or name == "models" or name.startswith("basalt"):
+    if name not in targets or is_test(name, targets[name]) or name == "models" or name.startswith("granite"):
         continue
     bad = [w for w in words if owner(w) and owner(w) != who]
     fail("target " + name + " links another model's library", bad)

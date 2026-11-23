@@ -17,7 +17,7 @@ The build fetches nothing. The ggml and llama.cpp parts granite uses (quantizati
 
 ## Models in the build
 
-granite builds one model, Inkling 2 Mini (architecture id `inkling2`). `-DBASALT_MODELS` is a semicolon list of architecture ids,
+granite builds one model, Inkling 2 Mini (architecture id `inkling2`). `-DGRANITE_MODELS` is a semicolon list of architecture ids,
 or `all`; the default is `inkling2`. An unknown id or an empty list stops the configure and names the valid ids. A pack of any
 other architecture fails at load: no model adapter is registered for it.
 
@@ -27,6 +27,6 @@ Configure with `-DBUILD_TESTING=ON`, build, and run `ctest --test-dir build`.
 
 - Tests are labelled `cpu` or `gpu`: the kernel parity tests need the card, `ctest --test-dir build -L cpu` runs the rest.
 - Server tests: `python -m unittest discover -s serve/tests -t .` after `pip install -r requirements-test.txt`.
-- Tokenizer parity: register `tokenizer_parity` with `-DBASALT_TOKENIZER_DIR=<a pack's tokenizer/ directory>`.
+- Tokenizer parity: register `tokenizer_parity` with `-DGRANITE_TOKENIZER_DIR=<a pack's tokenizer/ directory>`.
 
 `granite-bench` reads its prompts from `data/bench` (run from the repository root, or pass `--fixtures DIR`).

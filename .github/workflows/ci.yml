@@ -117,7 +117,7 @@ jobs:
           # a fixture setup test is pulled into a label set by the tests that need it, so the union is what counts
           sort -u cpu.txt gpu.txt > labelled.txt
           if [ -n "$(comm -23 all.txt labelled.txt)" ]; then
-            echo "tests with no cpu or gpu label (register them with basalt_cpu_test or basalt_gpu_test):" >&2
+            echo "tests with no cpu or gpu label (register them with granite_cpu_test or granite_gpu_test):" >&2
             comm -23 all.txt labelled.txt >&2
             exit 1
           fi

@@ -1,7 +1,7 @@
 // src/kernels/cpu/iq_avx2_rows.inc - the i-quant expert rows in 256-bit lanes, several tokens at once.
 //
-// Included by iq_avx2.cpp (BASALT_IQ_VNNI 0: `madd` and `add`) and iq_avx2_vnni.cpp (BASALT_IQ_VNNI 1: the AVX-VNNI
-// instruction that does both), which name the exported functions through BASALT_IQ_EXPORT.  BASALT_IQ_BMI2 1 builds the
+// Included by iq_avx2.cpp (GRANITE_IQ_VNNI 0: `madd` and `add`) and iq_avx2_vnni.cpp (GRANITE_IQ_VNNI 1: the AVX-VNNI
+// instruction that does both), which name the exported functions through GRANITE_IQ_EXPORT.  GRANITE_IQ_BMI2 1 builds the
 // IQ3_S and IQ2_S grid indices with `pdep`; the build without it keeps the scalar index arithmetic, since `pdep` is
 // slow on some AVX2 CPUs.
 // The AVX-512 kernels' (iq_avx512.cpp) multi-token scheme on the CPUs without AVX-512: each 32-value chunk is decoded once - grid lookups, one sign vector,
@@ -85,7 +85,7 @@ inline float hsum8(__m256 v) {
 // The int16 products of a maddubs times a scale, summed in pairs into the int32 accumulator: one `madd` and one `add`,
 // or the single AVX-VNNI instruction that is exactly that (no saturation in either).
 inline __m256i iq_acc(__m256i acc, __m256i prod16, __m256i scale16) {
-#if BASALT_IQ_VNNI
+#if GRANITE_IQ_VNNI
     return _mm256_dpwssd_avx_epi32(acc, prod16, scale16);
 #else
     return _mm256_add_epi32(acc, _mm256_madd_epi16(prod16, scale16));
@@ -95,7 +95,7 @@ inline __m256i iq_acc(__m256i acc, __m256i prod16, __m256i scale16) {
 // Four-wise sums of u8 x s8 products into int32 lanes (maddubs, then madd with ones; the pair sums cannot saturate for
 // the operands used here).
 inline __m256i iq_dot4(__m256i u8, __m256i s8) {
-#if BASALT_IQ_VNNI
+#if GRANITE_IQ_VNNI
     return _mm256_dpbusd_avx_epi32(_mm256_setzero_si256(), u8, s8);
 #else
     return _mm256_madd_epi16(_mm256_maddubs_epi16(u8, s8), _mm256_set1_epi16(1));
@@ -152,7 +152,7 @@ template <> struct Fmt32<22> {   // IQ2_S: d, qs[64] (32 grid bytes, 32 sign byt
     static inline void decode(const uint8_t* b, int j, int half, __m256i& g, __m256i& sgn, __m256i& sc) {
         const uint8_t* qs = b + 2 + 8 * j + 4 * half;
         const uint8_t h = b[66 + 2 * j + half];
-#if BASALT_IQ_BMI2
+#if GRANITE_IQ_BMI2
         // the four 10-bit indices as 16-bit fields of one register: qs[k] | (bits 2k, 2k+1 of qh) << 8
         const uint64_t a = _pdep_u64(u32(qs), 0x00FF00FF00FF00FFull) | _pdep_u64(h, 0x0300030003000300ull);
 #define G2(k) (long long) iq2s_grid[(uint16_t) (a >> (16 * (k)))]
@@ -187,7 +187,7 @@ template <> struct Fmt32<21> {   // IQ3_S: d, qs[64], qh[8], signs[32], scales[4
     static inline void decode(const uint8_t* b, int j, int half, __m256i& g, __m256i& sgn, __m256i& sc) {
         const uint8_t* q = b + 2 + 16 * j + 8 * half;
         const uint32_t h = b[66 + 2 * j + half];
-#if BASALT_IQ_BMI2
+#if GRANITE_IQ_BMI2
         // the eight 9-bit indices as 16-bit fields of two registers: q[k] | (bit k of qh) << 8
         const uint64_t q8 = u64(q);
         const uint64_t lo = _pdep_u64(q8, 0x00FF00FF00FF00FFull) | _pdep_u64(h, 0x0100010001000100ull);
@@ -500,7 +500,7 @@ inline bool core_gathers_fast() {
 }
 
 inline bool gather_here() {
-#if BASALT_IQ_VNNI
+#if GRANITE_IQ_VNNI
     static const int kind = [] {   // 0: every core gathers fast, 1: no core does, 2: hybrid
         unsigned r[4] = {0, 0, 0, 0};
         platform::cpuid(0, 0, r);
@@ -591,7 +591,7 @@ void dot_rows_nt(int nt, const uint8_t* w, size_t row_bytes, int n, const void* 
 // of tokens.
 constexpr int iq4nl_max_blocks = 64;
 
-#if BASALT_IQ_VNNI
+#if GRANITE_IQ_VNNI
 // kvalues_iq4nl + 128: the weights as the unsigned operand of the VNNI dot
 alignas(16) constexpr uint8_t iq4nl_values[16] = {1, 24, 45, 63, 79, 93, 106, 118, 129, 141, 153, 166, 181, 197, 217, 241};
 #else
@@ -606,7 +606,7 @@ inline void iq4nl_pass(const uint8_t* row0, size_t row_bytes, int nb, const bloc
     const __m256i values = _mm256_broadcastsi128_si256(_mm_loadu_si128((const __m128i*) iq4nl_values));
     const __m256i m4b = _mm256_set1_epi8(0x0f);
     const __m256i nibble = _mm256_setr_epi32(0, 0, 0, 0, 4, 4, 4, 4);   // values 0..15 in the low lane, 16..31 high
-#if !BASALT_IQ_VNNI
+#if !GRANITE_IQ_VNNI
     (void) seed;
 #endif
     __m256 acc[R][NT];
@@ -627,7 +627,7 @@ inline void iq4nl_pass(const uint8_t* row0, size_t row_bytes, int nb, const bloc
             const __m256i q4 = _mm256_shuffle_epi8(values, _mm256_and_si256(_mm256_srlv_epi32(bits, nibble), m4b));
             // lane 0 of the conversion is d; the other lanes hold nibble bytes and are not used
             const __m256 dx = _mm256_broadcastss_ps(_mm_cvtph_ps(_mm_loadl_epi64((const __m128i*) blk)));
-#if BASALT_IQ_VNNI
+#if GRANITE_IQ_VNNI
             for (int t = 0; t < NT; ++t) {
                 const __m256i p = _mm256_dpbusd_avx_epi32(seed[t * iq4nl_max_blocks + ib], q4, q8[t]);
                 acc[i][t] = _mm256_fmadd_ps(_mm256_mul_ps(dx, dyv[t]), _mm256_cvtepi32_ps(p), acc[i][t]);
@@ -651,7 +651,7 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
                 int r0, int r1) {
     const int nb = n / QK4_NL;
     alignas(32) float dy[NT * iq4nl_max_blocks];
-#if BASALT_IQ_VNNI
+#if GRANITE_IQ_VNNI
     __m256i seed[NT * iq4nl_max_blocks];
     const __m256i bias = _mm256_set1_epi8((char) 0x80);
 #else
@@ -660,7 +660,7 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
     for (int t = 0; t < NT; ++t)
         for (int ib = 0; ib < nb; ++ib) {
             dy[t * iq4nl_max_blocks + ib] = h2f(y[t][ib].d);
-#if BASALT_IQ_VNNI
+#if GRANITE_IQ_VNNI
             const __m256i q8 = _mm256_loadu_si256((const __m256i*) y[t][ib].qs);
             seed[t * iq4nl_max_blocks + ib] =
                 _mm256_sub_epi32(_mm256_setzero_si256(), _mm256_dpbusd_avx_epi32(_mm256_setzero_si256(), bias, q8));
@@ -674,12 +674,12 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
 
 }  // namespace
 
-void BASALT_IQ_EXPORT(iq256_gu_rows)(int type, const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* const* act, int nt,
+void GRANITE_IQ_EXPORT(iq256_gu_rows)(int type, const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* const* act, int nt,
                    float* const* ff, int r0, int r1) {
-    BASALT_IQ_EXPORT(iq256_gu_rows_mode)(rows_mode(), type, blob, gu_row, up_off, n, act, nt, ff, r0, r1);
+    GRANITE_IQ_EXPORT(iq256_gu_rows_mode)(rows_mode(), type, blob, gu_row, up_off, n, act, nt, ff, r0, r1);
 }
 
-void BASALT_IQ_EXPORT(iq256_gu_rows_mode)(int mode, int type, const uint8_t* blob, size_t gu_row, size_t up_off, int n,
+void GRANITE_IQ_EXPORT(iq256_gu_rows_mode)(int mode, int type, const uint8_t* blob, size_t gu_row, size_t up_off, int n,
                                           const void* const* act, int nt, float* const* ff, int r0, int r1) {
     const int m = (type == 18 || type == 21 || type == 22) ? mode : 0;
     switch (type * 4 + m) {
@@ -696,12 +696,12 @@ void BASALT_IQ_EXPORT(iq256_gu_rows_mode)(int mode, int type, const uint8_t* blo
     }
 }
 
-void BASALT_IQ_EXPORT(iq256_rows)(int type, const uint8_t* w, size_t row_bytes, int n, const void* const* act, int nt, float* const* out,
+void GRANITE_IQ_EXPORT(iq256_rows)(int type, const uint8_t* w, size_t row_bytes, int n, const void* const* act, int nt, float* const* out,
                 int r0, int r1) {
-    BASALT_IQ_EXPORT(iq256_rows_mode)(rows_mode(), type, w, row_bytes, n, act, nt, out, r0, r1);
+    GRANITE_IQ_EXPORT(iq256_rows_mode)(rows_mode(), type, w, row_bytes, n, act, nt, out, r0, r1);
 }
 
-void BASALT_IQ_EXPORT(iq256_rows_mode)(int mode, int type, const uint8_t* w, size_t row_bytes, int n, const void* const* act,
+void GRANITE_IQ_EXPORT(iq256_rows_mode)(int mode, int type, const uint8_t* w, size_t row_bytes, int n, const void* const* act,
                                        int nt, float* const* out, int r0, int r1) {
     const int m = (type == 18 || type == 21 || type == 22) ? mode : 0;
     switch (type * 4 + m) {
@@ -718,7 +718,7 @@ void BASALT_IQ_EXPORT(iq256_rows_mode)(int mode, int type, const uint8_t* w, siz
     }
 }
 
-void BASALT_IQ_EXPORT(iq4nl256_down_rows)(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt, float* const* out,
+void GRANITE_IQ_EXPORT(iq4nl256_down_rows)(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt, float* const* out,
                         int r0, int r1) {
     // the tokens' block scales are held on the stack: rows of at most iq4nl_max_blocks blocks (iq4nl256_fits)
     if (n % QK4_NL != 0 || n / QK4_NL > iq4nl_max_blocks) {
@@ -735,7 +735,7 @@ void BASALT_IQ_EXPORT(iq4nl256_down_rows)(const uint8_t* w, size_t row_bytes, in
         case 4: iq4nl_rows<1, 4>(w, row_bytes, n, y, out, r0, r1); break;
         default: for (int t0 = 0; t0 < nt; t0 += 4) {
             const int k = nt - t0 < 4 ? nt - t0 : 4;
-            BASALT_IQ_EXPORT(iq4nl256_down_rows)(w, row_bytes, n, hq + t0, k, out + t0, r0, r1);
+            GRANITE_IQ_EXPORT(iq4nl256_down_rows)(w, row_bytes, n, hq + t0, k, out + t0, r0, r1);
         }
     }
 }

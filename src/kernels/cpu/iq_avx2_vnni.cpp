@@ -15,7 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#define BASALT_IQ_VNNI 1
-#define BASALT_IQ_BMI2 1
-#define BASALT_IQ_EXPORT(name) name##_vnni
+#define GRANITE_IQ_VNNI 1
+#define GRANITE_IQ_BMI2 1
+#define GRANITE_IQ_EXPORT(name) name##_vnni
 #include "iq_avx2_rows.inc"

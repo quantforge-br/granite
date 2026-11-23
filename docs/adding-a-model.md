@@ -13,9 +13,9 @@ A model lives in `src/models/<arch>/` and `include/granite/models/<arch>/`. Shar
   (`core/checkpoint_transfer.hpp`) and never reads the model's memory itself.
 - A dialect in `serve/models/`: prompt rendering, output parsing, stop texts.
 
-Registering it is one word: the id in `BASALT_BUILTIN_MODELS` (`cmake/models.cmake`), which adds it to `-DBASALT_MODELS`
+Registering it is one word: the id in `GRANITE_BUILTIN_MODELS` (`cmake/models.cmake`), which adds it to `-DGRANITE_MODELS`
 ([building](building.md#models-in-the-build)) and to the registration in `src/models/builtin.cpp`. Everything of the model in
-`CMakeLists.txt` (its libraries, kernels, tests and tools) sits under `if(BASALT_MODEL_<ARCH>)`, so a build without it compiles none of it.
+`CMakeLists.txt` (its libraries, kernels, tests and tools) sits under `if(GRANITE_MODEL_<ARCH>)`, so a build without it compiles none of it.
 
 The router then needs one config entry. Nothing in the server names a model.
 

@@ -18,24 +18,24 @@
 #include <cstdint>
 
 #if defined(__CUDACC__)
-#define BASALT_NVFP4P_HD __host__ __device__
+#define GRANITE_NVFP4P_HD __host__ __device__
 #else
-#define BASALT_NVFP4P_HD
+#define GRANITE_NVFP4P_HD
 #endif
 
 namespace granite::kernels::nvfp4p {
 
-BASALT_NVFP4P_HD inline constexpr bool fits(int64_t rows, int64_t K) {
+GRANITE_NVFP4P_HD inline constexpr bool fits(int64_t rows, int64_t K) {
     return rows > 0 && K > 0 && rows % 128 == 0 && K % 64 == 0;
 }
-BASALT_NVFP4P_HD inline constexpr std::size_t scale_offset(int64_t rows, int64_t K) {
+GRANITE_NVFP4P_HD inline constexpr std::size_t scale_offset(int64_t rows, int64_t K) {
     return (std::size_t) rows * (std::size_t) K / 2;
 }
-BASALT_NVFP4P_HD inline constexpr std::size_t bytes(int64_t rows, int64_t K) {
+GRANITE_NVFP4P_HD inline constexpr std::size_t bytes(int64_t rows, int64_t K) {
     return (std::size_t) rows * (std::size_t) K / 64 * 36;
 }
 
-BASALT_NVFP4P_HD inline int64_t scale_index(int64_t row, int64_t group, int64_t K) {
+GRANITE_NVFP4P_HD inline int64_t scale_index(int64_t row, int64_t group, int64_t K) {
     return ((row / 128) * (K / 64) + group / 4) * 512 + (row & 31) * 16 + ((row & 127) >> 5) * 4 + (group & 3);
 }
 

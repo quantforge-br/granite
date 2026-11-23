@@ -23,11 +23,11 @@
 #include "granite/program/probe_report.hpp"
 #include "granite/log.hpp"
 
-#ifndef BASALT_BENCH_ENGINE
-#define BASALT_BENCH_ENGINE ""
+#ifndef GRANITE_BENCH_ENGINE
+#define GRANITE_BENCH_ENGINE ""
 #endif
-#ifndef BASALT_BENCH_FIXTURES
-#define BASALT_BENCH_FIXTURES "data/bench"
+#ifndef GRANITE_BENCH_FIXTURES
+#define GRANITE_BENCH_FIXTURES "data/bench"
 #endif
 
 namespace fs = std::filesystem;
@@ -47,8 +47,8 @@ struct Fixture {
 const Fixture kFixtures[] = {{"conv", "conv.ids"}, {"struct", "struct.ids"}, {"prose", "prose.ids"}};
 
 // Without --engine / --fixtures: the install's own (an unpacked release has them beside this program), else the build's.
-std::string engine_default() { return default_engine(granite::platform::module_path(), BASALT_BENCH_ENGINE); }
-std::string fixtures_default() { return default_fixtures(granite::platform::install_root(), BASALT_BENCH_FIXTURES); }
+std::string engine_default() { return default_engine(granite::platform::module_path(), GRANITE_BENCH_ENGINE); }
+std::string fixtures_default() { return default_fixtures(granite::platform::install_root(), GRANITE_BENCH_FIXTURES); }
 
 void usage() {
     std::printf(

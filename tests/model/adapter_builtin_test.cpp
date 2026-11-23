@@ -15,15 +15,15 @@ int main() {
     };
     models::register_builtin_models();
     models::register_builtin_models();
-    // BASALT_MODELS decides which adapters exist: each built model is registered once, each left out is refused by name
+    // GRANITE_MODELS decides which adapters exist: each built model is registered once, each left out is refused by name
     size_t built = 0;
     const auto expect = [&](const char* arch, bool is_built) {
         built += is_built ? 1 : 0;
         check((model::find_adapter(arch) != nullptr) == is_built, is_built ? "a built model is registered" : "a model left out is not registered");
         if (!is_built) {
             const std::string why = model::unavailable_architecture(arch);
-            check(why.find("left out") != std::string::npos && why.find("BASALT_MODELS=") != std::string::npos &&
-                      why.find(std::string("-DBASALT_MODELS=\"")) != std::string::npos && why.find(arch) != std::string::npos,
+            check(why.find("left out") != std::string::npos && why.find("GRANITE_MODELS=") != std::string::npos &&
+                      why.find(std::string("-DGRANITE_MODELS=\"")) != std::string::npos && why.find(arch) != std::string::npos,
                   "a model left out is refused with the option that adds it");
         }
     };
@@ -33,7 +33,7 @@ int main() {
         check(model::unavailable_architecture(arch).find("no model adapter is registered") != std::string::npos,
               "a model granite does not ship is refused as unknown");
     }
-#ifdef BASALT_MODEL_INKLING2
+#ifdef GRANITE_MODEL_INKLING2
     expect("inkling2", true);
 #else
     expect("inkling2", false);

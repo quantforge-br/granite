@@ -12,8 +12,8 @@
 #include <cmath>
 #include <cstring>
 
-#define BASALT_Q2_VNNI 0
-#define BASALT_Q2_EXPORT(name) name##_base
+#define GRANITE_Q2_VNNI 0
+#define GRANITE_Q2_EXPORT(name) name##_base
 #include "q2_avx2_rows.inc"
 
 namespace granite::kernels::cpu {

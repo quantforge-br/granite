@@ -16,7 +16,7 @@
 #include "granite/kernels/cpu/expert_layout.hpp"
 #include "granite/kernels/cpu/iq_avx512.hpp"
 
-#ifdef BASALT_IQ1S_GPU
+#ifdef GRANITE_IQ1S_GPU
 #include "granite/kernels/iq_kernels.hpp"
 #include <cuda_runtime.h>
 #endif
@@ -34,7 +34,7 @@
 namespace {
 
 namespace kc = granite::kernels::cpu;
-#ifdef BASALT_IQ1S_GPU
+#ifdef GRANITE_IQ1S_GPU
 #endif
 
 constexpr int H = 5120, FF = 2304, K = 6;
@@ -331,7 +331,7 @@ void cpu_dot() {
     if (!ok) ++g_fail;
 }
 
-#ifdef BASALT_IQ1S_GPU
+#ifdef GRANITE_IQ1S_GPU
 namespace kg = granite::kernels;
 
 void ck(cudaError_t e, const char* what) {
@@ -747,7 +747,7 @@ int main(int argc, char** argv) {
     cpu_pair(29, 16, rng);
     cpu_pair(17, 16, rng);
     cpu_pair(40, 40, rng);   // NVFP4 experts
-#ifdef BASALT_IQ1S_GPU
+#ifdef GRANITE_IQ1S_GPU
     if (!cpu_only) {
         cudaStream_t s;
         ck(cudaStreamCreate(&s), "stream");

@@ -1,9 +1,9 @@
 // src/kernels/cpu/nvfp4_avx2_rows.inc - NVFP4 expert rows against Q8_0 activations, several tokens at once, in 256-bit
 // lanes.
 //
-// Included by nvfp4_avx2.cpp (BASALT_NVFP4_VNNI_INT8 0: `vpsignb` + `vpmaddubsw` + `vpmaddwd`) and nvfp4_avx2_vnni.cpp
-// (BASALT_NVFP4_VNNI_INT8 1: AVX-VNNI-INT8 `vpdpbssd` directly on the signed bytes), which name the exported functions
-// through BASALT_NVFP4_EXPORT.
+// Included by nvfp4_avx2.cpp (GRANITE_NVFP4_VNNI_INT8 0: `vpsignb` + `vpmaddubsw` + `vpmaddwd`) and nvfp4_avx2_vnni.cpp
+// (GRANITE_NVFP4_VNNI_INT8 1: AVX-VNNI-INT8 `vpdpbssd` directly on the signed bytes), which name the exported functions
+// through GRANITE_NVFP4_EXPORT.
 //
 // The ggml dot (ggml_vec_dot_nvfp4_q8_0, AVX2 branch) is single-token: every token re-decodes the codes, the sign
 // pattern and the four UE4M3 scales of each block.  Here a block is decoded once and every token applies it.  Per token
@@ -56,7 +56,7 @@ inline float hsum8(__m256 x) {
 
 // One decoded weight block: sub-blocks (0, 2) and (1, 3) and the matching scales.
 struct Blk {
-#if !BASALT_NVFP4_VNNI_INT8
+#if !GRANITE_NVFP4_VNNI_INT8
     __m256i aa, ab;
 #endif
     __m256i wa, wb;
@@ -73,7 +73,7 @@ inline Blk decode(const block_nvfp4* x) {
     Blk b;
     b.wa = _mm256_shuffle_epi8(values, _mm256_unpacklo_epi64(lo, hi));
     b.wb = _mm256_shuffle_epi8(values, _mm256_unpackhi_epi64(lo, hi));
-#if !BASALT_NVFP4_VNNI_INT8
+#if !GRANITE_NVFP4_VNNI_INT8
     b.aa = _mm256_sign_epi8(b.wa, b.wa);
     b.ab = _mm256_sign_epi8(b.wb, b.wb);
 #endif
@@ -102,7 +102,7 @@ inline void prep_tokens(const block_q8_0* const* y, int nb, TokBlk* tb) {
 // R rows (each its own block pointer) against NT tokens: res[k][t].
 template <int R, int NT>
 inline void rows_dot(const block_nvfp4* const* w, int nb, const TokBlk* tb, float (*res)[kMaxT]) {
-#if !BASALT_NVFP4_VNNI_INT8
+#if !GRANITE_NVFP4_VNNI_INT8
     const __m256i ones = _mm256_set1_epi16(1);
 #endif
     __m256 acc1[R][NT], acc2[R][NT];
@@ -117,7 +117,7 @@ inline void rows_dot(const block_nvfp4* const* w, int nb, const TokBlk* tb, floa
             const __m256i yb = tk[t].yb;
             const __m256 d = tk[t].d;
             for (int k = 0; k < R; ++k) {
-#if BASALT_NVFP4_VNNI_INT8
+#if GRANITE_NVFP4_VNNI_INT8
                 const __m256i pa = _mm256_dpbssd_epi32(_mm256_setzero_si256(), b[k].wa, ya);
                 const __m256i pb = _mm256_dpbssd_epi32(_mm256_setzero_si256(), b[k].wb, yb);
 #else
@@ -187,7 +187,7 @@ void down_rows(const uint8_t* w0, size_t row_bytes, int n, float sd, const void*
 
 }  // namespace
 
-void BASALT_NVFP4_EXPORT(nvfp4_256_gu_rows)(const uint8_t* blob, size_t gu_row, size_t up_off, int n, float sg,
+void GRANITE_NVFP4_EXPORT(nvfp4_256_gu_rows)(const uint8_t* blob, size_t gu_row, size_t up_off, int n, float sg,
                                             float su, const SwiGlu& glu, const void* const* act, int nt, float* const* ff,
                                             int r0, int r1) {
     for (int t0 = 0; t0 < nt; t0 += kMaxT) {
@@ -207,7 +207,7 @@ void BASALT_NVFP4_EXPORT(nvfp4_256_gu_rows)(const uint8_t* blob, size_t gu_row, 
     }
 }
 
-void BASALT_NVFP4_EXPORT(nvfp4_256_down_rows)(const uint8_t* w, size_t row_bytes, int n, float sd,
+void GRANITE_NVFP4_EXPORT(nvfp4_256_down_rows)(const uint8_t* w, size_t row_bytes, int n, float sd,
                                               const void* const* act, int nt, float* const* out, int r0, int r1) {
     for (int t0 = 0; t0 < nt; t0 += kMaxT) {
         const int k = nt - t0 < kMaxT ? nt - t0 : kMaxT;

@@ -1,6 +1,6 @@
 """`granite serve` hands the Python server what was typed, with only a leading MODEL.basalt turned into --model.
 
-    BASALT_BIN=bin/granite python3 -m unittest tools.test_serve_launcher
+    GRANITE_BIN=bin/granite python3 -m unittest tools.test_serve_launcher
 """
 import os
 import subprocess
@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ENGINE = Path(os.environ.get("BASALT_BIN", ROOT / "bin" / "granite")).resolve()
+ENGINE = Path(os.environ.get("GRANITE_BIN", ROOT / "bin" / "granite")).resolve()
 
 
 @unittest.skipUnless(ENGINE.is_file(), "build bin/granite first")

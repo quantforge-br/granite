@@ -2,7 +2,7 @@
 # `tools/vision` configuration alike, so the platform source list and the warning flags are written once.
 # Paths hang off this file's own directory, so either project can include it wherever it is configured.
 
-get_filename_component(BASALT_CMAKE_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+get_filename_component(GRANITE_CMAKE_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
 # Warnings live on an INTERFACE target the project's own C++ code links, NOT in add_compile_options: applied
 # globally they would also hit the extracted ggml C and CUDA sources, whose warnings are not this project's to fix.
@@ -27,11 +27,11 @@ endif()
 # Host-only: no CUDA runtime, which is why the header-only `artifact` target, the vision library, the bench and the
 # standalone test programs can all link it.
 add_library(platform STATIC
-  ${BASALT_CMAKE_ROOT}/src/platform/file.cpp ${BASALT_CMAKE_ROOT}/src/platform/memory.cpp
-  ${BASALT_CMAKE_ROOT}/src/platform/direct_file.cpp ${BASALT_CMAKE_ROOT}/src/platform/process.cpp
-  ${BASALT_CMAKE_ROOT}/src/platform/mapped_file.cpp ${BASALT_CMAKE_ROOT}/src/platform/cpu.cpp
-  ${BASALT_CMAKE_ROOT}/src/platform/system.cpp ${BASALT_CMAKE_ROOT}/src/platform/dynlib.cpp)
-target_include_directories(platform PUBLIC ${BASALT_CMAKE_ROOT}/include)
+  ${GRANITE_CMAKE_ROOT}/src/platform/file.cpp ${GRANITE_CMAKE_ROOT}/src/platform/memory.cpp
+  ${GRANITE_CMAKE_ROOT}/src/platform/direct_file.cpp ${GRANITE_CMAKE_ROOT}/src/platform/process.cpp
+  ${GRANITE_CMAKE_ROOT}/src/platform/mapped_file.cpp ${GRANITE_CMAKE_ROOT}/src/platform/cpu.cpp
+  ${GRANITE_CMAKE_ROOT}/src/platform/system.cpp ${GRANITE_CMAKE_ROOT}/src/platform/dynlib.cpp)
+target_include_directories(platform PUBLIC ${GRANITE_CMAKE_ROOT}/include)
 # dlopen (DynLib) lives in libdl before glibc 2.34
 target_link_libraries(platform PUBLIC warnings ${CMAKE_DL_LIBS})
 
@@ -41,13 +41,13 @@ endif()
 
 # The .basalt reader (host-only like `platform`): the engine's `core` and the vision programs, which open a section in
 # place, link the one copy.
-add_library(model_file STATIC ${BASALT_CMAKE_ROOT}/src/core/model_file.cpp)
-target_include_directories(model_file PUBLIC ${BASALT_CMAKE_ROOT}/include)
+add_library(model_file STATIC ${GRANITE_CMAKE_ROOT}/src/core/model_file.cpp)
+target_include_directories(model_file PUBLIC ${GRANITE_CMAKE_ROOT}/include)
 target_link_libraries(model_file PUBLIC platform warnings)
 
 # The executables a release ships go to <source>/bin for every generator. A plain RUNTIME_OUTPUT_DIRECTORY gets a
 # per-configuration subdirectory (bin/Release) from the multi-config generators (Visual Studio, Ninja Multi-Config),
 # and the engine finds data/ and its sibling programs relative to bin/; the generator expression stops that.
-function(basalt_ship_to_bin target)
-  set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${BASALT_CMAKE_ROOT}/bin>")
+function(granite_ship_to_bin target)
+  set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${GRANITE_CMAKE_ROOT}/bin>")
 endfunction()

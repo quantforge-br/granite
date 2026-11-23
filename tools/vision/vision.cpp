@@ -29,7 +29,7 @@
 #include <thread>
 #include <vector>
 
-#ifdef BASALT_VISION_CUDA
+#ifdef GRANITE_VISION_CUDA
 #include "granite/vision/encoder_cuda.hpp"
 #endif
 #include "granite/core/model_file.hpp"
@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "%s", kUsage);
         return 2;
     }
-#ifdef BASALT_VISION_CUDA
+#ifdef GRANITE_VISION_CUDA
     if (gpu) {                    // a build made for another card says so here, before it reads any model file
         std::string perr;
         if (!probe_device(perr)) {
@@ -113,11 +113,11 @@ int main(int argc, char** argv) {
     if (max_tokens > 0) geo.max_tokens = std::max(max_tokens, geo.min_tokens);
     if (threads <= 0) threads = (int) std::max(1u, std::thread::hardware_concurrency() / 2);
     CpuEncoder cpu;
-#ifdef BASALT_VISION_CUDA
+#ifdef GRANITE_VISION_CUDA
     CudaEncoder cuda;
 #endif
     if (gpu) {
-#ifdef BASALT_VISION_CUDA
+#ifdef GRANITE_VISION_CUDA
         // Sized and warmed at the largest picture before READY: the engine is started after this process and sizes
         // its expert cache from the memory that is left, so nothing may be allocated later.
         if (!cuda.init(mp, geo.max_tokens, err)) { std::printf("ERR cannot load the vision encoder: %s\n", err.c_str()); std::fflush(stdout); return 1; }
@@ -133,7 +133,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     auto encode = [&](const std::vector<float>& patches, Size sz, std::vector<float>& out) {
-#ifdef BASALT_VISION_CUDA
+#ifdef GRANITE_VISION_CUDA
         if (gpu) return cuda.encode(patches, sz, out);
 #endif
         return cpu.encode(patches, sz, out);
@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
             VideoOptions vo;
             vo.group_tokens = geo.max_tokens;
             vo.gpu = gpu ? 0 : -1;   // NVDEC on the encoder's own card, in its context
-#ifdef BASALT_VISION_CUDA
+#ifdef GRANITE_VISION_CUDA
             if (gpu) vo.cuda_context = current_context();
 #endif
             Video v;

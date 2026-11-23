@@ -1,7 +1,7 @@
 """The tokenizer's piece memo changes speed, never ids; the files it extracts are the same bytes on every OS.
 
     python3 -m unittest tools.test_tokenizer
-    BASALT_TOKENIZER_DIR=<pack>/tokenizer python3 -m unittest tools.test_tokenizer   # also the real vocabulary
+    GRANITE_TOKENIZER_DIR=<pack>/tokenizer python3 -m unittest tools.test_tokenizer   # also the real vocabulary
 """
 import json
 import os
@@ -77,7 +77,7 @@ class PieceMemo(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.data = synthetic(CORPUS * 2)
-        real = os.environ.get("BASALT_TOKENIZER_DIR")
+        real = os.environ.get("GRANITE_TOKENIZER_DIR")
         cls.real = None
         if real:
             d = Path(real)
@@ -105,7 +105,7 @@ class PieceMemo(unittest.TestCase):
 
     def test_identical_real_vocabulary(self):
         if self.real is None:
-            self.skipTest("set BASALT_TOKENIZER_DIR to also check the real vocabulary")
+            self.skipTest("set GRANITE_TOKENIZER_DIR to also check the real vocabulary")
         self.check_identical(self.real)
 
     def test_plain_span_and_resend(self):

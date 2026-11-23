@@ -1,7 +1,7 @@
 // src/kernels/cpu/q2_avx2_rows.inc - the Q2_0 expert rows in 256-bit lanes, several tokens at once.
 //
-// Included by q2_avx2.cpp (BASALT_Q2_VNNI 0: `maddubs` and `madd`) and q2_avx2_vnni.cpp (BASALT_Q2_VNNI 1: the AVX-VNNI
-// instruction that does both), which name the exported function through BASALT_Q2_EXPORT.  The arithmetic is the
+// Included by q2_avx2.cpp (GRANITE_Q2_VNNI 0: `maddubs` and `madd`) and q2_avx2_vnni.cpp (GRANITE_Q2_VNNI 1: the AVX-VNNI
+// instruction that does both), which name the exported function through GRANITE_Q2_EXPORT.  The arithmetic is the
 // AVX-512 kernels': codes 0..3 against the int8 activation per 32-value chunk, times the weight scale and the chunk
 // scale, minus the weight scale times the chunk's `hx` (the -1 code offset).  The four-wise integer sums are exact on
 // both builds (codes 0..3, activations -127..127), so the two give the same bits.
@@ -31,7 +31,7 @@ inline void unpack64(const uint8_t* codes, __m256i& lo, __m256i& hi) {
 
 // Four-wise sums of u8 x s8 products into int32 lanes.
 inline __m256i q2_dot4(__m256i u8, __m256i s8) {
-#if BASALT_Q2_VNNI
+#if GRANITE_Q2_VNNI
     return _mm256_dpbusd_avx_epi32(_mm256_setzero_si256(), u8, s8);
 #else
     return _mm256_madd_epi16(_mm256_maddubs_epi16(u8, s8), _mm256_set1_epi16(1));
@@ -80,7 +80,7 @@ void rows(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a,
 
 }  // namespace
 
-void BASALT_Q2_EXPORT(q2_0_gguf_rows_multi_avx2)(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a,
+void GRANITE_Q2_EXPORT(q2_0_gguf_rows_multi_avx2)(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a,
                                                  int nt, float* const* out, int r0, int r1) {
     switch (nt) {
         case 1: rows<1>(w, row_bytes, nblocks, a, out, r0, r1); break;
@@ -90,7 +90,7 @@ void BASALT_Q2_EXPORT(q2_0_gguf_rows_multi_avx2)(const uint8_t* w, size_t row_by
         default:
             for (int t0 = 0; t0 < nt; t0 += 4) {
                 const int k = nt - t0 < 4 ? nt - t0 : 4;
-                BASALT_Q2_EXPORT(q2_0_gguf_rows_multi_avx2)(w, row_bytes, nblocks, a + t0, k, out + t0, r0, r1);
+                GRANITE_Q2_EXPORT(q2_0_gguf_rows_multi_avx2)(w, row_bytes, nblocks, a + t0, k, out + t0, r0, r1);
             }
     }
 }

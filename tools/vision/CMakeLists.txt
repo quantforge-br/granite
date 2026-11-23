@@ -8,7 +8,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     set(CMAKE_CUDA_ARCHITECTURES 86)
   endif()
-  project(basalt_vision CXX CUDA)
+  project(granite_vision CXX CUDA)
   set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_CUDA_STANDARD 20)
   if(NOT CMAKE_BUILD_TYPE)
@@ -54,15 +54,15 @@ target_include_directories(vision_cuda PUBLIC ${VISION_ROOT}/include ${VISION_RO
 target_link_libraries(vision_cuda PUBLIC vision_core CUDA::cudart CUDA::cublas)
 
 add_executable(granite-vision vision.cpp)
-target_compile_definitions(granite-vision PRIVATE BASALT_VISION_CUDA)
+target_compile_definitions(granite-vision PRIVATE GRANITE_VISION_CUDA)
 target_link_libraries(granite-vision PRIVATE vision_cuda)
-basalt_ship_to_bin(granite-vision)
+granite_ship_to_bin(granite-vision)
 # The image and projector paths arrive on the command line, so this program needs the same manifest as the engine:
 # UTF-8 as the process code page and long paths. Built here directly rather than through the root project's helper,
 # because this project also configures on its own.
 if(MSVC)
   target_link_options(granite-vision PRIVATE "/MANIFEST:EMBED"
-                      "/MANIFESTINPUT:${VISION_ROOT}/src/platform/basalt.exe.manifest")
+                      "/MANIFESTINPUT:${VISION_ROOT}/src/platform/granite.exe.manifest")
 endif()
 
 if(BUILD_TESTING)

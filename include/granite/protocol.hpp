@@ -21,7 +21,7 @@ inline void emit_text(const std::string& line) {
     std::fflush(stdout);
 }
 
-inline void emit(const char* fmt, ...) BASALT_PRINTF_FORMAT(1, 2);
+inline void emit(const char* fmt, ...) GRANITE_PRINTF_FORMAT(1, 2);
 inline void emit(const char* fmt, ...) {
     std::va_list ap;
     va_start(ap, fmt);
