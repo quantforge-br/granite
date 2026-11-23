@@ -21,7 +21,7 @@ std::optional<int> select_gpus(CommonOptions& o, std::vector<GpuCard>& chosen_ca
             bad.error = gerr;
             std::printf("%s\n", bp::gpu_plan_json({}, bad).c_str());
         } else {
-            basalt::log::error("basalt", "%s", gerr.c_str());
+            basalt::log::error("granite", "%s", gerr.c_str());
         }
         return 2;
     }
@@ -35,13 +35,13 @@ std::optional<int> select_gpus(CommonOptions& o, std::vector<GpuCard>& chosen_ca
                                              o.model_name, lossy, o.community_kv).c_str());
         return choice.error.empty() ? 0 : 2;
     }
-    if (!choice.error.empty()) { basalt::log::error("basalt", "%s", choice.error.c_str()); return 2; }
-    for (const std::string& s : choice.notes) basalt::log::info("basalt", "%s", s.c_str());
-    if (!choice.warning.empty()) basalt::log::warn("basalt", "%s", choice.warning.c_str());
+    if (!choice.error.empty()) { basalt::log::error("granite", "%s", choice.error.c_str()); return 2; }
+    for (const std::string& s : choice.notes) basalt::log::info("granite", "%s", s.c_str());
+    if (!choice.warning.empty()) basalt::log::warn("granite", "%s", choice.warning.c_str());
     bp::apply_gpus(visible, choice.cards);
     int seen = 0;
     if (cudaGetDeviceCount(&seen) != cudaSuccess || seen < (int) choice.cards.size()) {
-        basalt::log::error("basalt", "gpu %s: CUDA sees %d of the %zu GPUs chosen", o.gpu.empty() ? "0" : o.gpu.c_str(),
+        basalt::log::error("granite", "gpu %s: CUDA sees %d of the %zu GPUs chosen", o.gpu.empty() ? "0" : o.gpu.c_str(),
                            seen, choice.cards.size());
         return 2;
     }
@@ -64,12 +64,12 @@ std::optional<int> select_gpus(CommonOptions& o, std::vector<GpuCard>& chosen_ca
     int drv = 0, rt = 0;
     (void) cudaDriverGetVersion(&drv);
     (void) cudaRuntimeGetVersion(&rt);
-    basalt::log::info("basalt", "system: %s, CUDA driver %d.%d / runtime %d.%d",
+    basalt::log::info("granite", "system: %s, CUDA driver %d.%d / runtime %d.%d",
                       basalt::platform::host_os_name().c_str(),
                       drv / 1000, (drv % 1000) / 10, rt / 1000, (rt % 1000) / 10);
-    basalt::log::info("basalt", "gpus: %s", line.c_str());
+    basalt::log::info("granite", "gpus: %s", line.c_str());
     if (std::count(roles.begin(), roles.end(), bp::GpuRole::Idle) > 0)
-        basalt::log::warn("basalt", "%s",
+        basalt::log::warn("granite", "%s",
                           (ri.layer_stage ? std::string("one card runs the later layers beside the main card; later cards idle")
                            : prompt_split  ? std::string("one card reads prompts beside the main card; later cards idle")
                                        : "expert tiers max " + std::to_string(ri.max_expert_tiers) + "; later cards idle").c_str());
@@ -96,7 +96,7 @@ std::optional<int> select_gpus(CommonOptions& o, std::vector<GpuCard>& chosen_ca
                 (void) cudaGetLastError();
             }
         (void) cudaSetDevice(prev);
-        if (tried > 0) basalt::log::info("basalt", "peer access: %d of %d ordered pairs enabled", pairs, tried);
+        if (tried > 0) basalt::log::info("granite", "peer access: %d of %d ordered pairs enabled", pairs, tried);
     }
     return std::nullopt;
 }

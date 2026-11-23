@@ -756,10 +756,10 @@ void cards_first(const TestFile& f) {
     for (std::string l; std::getline(in, l);) {
         unsigned long long a = 0, b = 0;
         char into[32] = {};
-        if (l.rfind("basalt load: share ", 0) == 0) shares.push_back(l.substr(19));
-        else if (l == "basalt load: stages cuda0 ram") seq.push_back("stages");
-        else if (std::sscanf(l.c_str(), "basalt load: into %31s", into) == 1) seq.push_back(into);
-        else if (std::sscanf(l.c_str(), "basalt load: weights %llu %llu", &a, &b) == 2) seq.push_back(std::to_string(a));
+        if (l.rfind("granite load: share ", 0) == 0) shares.push_back(l.substr(20));
+        else if (l == "granite load: stages cuda0 ram") seq.push_back("stages");
+        else if (std::sscanf(l.c_str(), "granite load: into %31s", into) == 1) seq.push_back(into);
+        else if (std::sscanf(l.c_str(), "granite load: weights %llu %llu", &a, &b) == 2) seq.push_back(std::to_string(a));
     }
     in.close();
     const std::vector<std::string> want = {"0", "stages", "cuda0", std::to_string(kLen), "ram", std::to_string(2 * kLen)};

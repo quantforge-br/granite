@@ -6,7 +6,7 @@
 //     warning:  <tag>: warning: <text>
 //     error:    <tag>: error: <text>
 //
-// `tag` is the line's source, "basalt <area>" ("basalt generate", "basalt load"). The format is printf's; the line
+// `tag` is the line's source, "granite <area>" ("granite generate", "granite load"). The format is printf's; the line
 // is built whole and written with one call, so lines from different threads do not interleave. `raw` writes text
 // as given (tables, progress redraws) and counts as info. tools/check_stderr_logging.sh keeps every other write to
 // stderr out of the engine sources.
@@ -117,10 +117,10 @@ struct Parsed {
 };
 
 inline bool parse(const std::string& line, Parsed& out) {
-    if (line.compare(0, 6, "basalt") != 0) return false;
+    if (line.compare(0, 7, "granite") != 0) return false;
     const size_t colon = line.find(": ");
     if (colon == std::string::npos) return false;
-    for (size_t i = 6; i < colon; ++i) {
+    for (size_t i = 7; i < colon; ++i) {
         const char c = line[i];
         const bool word = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
         if (!word && c != ' ' && c != '-') return false;

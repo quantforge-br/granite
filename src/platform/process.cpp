@@ -384,7 +384,7 @@ void write_crash_backtrace() noexcept {
     const USHORT n = CaptureStackBackTrace(0, 24, frames, nullptr);
     if (n > 0) {
         CrashBuf b;
-        b.puts("basalt crash: error: backtrace:");
+        b.puts("granite crash: error: backtrace:");
         for (USHORT i = 0; i < n; ++i) {
             b.putc(' ');
             b.put_hex((uintptr_t) frames[i]);
@@ -408,7 +408,7 @@ void on_terminate() noexcept {
         } catch (...) {
         }
         CrashBuf b;
-        b.puts("basalt crash: error: unhandled exception (");
+        b.puts("granite crash: error: unhandled exception (");
         b.puts(what);
         b.putc(')');
         append_crash_stage(b, true);
@@ -438,7 +438,7 @@ LONG WINAPI on_win_exception(EXCEPTION_POINTERS* ep) noexcept {
     if (!g_crash_logged.exchange(true, std::memory_order_relaxed) && ep != nullptr && ep->ExceptionRecord != nullptr) {
         const EXCEPTION_RECORD* r = ep->ExceptionRecord;
         CrashBuf b;
-        b.puts("basalt crash: error: ");
+        b.puts("granite crash: error: ");
         b.puts(win_exception_name(r->ExceptionCode));
         b.puts(" (");
         b.put_hex((uint32_t) r->ExceptionCode, 8);
@@ -472,7 +472,7 @@ const char* posix_signal_name(int sig) noexcept {
 void on_crash_signal(int sig, siginfo_t* info, void*) noexcept {
     if (!g_crash_logged.exchange(true, std::memory_order_relaxed)) {
         CrashBuf b;
-        b.puts("basalt crash: error: ");
+        b.puts("granite crash: error: ");
         b.puts(posix_signal_name(sig));
         if (info != nullptr && info->si_code > 0 && info->si_addr != nullptr) {   // a fault, not a sent signal
             b.puts(" at ");

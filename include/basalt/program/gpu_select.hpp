@@ -1,6 +1,6 @@
 // include/basalt/program/gpu_select.hpp - which GPUs a run uses and what each one does.
 //
-// The `gpu` setting means the same in the server, the engine, basalt-bench and basalt-probe:
+// The `gpu` setting means the same in the server, the engine, granite-bench and granite-probe:
 //   unset       the first visible card alone (one warning names the others when there are any);
 //   A,B,...     exactly these cards, in this order: the first is the main card;
 //   auto        every visible card of compute capability 8.6, the fastest (memory bandwidth, then VRAM) as the main card.

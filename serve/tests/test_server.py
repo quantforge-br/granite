@@ -1242,7 +1242,7 @@ class GpuChoice(unittest.TestCase):
         bad = mock.Mock(returncode=2, stderr="", stdout='{"devices":"","cards":[],"notes":[],"warning":"","error":"gpu 2: 2 GPUs are visible (0-1)"}')
         with mock.patch("subprocess.run", return_value=bad), self.assertRaisesRegex(ValueError, "2 GPUs are visible"):
             model_plan("/x/basalt", "/m.basalt", "2", [])
-        refused = mock.Mock(returncode=2, stdout="", stderr="basalt: error: unknown argument: --kv\nusage: basalt\n")
+        refused = mock.Mock(returncode=2, stdout="", stderr="granite: error: unknown argument: --kv\nusage: basalt\n")
         with mock.patch("subprocess.run", return_value=refused), self.assertRaisesRegex(ValueError, "unknown argument: --kv"):
             model_plan("/x/basalt", "/m.basalt", None, ["--kv", "int8"])
         with mock.patch("subprocess.run", side_effect=OSError), self.assertRaisesRegex(ValueError, "could not check"):
@@ -1555,24 +1555,24 @@ class DraftHeadHint(unittest.TestCase):
         return str(p), len(before.encode())
 
     def test_the_engines_hint_is_relayed(self):
-        p, off = self.log("basalt mtp: the draft head over 106299 tokens needs 348 MiB of VRAM and 120 MiB is free.\n"
-                          "basalt mtp: hint: free VRAM (...)\n"
-                          "basalt serve: mtp: the draft head does not fit\n")
+        p, off = self.log("granite mtp: the draft head over 106299 tokens needs 348 MiB of VRAM and 120 MiB is free.\n"
+                          "granite mtp: hint: free VRAM (...)\n"
+                          "granite serve: mtp: the draft head does not fit\n")
         h = start_failure_hint(p, off)
         self.assertIn("the draft head does not fit", h)
         self.assertIn("348 MiB", h)
         self.assertIn("free VRAM", h)
 
     def test_without_the_engines_hint_the_server_gives_one(self):
-        p, off = self.log("basalt serve: mtp: the draft head does not fit\n")
+        p, off = self.log("granite serve: mtp: the draft head does not fit\n")
         self.assertIn("--spec 0", start_failure_hint(p, off))
 
     def test_other_failures_and_earlier_starts_add_nothing(self):
-        p, off = self.log("basalt serve: cannot open the pack\n")
+        p, off = self.log("granite serve: cannot open the pack\n")
         self.assertEqual(start_failure_hint(p, off), "")
         # an earlier start's failure (before this start's offset) is not this one's
-        p, off = self.log("basalt serve: cannot open the pack\n",
-                          before="basalt serve: mtp: the draft head does not fit\n")
+        p, off = self.log("granite serve: cannot open the pack\n",
+                          before="granite serve: mtp: the draft head does not fit\n")
         self.assertEqual(start_failure_hint(p, off), "")
         self.assertEqual(start_failure_hint(None, 0), "")
         self.assertEqual(start_failure_hint(str(Path(tempfile.mkdtemp()) / "missing.log"), 0), "")
@@ -1585,16 +1585,16 @@ class StartFailureLog(unittest.TestCase):
         from serve.engine.progress import start_last_line
         d = tempfile.mkdtemp()
         p = Path(d) / "engine.log"
-        before = "basalt serve: an earlier start's line\n"
-        p.write_text(before + "basalt serve: line 1\nbasalt generate: cannot open the pack\n"
-                     "basalt: warning: slow disk\n\n", encoding="utf-8")
+        before = "granite serve: an earlier start's line\n"
+        p.write_text(before + "granite serve: line 1\ngranite generate: cannot open the pack\n"
+                     "granite: warning: slow disk\n\n", encoding="utf-8")
         self.assertEqual(start_last_line(str(p), len(before.encode())), "cannot open the pack")
         self.assertEqual(start_last_line(str(p), p.stat().st_size), "")   # nothing from this start
         self.assertEqual(start_last_line(None, 0), "")
         self.assertEqual(start_last_line(str(Path(d) / "missing.log"), 0), "")
 
     def test_the_start_error_has_them(self):
-        fake = "import sys\nsys.stderr.write('basalt serve: cannot open the pack packs/x\\n')\nsys.exit(2)\n"
+        fake = "import sys\nsys.stderr.write('granite serve: cannot open the pack packs/x\\n')\nsys.exit(2)\n"
         with tempfile.TemporaryDirectory() as d:
             script, log = Path(d) / "fake_engine.py", Path(d) / "engine.log"
             script.write_text(fake, encoding="utf-8")
@@ -1639,13 +1639,13 @@ class StartFailureLog(unittest.TestCase):
 
 
     def test_the_engines_own_error_is_the_message(self):
-        fake = ("import sys\nsys.stderr.write('basalt generate: GPU 0\\n')\n"
-                "sys.stderr.write('basalt: error: the experts need 40.0 GiB of RAM, 27.1 GiB is available; use "
+        fake = ("import sys\nsys.stderr.write('granite generate: GPU 0\\n')\n"
+                "sys.stderr.write('granite: error: the experts need 40.0 GiB of RAM, 27.1 GiB is available; use "
                 "--resident-experts or --mmap-experts\\n')\nsys.exit(1)\n")
         with tempfile.TemporaryDirectory() as d:
             script, log = Path(d) / "fake_engine.py", Path(d) / "engine.log"
             script.write_text(fake, encoding="utf-8")
-            log.write_text("basalt: error: an earlier start\n", encoding="utf-8")
+            log.write_text("granite: error: an earlier start\n", encoding="utf-8")
             real = subprocess.Popen
             with mock.patch.object(subprocess, "Popen",
                                    lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:]], **kw)), \
@@ -1657,41 +1657,41 @@ class StartFailureLog(unittest.TestCase):
 
     def test_error_lines(self):
         from serve.engine.progress import engine_error
-        self.assertEqual(engine_error("basalt: error: x y"), "x y")
-        self.assertIsNone(engine_error("basalt: error: "))
-        self.assertIsNone(engine_error("basalt: warning: x"))
+        self.assertEqual(engine_error("granite: error: x y"), "x y")
+        self.assertIsNone(engine_error("granite: error: "))
+        self.assertIsNone(engine_error("granite: warning: x"))
 
     def test_route_warnings_reach_the_start_output(self):
         from serve.engine.progress import engine_warning
         self.assertEqual(
-            engine_warning("basalt: warning: --route-tail-skip 9 drops low-ranked missed experts"),
+            engine_warning("granite: warning: --route-tail-skip 9 drops low-ranked missed experts"),
             "--route-tail-skip 9 drops low-ranked missed experts")
 
     def test_route_prior_warning_reaches_the_start_output(self):
         from serve.engine.progress import engine_warning
         self.assertEqual(
-            engine_warning("basalt: warning: --route-prior 0.5 changes expert routing"),
+            engine_warning("granite: warning: --route-prior 0.5 changes expert routing"),
             "--route-prior 0.5 changes expert routing")
 
     def test_marked_lines_of_any_area(self):
         from serve.engine.progress import engine_error, engine_ram_floor, engine_warning, start_errors
-        self.assertEqual(engine_error("basalt generate: error: the weight arena failed"), "the weight arena failed")
-        self.assertEqual(engine_error("basalt: error: dec_moe_vram: formats 1 / 2"), "dec_moe_vram: formats 1 / 2")
-        self.assertIsNone(engine_error("basalt generate: warning: x"))
-        self.assertIsNone(engine_error("basalt generate: no error here, nothing failed"))
+        self.assertEqual(engine_error("granite generate: error: the weight arena failed"), "the weight arena failed")
+        self.assertEqual(engine_error("granite: error: dec_moe_vram: formats 1 / 2"), "dec_moe_vram: formats 1 / 2")
+        self.assertIsNone(engine_error("granite generate: warning: x"))
+        self.assertIsNone(engine_error("granite generate: no error here, nothing failed"))
         self.assertIsNone(engine_error("CUDA error: out of memory"))
-        self.assertEqual(engine_warning("basalt serve: warning: model 60.0 GiB"), "model 60.0 GiB")
-        self.assertIsNone(engine_warning("basalt generate: WARNING: not a marker"))
-        self.assertIsNone(engine_warning("basalt serve: warning: "))
-        self.assertEqual(engine_ram_floor("basalt generate: RAM floor 4.0 GiB"), "4.0 GiB")
-        self.assertIsNone(engine_ram_floor("basalt serve: RAM floor 4.0 GiB"))
+        self.assertEqual(engine_warning("granite serve: warning: model 60.0 GiB"), "model 60.0 GiB")
+        self.assertIsNone(engine_warning("granite generate: WARNING: not a marker"))
+        self.assertIsNone(engine_warning("granite serve: warning: "))
+        self.assertEqual(engine_ram_floor("granite generate: RAM floor 4.0 GiB"), "4.0 GiB")
+        self.assertIsNone(engine_ram_floor("granite serve: RAM floor 4.0 GiB"))
         with tempfile.TemporaryDirectory() as d:
             log = Path(d) / "engine.log"
-            log.write_text("basalt generate: error: an earlier start\n", encoding="utf-8")
+            log.write_text("granite generate: error: an earlier start\n", encoding="utf-8")
             off = log.stat().st_size
             with open(log, "a", encoding="utf-8") as f:
-                f.write("basalt generate: GPU 0\nbasalt generate: warning: slow\nbasalt generate: error: first\n"
-                        "basalt serve: error: second\nbasalt serve: no error\n")
+                f.write("granite generate: GPU 0\ngranite generate: warning: slow\ngranite generate: error: first\n"
+                        "granite serve: error: second\ngranite serve: no error\n")
             self.assertEqual(start_errors(str(log), off), ["first", "second"])
             from serve.engine.progress import start_last_line
             self.assertEqual(start_last_line(str(log), off), "no error")
@@ -1699,9 +1699,9 @@ class StartFailureLog(unittest.TestCase):
     def test_the_draft_head_hint_reads_marked_lines(self):
         d = tempfile.mkdtemp()
         p = Path(d) / "engine.log"
-        p.write_text("basalt mtp: warning: the draft head over 106299 tokens needs 348 MiB of VRAM and 120 MiB is free.\n"
-                     "basalt mtp: hint: free VRAM (...)\n"
-                     "basalt serve: error: mtp: the draft head does not fit\n", encoding="utf-8")
+        p.write_text("granite mtp: warning: the draft head over 106299 tokens needs 348 MiB of VRAM and 120 MiB is free.\n"
+                     "granite mtp: hint: free VRAM (...)\n"
+                     "granite serve: error: mtp: the draft head does not fit\n", encoding="utf-8")
         h = start_failure_hint(str(p), 0)
         self.assertIn("348 MiB", h)
         self.assertIn("free VRAM", h)
@@ -1713,22 +1713,22 @@ class Tty(io.StringIO):
 
 
 class LoadProgress(unittest.TestCase):
-    """The engine's `basalt load:` lines: one bar for the whole start, one line when it is done."""
+    """The engine's `granite load:` lines: one bar for the whole start, one line when it is done."""
 
     def test_parse(self):
         from serve.engine.progress import engine_warning, load_progress, load_total
-        self.assertEqual(load_progress("basalt load: weights 10 100"), ("weights", 10, 100))
-        self.assertEqual(load_progress("basalt load: ngram 1073741824 3221225472"), ("ngram", 1 << 30, 3 << 30))
-        self.assertIsNone(load_progress("basalt load: total 100"))
-        self.assertIsNone(load_progress("basalt load: weights ten 100"))
-        self.assertIsNone(load_progress("basalt load: cuda0 10 100"))        # no per-device lines any more
-        self.assertIsNone(load_progress("basalt generate: loaded 3 GiB"))
-        self.assertEqual(load_total("basalt load: total 4096"), 4096)
-        self.assertIsNone(load_total("basalt load: total many"))
-        self.assertIsNone(load_total("basalt load: weights 1 2"))
-        self.assertEqual(engine_warning("basalt: warning: model 60.0 GiB, free 40.0 GiB"), "model 60.0 GiB, free 40.0 GiB")
-        self.assertIsNone(engine_warning("basalt: warning: "))
-        self.assertIsNone(engine_warning("basalt generate: WARNING: x"))
+        self.assertEqual(load_progress("granite load: weights 10 100"), ("weights", 10, 100))
+        self.assertEqual(load_progress("granite load: ngram 1073741824 3221225472"), ("ngram", 1 << 30, 3 << 30))
+        self.assertIsNone(load_progress("granite load: total 100"))
+        self.assertIsNone(load_progress("granite load: weights ten 100"))
+        self.assertIsNone(load_progress("granite load: cuda0 10 100"))        # no per-device lines any more
+        self.assertIsNone(load_progress("granite generate: loaded 3 GiB"))
+        self.assertEqual(load_total("granite load: total 4096"), 4096)
+        self.assertIsNone(load_total("granite load: total many"))
+        self.assertIsNone(load_total("granite load: weights 1 2"))
+        self.assertEqual(engine_warning("granite: warning: model 60.0 GiB, free 40.0 GiB"), "model 60.0 GiB, free 40.0 GiB")
+        self.assertIsNone(engine_warning("granite: warning: "))
+        self.assertIsNone(engine_warning("granite generate: WARNING: x"))
 
     def test_log_output_prints_only_the_result(self):
         from serve.engine.progress import LoadBars
@@ -1766,10 +1766,10 @@ class LoadProgress(unittest.TestCase):
 
     def test_the_one_bar_says_where_the_engine_places(self):
         from serve.engine.progress import LoadBars, load_into
-        self.assertEqual(load_into("basalt load: into cuda0"), "cuda0")
-        self.assertEqual(load_into("basalt load: into ram"), "ram")
-        self.assertIsNone(load_into("basalt load: into disk"))
-        self.assertIsNone(load_into("basalt load: weights 1 2"))
+        self.assertEqual(load_into("granite load: into cuda0"), "cuda0")
+        self.assertEqual(load_into("granite load: into ram"), "ram")
+        self.assertIsNone(load_into("granite load: into disk"))
+        self.assertIsNone(load_into("granite load: weights 1 2"))
         out = Tty()
         bars = LoadBars(out, gpus=[2, 3])                               # CUDA ordinals 0, 1 are nvidia-smi 2, 3
         bars.set_total(4 << 30)
@@ -1794,9 +1794,9 @@ class LoadProgress(unittest.TestCase):
 
     def test_four_cards_then_ram_on_one_bar_that_never_shifts(self):
         from serve.engine.progress import LoadBars, load_stages
-        stages = load_stages("basalt load: stages cuda0 cuda1 cuda2 cuda3 ram")
+        stages = load_stages("granite load: stages cuda0 cuda1 cuda2 cuda3 ram")
         self.assertEqual(stages, ["cuda0", "cuda1", "cuda2", "cuda3", "ram"])
-        self.assertIsNone(load_stages("basalt load: stages disk"))
+        self.assertIsNone(load_stages("granite load: stages disk"))
         bars = LoadBars(Tty(), gpus=[3, 10, 1, 0])                      # nvidia-smi numbers: cuda10 is the widest
         bars.set_total(10 << 30)
         bars.set_stages(stages)
@@ -1898,12 +1898,12 @@ class LoadProgress(unittest.TestCase):
 
     def test_parse_share(self):
         from serve.engine.progress import load_progress, load_share
-        self.assertEqual(load_share("basalt load: share cuda0 0 13421772800"), ("cuda0", 0, 13421772800))
-        self.assertEqual(load_share("basalt load: share ram 5 9"), ("ram", 5, 9))
-        self.assertIsNone(load_share("basalt load: share disk 5 9"))
-        self.assertIsNone(load_share("basalt load: share cuda0 x 9"))
-        self.assertIsNone(load_share("basalt load: share cuda0 9"))
-        self.assertIsNone(load_progress("basalt load: share cuda0 0 9"))
+        self.assertEqual(load_share("granite load: share cuda0 0 13421772800"), ("cuda0", 0, 13421772800))
+        self.assertEqual(load_share("granite load: share ram 5 9"), ("ram", 5, 9))
+        self.assertIsNone(load_share("granite load: share disk 5 9"))
+        self.assertIsNone(load_share("granite load: share cuda0 x 9"))
+        self.assertIsNone(load_share("granite load: share cuda0 9"))
+        self.assertIsNone(load_progress("granite load: share cuda0 0 9"))
 
     def test_a_total_that_grows_or_shrinks_moves_the_bar(self):
         from serve.engine.progress import LoadBars
@@ -1995,13 +1995,13 @@ class LoadProgress(unittest.TestCase):
 
     def test_kv_is_a_line_after_the_result_and_not_a_load(self):
         from serve.engine.progress import LoadBars, load_kv, load_progress
-        self.assertEqual(load_kv("basalt load: kv cuda0 4509715660 262144"), ("cuda0", 4509715660, 262144, "", 4509715660))
-        self.assertEqual(load_kv("basalt load: kv slot cuda1 100 5"), ("cuda1", 100, 5, "slot", 100))
-        self.assertEqual(load_kv("basalt load: kv slot cuda1 100 5 900"), ("cuda1", 100, 5, "slot", 900))
-        self.assertEqual(load_kv("basalt load: kv draft cuda0 100 5"), ("cuda0", 100, 5, "draft", 100))
-        self.assertIsNone(load_kv("basalt load: kv cuda0 x 1"))
-        self.assertIsNone(load_kv("basalt load: kv other cuda0 1 2"))
-        self.assertIsNone(load_progress("basalt load: kv cuda0 100 5"))
+        self.assertEqual(load_kv("granite load: kv cuda0 4509715660 262144"), ("cuda0", 4509715660, 262144, "", 4509715660))
+        self.assertEqual(load_kv("granite load: kv slot cuda1 100 5"), ("cuda1", 100, 5, "slot", 100))
+        self.assertEqual(load_kv("granite load: kv slot cuda1 100 5 900"), ("cuda1", 100, 5, "slot", 900))
+        self.assertEqual(load_kv("granite load: kv draft cuda0 100 5"), ("cuda0", 100, 5, "draft", 100))
+        self.assertIsNone(load_kv("granite load: kv cuda0 x 1"))
+        self.assertIsNone(load_kv("granite load: kv other cuda0 1 2"))
+        self.assertIsNone(load_progress("granite load: kv cuda0 100 5"))
         out = io.StringIO()
         bars = LoadBars(out, gpus=[2, 3])
         bars.set_total(2 << 30)
@@ -2027,8 +2027,8 @@ class LoadProgress(unittest.TestCase):
     def test_an_elastic_kv_line_reads_backed_over_most(self):
         from serve.engine.progress import LoadBars, load_kv
         bars = LoadBars(io.StringIO(), gpus=[2, 3])
-        bars.set_kv(*load_kv("basalt load: kv cuda0 536870912 262144 4294967296"))
-        bars.set_kv(*load_kv("basalt load: kv draft cuda0 107374182 262144 429496729"))
+        bars.set_kv(*load_kv("granite load: kv cuda0 536870912 262144 4294967296"))
+        bars.set_kv(*load_kv("granite load: kv draft cuda0 107374182 262144 429496729"))
         self.assertEqual(bars.kv_lines(), ["[server] kv       0.6/4.4GiB cuda2 elastic"])
         slots = LoadBars(io.StringIO())
         slots.set_kv("cuda0", 1 << 29, 262144, "slot", 4 << 30)
@@ -2044,10 +2044,10 @@ class LoadProgress(unittest.TestCase):
         from serve.engine.progress import narrate_start
         d = tempfile.mkdtemp()
         log = Path(d) / "engine.log"
-        log.write_text("basalt load: total 200\nbasalt: warning: model 1.0 GiB, free VRAM + RAM 0.5 GiB: slow\n"
-                       "basalt load: weights 0 200\nbasalt generate: expert arena: resident, 31.64 GiB\n"
-                       "basalt load: weights 100 200\nbasalt load: weights 200 200\n"
-                       "basalt generate: session is up (engine 1)\n", encoding="utf-8")
+        log.write_text("granite load: total 200\ngranite: warning: model 1.0 GiB, free VRAM + RAM 0.5 GiB: slow\n"
+                       "granite load: weights 0 200\ngranite generate: expert arena: resident, 31.64 GiB\n"
+                       "granite load: weights 100 200\ngranite load: weights 200 200\n"
+                       "granite generate: session is up (engine 1)\n", encoding="utf-8")
         done, out = threading.Event(), io.StringIO()
         with contextlib.redirect_stdout(out):
             t = threading.Thread(target=narrate_start, args=(str(log), 0, done))
@@ -2063,12 +2063,12 @@ class LoadProgress(unittest.TestCase):
     def test_narrator_shows_the_ram_floor_line(self):
         from serve.engine.progress import engine_ram_floor, narrate_start
         text = "9.3 GiB (2.0 margin + 7.3 cache), 20.0 GiB experts on SSD, RAM copy <= 12.0 of 30.0 GiB"
-        self.assertEqual(engine_ram_floor("basalt generate: RAM floor " + text), text)
-        self.assertIsNone(engine_ram_floor("basalt generate: RAM floor "))
-        self.assertIsNone(engine_ram_floor("basalt generate: session is up"))
+        self.assertEqual(engine_ram_floor("granite generate: RAM floor " + text), text)
+        self.assertIsNone(engine_ram_floor("granite generate: RAM floor "))
+        self.assertIsNone(engine_ram_floor("granite generate: session is up"))
         d = tempfile.mkdtemp()
         log = Path(d) / "engine.log"
-        log.write_text("basalt generate: RAM floor " + text + "\nbasalt generate: session is up (engine 1)\n", encoding="utf-8")
+        log.write_text("granite generate: RAM floor " + text + "\ngranite generate: session is up (engine 1)\n", encoding="utf-8")
         done, out = threading.Event(), io.StringIO()
         with contextlib.redirect_stdout(out):
             t = threading.Thread(target=narrate_start, args=(str(log), 0, done))
@@ -2080,11 +2080,11 @@ class LoadProgress(unittest.TestCase):
 
     def test_planning_is_said_before_the_bar(self):
         from serve.engine.progress import load_planning, narrate_start
-        self.assertTrue(load_planning("basalt load: planning"))
-        self.assertFalse(load_planning("basalt load: total 4096"))
+        self.assertTrue(load_planning("granite load: planning"))
+        self.assertFalse(load_planning("granite load: total 4096"))
         d = tempfile.mkdtemp()
         log = Path(d) / "engine.log"
-        log.write_text("basalt load: planning\nbasalt load: total 4096\nbasalt load: weights 0 4096\n", encoding="utf-8")
+        log.write_text("granite load: planning\ngranite load: total 4096\ngranite load: weights 0 4096\n", encoding="utf-8")
         done, out = threading.Event(), Tty()
         t = threading.Thread(target=narrate_start, args=(str(log), 0, done), kwargs={"out": out})
         t.start()
@@ -2099,7 +2099,7 @@ class LoadProgress(unittest.TestCase):
         from serve.engine.progress import narrate_start
         d = tempfile.mkdtemp()
         log = Path(d) / "engine.log"
-        log.write_text("basalt load: weights 0 0\nbasalt load: weights 100 0\n", encoding="utf-8")
+        log.write_text("granite load: weights 0 0\ngranite load: weights 100 0\n", encoding="utf-8")
         done, out = threading.Event(), Tty()
         t = threading.Thread(target=narrate_start, args=(str(log), 0, done), kwargs={"out": out})
         t.start()

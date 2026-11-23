@@ -70,7 +70,7 @@ int main() {
 
     // layout
     ReportInput in;
-    in.command_line = "basalt-probe";
+    in.command_line = "granite-probe";
     in.rates = r;
     in.experts_line = "experts 5090 9460 / 5060 Ti 5704 / RAM rest";
     in.kv = "int8";

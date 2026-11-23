@@ -20,17 +20,17 @@ class Levels(unittest.TestCase):
         return [r.read(x) for x in lines]
 
     def test_engine_markers(self):
-        self.assertEqual(self.read("basalt generate: ready", "basalt generate: warning: low", "basalt serve: error: x",
-                                   "basalt: error: CUDA out of memory", "basalt batch adapt: window 3: 2 swaps",
-                                   "basalt-bench: warning: NVML is unavailable"),
+        self.assertEqual(self.read("granite generate: ready", "granite generate: warning: low", "granite serve: error: x",
+                                   "granite: error: CUDA out of memory", "granite batch adapt: window 3: 2 swaps",
+                                   "granite-bench: warning: NVML is unavailable"),
                          ["info", "warn", "err", "err", "info", "warn"])
 
     def test_older_engine_markers(self):
-        self.assertEqual(self.read("basalt: error: boom", "basalt: warning: slow disk"), ["err", "warn"])
+        self.assertEqual(self.read("granite: error: boom", "granite: warning: slow disk"), ["err", "warn"])
 
     def test_words_decide_nothing(self):
-        for text in ("basalt serve: no error, 0 failures", "basalt generate: failed over to the CPU path",
-                     "basalt load: cuda0 10 100", "basalt serve: prompt 5 tokens = 0 reused, error=0",
+        for text in ("granite serve: no error, 0 failures", "granite generate: failed over to the CPU path",
+                     "granite load: cuda0 10 100", "granite serve: prompt 5 tokens = 0 reused, error=0",
                      "request failed with a timeout", "WARNING: low on RAM", "CUDA error: out of memory",
                      "a fatal exception was aborted", "[server] stuck? no, retrying is not a marker"):
             self.assertEqual(self.read(text), ["info"], text)
@@ -49,22 +49,22 @@ class Levels(unittest.TestCase):
                          ["err"] * 7 + ["info"])
 
     def test_engine_line_parts(self):
-        e = engine_line("basalt mtp: warning: the draft head over 5 tokens")
-        self.assertEqual((e.tag, e.level, e.text), ("basalt mtp", "warn", "the draft head over 5 tokens"))
-        self.assertEqual(engine_line("basalt: error: x"), ("basalt", "err", "x"))
+        e = engine_line("granite mtp: warning: the draft head over 5 tokens")
+        self.assertEqual((e.tag, e.level, e.text), ("granite mtp", "warn", "the draft head over 5 tokens"))
+        self.assertEqual(engine_line("granite: error: x"), ("granite", "err", "x"))
         self.assertIsNone(engine_line("CUDA error: x"))
         self.assertIsNone(engine_line("  chunk share 0.50: 12 ms"))
 
     def test_the_buffer_reads_markers_and_keeps_traceback_state_per_source(self):
         b = LogBuffer()
-        b.add("eng", "basalt generate: error: no GPU\nbasalt generate: no error here\nFATAL: not a marker")
+        b.add("eng", "granite generate: error: no GPU\ngranite generate: no error here\nFATAL: not a marker")
         b.add("srv", "Traceback (most recent call last):")
-        b.add("eng", "basalt load: cuda0 1 2")            # another source: not part of the server's traceback
+        b.add("eng", "granite load: cuda0 1 2")            # another source: not part of the server's traceback
         b.add("srv", '  File "a.py", line 1\nOSError: x\n[server] warning: low RAM')
         self.assertEqual([(x["lvl"], x["msg"]) for x in b.since(0)[0]],
-                         [("err", "basalt generate: error: no GPU"), ("info", "basalt generate: no error here"),
+                         [("err", "granite generate: error: no GPU"), ("info", "granite generate: no error here"),
                           ("info", "FATAL: not a marker"), ("err", "Traceback (most recent call last):"),
-                          ("info", "basalt load: cuda0 1 2"), ("err", '  File "a.py", line 1'), ("err", "OSError: x"),
+                          ("info", "granite load: cuda0 1 2"), ("err", '  File "a.py", line 1'), ("err", "OSError: x"),
                           ("warn", "warning: low RAM")])
 
     def test_a_startup_block_warning_reads_as_a_warning(self):
@@ -157,9 +157,9 @@ class Tail(unittest.TestCase):
             threading.Thread(target=tail_file, args=(b, str(log), "eng", 0.02), daemon=True).start()
             time.sleep(0.2)
             with open(log, "a", encoding="utf-8") as f:
-                f.write("basalt: ready\nhalf a li")
+                f.write("granite: ready\nhalf a li")
             self.wait_for(b, 1)
-            self.assertEqual([x["msg"] for x in b.since(0)[0]], ["basalt: ready"])
+            self.assertEqual([x["msg"] for x in b.since(0)[0]], ["granite: ready"])
             with open(log, "a", encoding="utf-8") as f:
                 f.write("ne\n")
             self.wait_for(b, 2)
@@ -189,9 +189,9 @@ class Tail(unittest.TestCase):
                              kwargs={"on_line": lambda text, pos: seen.append((text, pos))}, daemon=True).start()
             time.sleep(0.1)
             with open(log, "a", encoding="utf-8") as f:
-                f.write("basalt serve: warning: hot\n")
+                f.write("granite serve: warning: hot\n")
             self.wait_for(b, 1)
-            self.assertEqual(seen, [("basalt serve: warning: hot", len("before\nbasalt serve: warning: hot\n"))])
+            self.assertEqual(seen, [("granite serve: warning: hot", len("before\ngranite serve: warning: hot\n"))])
 
     def test_skip_omits_matching_lines_from_buffer(self):
         with tempfile.TemporaryDirectory() as d:
@@ -199,12 +199,12 @@ class Tail(unittest.TestCase):
             log.write_text("", encoding="utf-8")
             b = LogBuffer()
             threading.Thread(target=tail_file, args=(b, str(log), "eng", 0.02),
-                             kwargs={"skip": lambda line: line.startswith("basalt load: cuda0 ")}, daemon=True).start()
+                             kwargs={"skip": lambda line: line.startswith("granite load: cuda0 ")}, daemon=True).start()
             time.sleep(0.1)
             with open(log, "a", encoding="utf-8") as f:
-                f.write("basalt load: cuda0 100 200\nbasalt: system: Linux\n")
+                f.write("granite load: cuda0 100 200\ngranite: system: Linux\n")
             self.wait_for(b, 1)
-            self.assertEqual([x["msg"] for x in b.since(0)[0]], ["basalt: system: Linux"])
+            self.assertEqual([x["msg"] for x in b.since(0)[0]], ["granite: system: Linux"])
 
 
 class Tty(io.StringIO):
@@ -212,8 +212,8 @@ class Tty(io.StringIO):
         return True
 
 
-LINES = ("[server] warning: model 76.9 GiB\nbasalt generate: error: boom\n[server] error: refused Host 'x'\n"
-         "[server] listening\nbasalt serve: warning: low\nbasalt serve: no error here\n")
+LINES = ("[server] warning: model 76.9 GiB\ngranite generate: error: boom\n[server] error: refused Host 'x'\n"
+         "[server] listening\ngranite serve: warning: low\ngranite serve: no error here\n")
 
 
 class Color(unittest.TestCase):
@@ -237,9 +237,9 @@ class Color(unittest.TestCase):
             w.write(ch)
         w.flush()
         y, r, z = "\x1b[33m", "\x1b[31m", "\x1b[0m"
-        self.assertEqual(out.getvalue(), f"{y}[server] warning: model 76.9 GiB{z}\n{r}basalt generate: error: boom{z}\n"
-                         f"{r}[server] error: refused Host 'x'{z}\n[server] listening\n{y}basalt serve: warning: low{z}\n"
-                         f"basalt serve: no error here\n")
+        self.assertEqual(out.getvalue(), f"{y}[server] warning: model 76.9 GiB{z}\n{r}granite generate: error: boom{z}\n"
+                         f"{r}[server] error: refused Host 'x'{z}\n[server] listening\n{y}granite serve: warning: low{z}\n"
+                         f"granite serve: no error here\n")
 
     def test_no_color_disables(self):
         out = Tty()

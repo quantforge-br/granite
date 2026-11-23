@@ -1,4 +1,4 @@
-// basalt-probe: Basalt's built-in tuner, first stage. It starts the engine as a child process (like basalt-bench),
+// granite-probe: Basalt's built-in tuner, first stage. It starts the engine as a child process (like basalt-bench),
 // asks it for the machine's rates (PROBE rates), measures cold decode speed on the three standard fixtures at
 // the engine's context, and prints a short report with the values it suggests. Manual only: it prints and saves
 // nothing.
@@ -195,7 +195,7 @@ double measure_share(Engine& eng, const std::vector<std::vector<int64_t>>& fixtu
         return d.reused == 0;
     };
     if (!run(base, false) || !run(0.0, true) || !run(1.0, true)) {
-        basalt::log::error("basalt-probe", "prefill share: %s", err.c_str());
+        basalt::log::error("granite-probe", "prefill share: %s", err.c_str());
         return -1;
     }
     const double star = balance_share(mean_ms_at(trials, 0.0), mean_ms_at(trials, 1.0));
@@ -210,7 +210,7 @@ int main(int argc, char** argv) {
     ProbeOptions o;
     std::string err;
     if (!parse_args(argc, argv, o, err)) {
-        basalt::log::error("basalt-probe", "%s", err.c_str());
+        basalt::log::error("granite-probe", "%s", err.c_str());
         return 2;
     }
     basalt::platform::ignore_broken_pipe();
@@ -218,7 +218,7 @@ int main(int argc, char** argv) {
 
     const std::string engine_bin = o.engine.empty() ? engine_default() : o.engine;
     if (engine_bin.empty() || !fs::exists(engine_bin)) {
-        basalt::log::error("basalt-probe", "the engine binary %s does not exist (--engine BIN)", engine_bin.c_str());
+        basalt::log::error("granite-probe", "the engine binary %s does not exist (--engine BIN)", engine_bin.c_str());
         return 2;
     }
 
@@ -269,8 +269,8 @@ int main(int argc, char** argv) {
     {
         std::string gpu_value;
         std::vector<GpuCard> used;
-        if (!select_gpus(gpu_given, "basalt-probe", gpu_value, used, err)) {
-            basalt::log::error("basalt-probe", "%s", err.c_str());
+        if (!select_gpus(gpu_given, "granite-probe", gpu_value, used, err)) {
+            basalt::log::error("granite-probe", "%s", err.c_str());
             return 2;
         }
         set_arg(args, "--gpu", gpu_value);
@@ -282,7 +282,7 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < 3; ++i) {
         std::vector<std::vector<int64_t>> lines;
         if (!read_id_lines((fs::path(o.fixtures) / kFixtures[i].file).string(), lines, err) || lines.empty()) {
-            basalt::log::error("basalt-probe", "%s", err.empty() ? (std::string(kFixtures[i].file) + " is empty").c_str() : err.c_str());
+            basalt::log::error("granite-probe", "%s", err.empty() ? (std::string(kFixtures[i].file) + " is empty").c_str() : err.c_str());
             return 2;
         }
         for (auto& l : lines) ids[i].insert(ids[i].end(), l.begin(), l.end());
@@ -299,7 +299,7 @@ int main(int argc, char** argv) {
     }
     std::error_code ec;
     fs::create_directories(work, ec);
-    if (ec) { basalt::log::error("basalt-probe", "cannot create %s", work.c_str()); return 2; }
+    if (ec) { basalt::log::error("granite-probe", "cannot create %s", work.c_str()); return 2; }
     struct Cleanup {
         std::string dir;
         bool on;
@@ -313,10 +313,10 @@ int main(int argc, char** argv) {
     const std::string log_path = (fs::path(work) / "engine.log").string();
 
     Engine eng;
-    eng.label = "basalt-probe";
-    basalt::log::info("basalt-probe", "starting the engine");
+    eng.label = "granite-probe";
+    basalt::log::info("granite-probe", "starting the engine");
     if (!eng.start(engine_bin, args, log_path, err)) {
-        basalt::log::error("basalt-probe", "%s", err.c_str());
+        basalt::log::error("granite-probe", "%s", err.c_str());
         return 1;
     }
     const auto t_ready = Clock::now();
@@ -325,9 +325,9 @@ int main(int argc, char** argv) {
     if (adapt_on) {
         std::vector<std::string> blk;
         if (eng.command("PROBE adapt swaps=" + std::to_string(base_swaps), "PROBE end", blk, err)) {
-            basalt::log::info("basalt-probe", "adaptive tier at the given swap count: %s", blk.back().c_str());
+            basalt::log::info("granite-probe", "adaptive tier at the given swap count: %s", blk.back().c_str());
         } else {
-            basalt::log::warn("basalt-probe", "no adapt test: %s", err.c_str());
+            basalt::log::warn("granite-probe", "no adapt test: %s", err.c_str());
             err.clear();
             adapt_on = false;
         }
@@ -337,7 +337,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> block;
     ProbeRates rates;
     if (!eng.command("PROBE rates", "PROBE end", block, err) || !parse_probe_rates(block, rates)) {
-        basalt::log::error("basalt-probe", "PROBE rates failed: %s", err.empty() ? "no GPU in the reply" : err.c_str());
+        basalt::log::error("granite-probe", "PROBE rates failed: %s", err.empty() ? "no GPU in the reply" : err.c_str());
         return 1;
     }
 
@@ -360,7 +360,7 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < 3; ++i) {
         Done d;
         if (!eng.request(" temperature=0 top_p=0.95 top_k=20", kTokens, ids[i], d) || d.generated <= 0) {
-            basalt::log::error("basalt-probe", "%s: %s", kFixtures[i].name, d.err.empty() ? "no tokens generated" : d.err.c_str());
+            basalt::log::error("granite-probe", "%s: %s", kFixtures[i].name, d.err.empty() ? "no tokens generated" : d.err.c_str());
             return 1;
         }
         const double ts = d.decode_ms > 0 ? (double) d.generated / (d.decode_ms / 1000.0) : 0.0;
@@ -376,7 +376,7 @@ int main(int argc, char** argv) {
             const std::string s = suggest_workers(rates, wp);
             if (!s.empty()) {
                 suggested.push_back(s);
-                basalt::log::info("basalt-probe", "pool pick %d frees %d cores", wp.workers,
+                basalt::log::info("granite-probe", "pool pick %d frees %d cores", wp.workers,
                              (rates.active_workers > 0 ? rates.active_workers : rates.pool_workers) - wp.workers);
             }
         }
@@ -386,7 +386,7 @@ int main(int argc, char** argv) {
             std::vector<ShareTrial> trials;
             const double star = measure_share(eng, ids, base, trials);
             const double gain = share_gain(trials, base, star);
-            basalt::log::info("basalt-probe", "prefill share: balance %.2f, %+.1f%% over %.2f", star, gain * 100.0, base);
+            basalt::log::info("granite-probe", "prefill share: balance %.2f, %+.1f%% over %.2f", star, gain * 100.0, base);
             if (star >= 0 && gain > kShareMinGain) suggested.push_back(suggest_share(star, base, gain));
         }
     }
@@ -412,7 +412,7 @@ int main(int argc, char** argv) {
         saved_t.saved = true;
         if (ok && !saved_profile.empty() && (ok = adapt_trial(eng, ids, saved_profile, saved_t, aerr))) trials.push_back(saved_t);
         if (!ok) {
-            basalt::log::warn("basalt-probe", "adapt test: %s", aerr.c_str());
+            basalt::log::warn("granite-probe", "adapt test: %s", aerr.c_str());
         } else {
             const double band = adapt_band(base_t.tps, again.tps, kAdaptBandFloor), base_tps = (base_t.tps + again.tps) / 2.0;
             const std::string sa = suggest_adapt(base_t, base_tps, band, trials);
@@ -422,15 +422,15 @@ int main(int argc, char** argv) {
                 if (!sp.empty()) suggested.push_back(sp);
             }
             adapt_line = format_adapt_line(trials, band);
-            basalt::log::info("basalt-probe", "adapt test: %zu runs in %.1f s", trials.size(),
+            basalt::log::info("granite-probe", "adapt test: %zu runs in %.1f s", trials.size(),
                               std::chrono::duration<double>(Clock::now() - ta).count());
         }
     }
     eng.stop();
-    basalt::log::info("basalt-probe", "%.1f s after READY", std::chrono::duration<double>(Clock::now() - t_ready).count());
+    basalt::log::info("granite-probe", "%.1f s after READY", std::chrono::duration<double>(Clock::now() - t_ready).count());
 
     ReportInput in;
-    in.command_line = "basalt-probe";
+    in.command_line = "granite-probe";
     in.rates = rates;
     in.experts_line = experts;
     in.kv = kv;

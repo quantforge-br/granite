@@ -553,7 +553,7 @@ bool Loader::run(const LoadPlan& plan, std::string& err) {
     auto device_done = [&]() {
         if (device_tasks == rounds[0].size()) return;   // no RAM reads follow
         LoadProgress::into("ram");
-        basalt::log::info("basalt loader", "the cards' share is read (%.2f GiB in %.1f s); RAM next",
+        basalt::log::info("granite loader", "the cards' share is read (%.2f GiB in %.1f s); RAM next",
                           (double) device_bytes / 1073741824.0,
                           std::chrono::duration<double>(std::chrono::steady_clock::now() - run_t0).count());
     };

@@ -25,8 +25,8 @@ void check(bool ok, const std::string& what, const std::string& got = "") {
 // `--serve lossy` starts as an engine with --route-tail-skip 7 does.
 int stand_in(const std::string& mode) {
     if (mode == "lossy") {
-        std::fprintf(stderr, "basalt: warning: lossy flags enabled, these flags will affect the accuracy of the served model\n");
-        std::fprintf(stderr, "basalt: warning: --route-tail-skip 7 drops low-ranked missed experts\n");
+        std::fprintf(stderr, "granite: warning: lossy flags enabled, these flags will affect the accuracy of the served model\n");
+        std::fprintf(stderr, "granite: warning: --route-tail-skip 7 drops low-ranked missed experts\n");
         std::fflush(stderr);
         std::printf("INFO batch_slots=1\nINFO lossy=--route-tail-skip\nREADY 4096 stop\n");
         std::fflush(stdout);
@@ -34,8 +34,8 @@ int stand_in(const std::string& mode) {
             if (line.rfind("QUIT", 0) == 0) break;
         return 0;
     }
-    std::fprintf(stderr, "basalt serve: warning: a copy was skipped\n");
-    std::fprintf(stderr, "basalt serve: error: a swap failed (layer 3)\n");
+    std::fprintf(stderr, "granite serve: warning: a copy was skipped\n");
+    std::fprintf(stderr, "granite serve: error: a swap failed (layer 3)\n");
     std::fflush(stderr);
     if (mode == "die") return 1;
     std::printf("INFO batch_slots=1\nREADY 4096 stop\n");

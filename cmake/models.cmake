@@ -34,7 +34,7 @@ foreach(_m IN LISTS BASALT_BUILTIN_MODELS)
     set(BASALT_MODEL_${_up} OFF)
   endif()
 endforeach()
-message(STATUS "basalt: models ${BASALT_MODELS}")
+message(STATUS "granite: models ${BASALT_MODELS}")
 
 # The registration list the composition root (src/models/builtin.cpp) expands, one entry per built model.
 set(_basalt_registrations "")

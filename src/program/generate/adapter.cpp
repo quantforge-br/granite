@@ -61,7 +61,7 @@ std::string profile_key(const basalt::core::Json& meta) {
 }
 
 int fatal_start_error(const std::string& text) {
-    basalt::log::error("basalt", "%s", text.c_str());
+    basalt::log::error("granite", "%s", text.c_str());
     return 1;
 }
 
@@ -148,7 +148,7 @@ bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t
             if (report) pr.live = [&, base](int n) { live_at(base + n); };
             const auto tp = Clock::now();
             r = sess.prefill_chunk(pr);
-            basalt::log::info("basalt generate", "batched prefill %d tokens in %.0f ms", pr.n_tokens,
+            basalt::log::info("granite generate", "batched prefill %d tokens in %.0f ms", pr.n_tokens,
                          std::chrono::duration<double, std::milli>(Clock::now() - tp).count());
             pos += pr.n_tokens;
             done = end;
@@ -157,7 +157,7 @@ bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t
         if (r.ok() && i < images.size()) {
             const auto tp = Clock::now();
             r = sess.prefill_embeddings(images[i].rows.data(), images[i].n_rows, pos, images[i].grid);
-            basalt::log::info("basalt generate", "image prefill %d rows in %.0f ms", images[i].n_rows,
+            basalt::log::info("granite generate", "image prefill %d rows in %.0f ms", images[i].n_rows,
                          std::chrono::duration<double, std::milli>(Clock::now() - tp).count());
             pos += images[i].n_rows;
             if (r.ok()) report_at(pos);
@@ -194,7 +194,7 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
                             const std::vector<int64_t>& stop_ids, const std::vector<std::string>& images,
                             const std::vector<int64_t>& image_at, const std::vector<int64_t>& oracle, bool teacher) {
     if (images.size() != image_at.size()) {
-        basalt::log::error("basalt generate", "every --image needs an --image-at");
+        basalt::log::error("granite generate", "every --image needs an --image-at");
         return 2;
     }
     std::vector<int32_t> toks(prompt.begin(), prompt.end());
@@ -202,7 +202,7 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
     std::vector<AdapterImage> blocks(images.size());
     for (size_t i = 0; i < images.size(); ++i) {
         if (image_at[i] < 0 || image_at[i] >= (int64_t) toks.size() || (i > 0 && image_at[i] < image_at[i - 1])) {
-            basalt::log::error("basalt generate", "--image-at must rise and stay inside the prompt");
+            basalt::log::error("granite generate", "--image-at must rise and stay inside the prompt");
             return 2;
         }
         blocks[i].at = image_at[i];
@@ -211,10 +211,10 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
         const auto te = Clock::now();
         const basalt::model::Result er = sess->encode_image(bytes.data(), bytes.size(), blocks[i].rows, blocks[i].n_rows, blocks[i].grid);
         if (!er.ok()) {
-            basalt::log::error("basalt generate", "%s: %s", images[i].c_str(), er.message.c_str());
+            basalt::log::error("granite generate", "%s: %s", images[i].c_str(), er.message.c_str());
             return 1;
         }
-        basalt::log::info("basalt generate", "image %s -> %d rows in %.0f ms", images[i].c_str(), blocks[i].n_rows,
+        basalt::log::info("granite generate", "image %s -> %d rows in %.0f ms", images[i].c_str(), blocks[i].n_rows,
                      std::chrono::duration<double, std::milli>(Clock::now() - te).count());
     }
     if (!images.empty()) sess->images_done();
@@ -224,7 +224,7 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
     std::string err;
     const auto t0 = Clock::now();
     if (!adapter_prompt(*sess, toks, blocks, next, pos, tm, err)) {
-        basalt::log::error("basalt generate", "%s", err.c_str());
+        basalt::log::error("granite generate", "%s", err.c_str());
         return 1;
     }
     const auto t1 = Clock::now();
@@ -265,7 +265,7 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
                 }
             }
             if (!dres.ok() && dres.status != basalt::model::Status::NotImplemented) {
-                basalt::log::error("basalt generate", "%s", dres.message.c_str());
+                basalt::log::error("granite generate", "%s", dres.message.c_str());
                 return 1;
             }
         }
@@ -284,7 +284,7 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
         }
         const basalt::model::Result r = sess->decode_window(dr);
         if (!r.ok()) {
-            basalt::log::error("basalt generate", "%s", r.message.c_str());
+            basalt::log::error("granite generate", "%s", r.message.c_str());
             return 1;
         }
         const auto w2 = Clock::now();
@@ -319,17 +319,17 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
         next = rows[(size_t) a];
     }
     const auto t2 = Clock::now();
-    basalt::log::info("basalt generate", "prompt %.0f ms, %lld tokens in %.0f ms",
+    basalt::log::info("granite generate", "prompt %.0f ms, %lld tokens in %.0f ms",
                  std::chrono::duration<double, std::milli>(t1 - t0).count(), (long long) made,
                  std::chrono::duration<double, std::milli>(t2 - t1).count());
     if (cap > 1) {
         std::string by;
         for (int k = 0; k + 1 < cap && offered_at[(size_t) k] > 0; ++k)
             by += (k ? " " : "") + std::to_string(accepted_at[(size_t) k]) + "/" + std::to_string(offered_at[(size_t) k]);
-        basalt::log::info("basalt generate", "drafts accepted by position: %s", by.c_str());
+        basalt::log::info("granite generate", "drafts accepted by position: %s", by.c_str());
     }
     if (cap > 1)
-        basalt::log::info("basalt generate", "windows %lld of %.2f tokens: %lld of %lld drafts accepted, %lld picks differ from the oracle; draft %.2f ms, verify %.2f ms per window",
+        basalt::log::info("granite generate", "windows %lld of %.2f tokens: %lld of %lld drafts accepted, %lld picks differ from the oracle; draft %.2f ms, verify %.2f ms per window",
                           (long long) windows, windows ? (double) (accepted + windows) / (double) windows : 0.0, (long long) accepted,
                           (long long) offered, (long long) differ, windows ? ms_draft / (double) windows : 0.0, windows ? ms_verify / (double) windows : 0.0);
     return 0;

@@ -47,7 +47,7 @@ public:
 
     int init_before_input() override {
         if (sessions_.size() != (size_t) std::max(o.batch, 1)) {   // the start makes one per slot
-            basalt::log::error("basalt serve", "the model has %zu sessions for %d slots", sessions_.size(), std::max(o.batch, 1));
+            basalt::log::error("granite serve", "the model has %zu sessions for %d slots", sessions_.size(), std::max(o.batch, 1));
             return 1;
         }
         // one policy for the solo windows and one for the batch windows, whose rounds cost differently
@@ -67,13 +67,13 @@ public:
                 o.model, basalt::core::conversation_store_hash(text.data(), text.size(), 1));
             std::string de;
             if (o.prompt_cache <= 0) {
-                basalt::log::warn("basalt serve", "conversation cache on disk off: --prompt-cache 0");
+                basalt::log::warn("granite serve", "conversation cache on disk off: --prompt-cache 0");
             } else if (!disk.open(o.conversation_cache_dir, identity, (uint64_t) o.conversation_cache_disk_mib << 20, de)) {
-                basalt::log::warn("basalt serve", "conversation cache on disk off: %s", de.c_str());
+                basalt::log::warn("granite serve", "conversation cache on disk off: %s", de.c_str());
             } else {
                 conversations->set_spill(true);
                 const auto st = disk.stats();
-                basalt::log::info("basalt serve", "conversation cache on disk: %s, %zu conversations of this model "
+                basalt::log::info("granite serve", "conversation cache on disk: %s, %zu conversations of this model "
                                   "(%.2f GiB), budget %lld MiB, indexed in %.0f ms", o.conversation_cache_dir.c_str(),
                                   st.files, (double) st.bytes / 1073741824.0, (long long) o.conversation_cache_disk_mib,
                                   std::chrono::duration<double, std::milli>(Clock::now() - t0).count());
@@ -89,7 +89,7 @@ public:
                 !basalt::program::grammar::vocab_from_pack(std::string_view((const char*) vj.data(), vj.size()),
                                                            std::string_view((const char*) tj.data(), tj.size()),
                                                            (size_t) n_vocab, ends, pv, gerr)) {
-                basalt::log::error("basalt serve", "--grammar on: %s", gerr.c_str());
+                basalt::log::error("granite serve", "--grammar on: %s", gerr.c_str());
                 return 2;
             }
             vocab_ = std::move(pv);
@@ -113,7 +113,7 @@ public:
         reserve_checkpoints();
         for (auto& s : sessions_)
             if (const basalt::model::Result r = s->prepare(); !r.ok()) {
-                basalt::log::error("basalt serve", "%s", r.message.c_str());
+                basalt::log::error("granite serve", "%s", r.message.c_str());
                 return 1;
             }
         start_guard();
@@ -201,13 +201,13 @@ public:
             if (at_exit) disk.flush();   // one image in RAM at a time
             const int64_t positions = (int64_t) ids.size();
             if (!capture_admit(session().running_bytes() + session().cells_bytes(positions), floor)) {
-                basalt::log::info("basalt serve", "conversation cache: %zu tokens not written to disk (physical RAM admission)", ids.size());
+                basalt::log::info("granite serve", "conversation cache: %zu tokens not written to disk (physical RAM admission)", ids.size());
                 return;
             }
             basalt::core::SavedConversation image;
             std::string se;
             if (!capture(image, ids, imgs, cks, cvec, se)) {
-                basalt::log::warn("basalt serve", "conversation cache: not written to disk (%s)", se.c_str());
+                basalt::log::warn("granite serve", "conversation cache: not written to disk (%s)", se.c_str());
                 return;
             }
             if (disk.put(std::move(image), kDiskQueueCap)) ++written;
@@ -291,7 +291,7 @@ public:
         if (to_disk ? disk.queued_bytes() + estimate > kDiskQueueCap : !ram_room) return true;
         const uint64_t floor = std::max<uint64_t>((uint64_t) o.conversation_cache_min_free_mib << 20, disk.enabled() ? disk_floor : 0);
         if (!capture_admit(estimate, floor)) {
-            basalt::log::info("basalt serve", "conversation cache: %zu tokens not parked (physical RAM admission)", live.size());
+            basalt::log::info("granite serve", "conversation cache: %zu tokens not parked (physical RAM admission)", live.size());
             return true;
         }
         basalt::core::SavedConversation image;
@@ -371,14 +371,14 @@ public:
         if (bytes == 0) return;
         const size_t keep = (size_t) (o.prompt_cache + 1) * (size_t) std::max(o.batch, 1);
         if (!basalt::core::CheckpointBytes::allocator_type::reserve(bytes, keep, &basalt::core::kCheckpointPin))
-            basalt::log::warn("basalt serve", "checkpoint blocks not reserved: out of host memory");
-        if (std::string e; !ckd.reserve(bytes, e)) basalt::log::warn("basalt serve", "deferred checkpoint copy off: %s", e.c_str());
+            basalt::log::warn("granite serve", "checkpoint blocks not reserved: out of host memory");
+        if (std::string e; !ckd.reserve(bytes, e)) basalt::log::warn("granite serve", "deferred checkpoint copy off: %s", e.c_str());
         basalt::core::RunningState rs;   // a split model's second card keeps a spare of its own part
         if (session().running_state(0, false, rs).ok() && !rs.peer_regions.empty()) {
             const basalt::core::OnDevice on(rs.peer_device);
             ckd_peer_dev = rs.peer_device;
             if (std::string e; !ckd_peer.reserve(basalt::core::RunningState::sum(rs.peer_regions), e))
-                basalt::log::warn("basalt serve", "deferred checkpoint copy off on the second card: %s", e.c_str());
+                basalt::log::warn("granite serve", "deferred checkpoint copy off on the second card: %s", e.c_str());
         }
     }
 
@@ -614,7 +614,7 @@ private:
         if (r.ok()) r = rt_.restore_running_from(incoming->live.state_a, positions);
         if (r.ok()) r = rt_.session().set_history(incoming->live.ids.data(), positions);
         if (!r.ok()) {
-            basalt::log::warn("basalt serve", "conversation cache: restoring a parked conversation failed (%s); reading the prompt from the start", r.message.c_str());
+            basalt::log::warn("granite serve", "conversation cache: restoring a parked conversation failed (%s); reading the prompt from the start", r.message.c_str());
             incoming.reset();
             runtime_.live.clear();
             runtime_.live_imgs.clear();
@@ -1018,13 +1018,13 @@ Flow SessionRequest::read_to(int64_t to) {
             at = end;
         }
         if (r.status == basalt::model::Status::Refused) {   // no room for this prompt: the engine serves on
-            basalt::log::warn("basalt serve", "%s", r.message.c_str());
+            basalt::log::warn("granite serve", "%s", r.message.c_str());
             rt_.session().end_prompt();
             std::printf("ERR %s\n", r.message.c_str());
             return Flow::next;
         }
         if (!r.ok()) {
-            basalt::log::error("basalt serve", "%s", r.message.c_str());
+            basalt::log::error("granite serve", "%s", r.message.c_str());
             std::printf("ERR %s\n", r.message.c_str());
             return Flow::error;
         }

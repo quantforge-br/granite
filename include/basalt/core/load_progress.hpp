@@ -1,22 +1,22 @@
 #pragma once
 // Progress lines for the startup load, one per line on stderr:
 //
-//   basalt load: planning                      the start is deciding where everything goes (nothing placed yet)
-//   basalt load: total <bytes>                 the bytes the whole start places, once, before any is placed
-//   basalt load: weights <done> <total>        every byte placed so far, wherever it went (a card, a second card, RAM)
-//   basalt load: stages <target>...            where the pass will place, in order: each card (`cuda<N>`, the main
+//   granite load: planning                      the start is deciding where everything goes (nothing placed yet)
+//   granite load: total <bytes>                 the bytes the whole start places, once, before any is placed
+//   granite load: weights <done> <total>        every byte placed so far, wherever it went (a card, a second card, RAM)
+//   granite load: stages <target>...            where the pass will place, in order: each card (`cuda<N>`, the main
 //                                              card first, one card after the other), then `ram`; once, before the
 //                                              first `into`
-//   basalt load: into <target>                 where the pass places now, one of the stages: a label of the one bar,
+//   granite load: into <target>                 where the pass places now, one of the stages: a label of the one bar,
 //                                              not a phase of its own
-//   basalt load: share <target> <done> <total> one destination's part of the total (`cuda<N>` or `ram`), from the plan:
+//   granite load: share <target> <done> <total> one destination's part of the total (`cuda<N>` or `ram`), from the plan:
 //                                              once per destination with done 0 before the first byte (a destination
 //                                              the plan writes is listed even when it counts nothing, and the totals
 //                                              sum to the start's total); again for the stage it places into whenever
 //                                              the weights line prints, and once with done == total when its last
 //                                              byte lands, whichever stage the pass is in
-//   basalt load: ngram <done> <total>          the n-gram table locked in RAM: a phase of its own, outside the total
-//   basalt load: kv [slot|draft ]<target> <bytes> <tokens> <max_bytes>
+//   granite load: ngram <done> <total>          the n-gram table locked in RAM: a phase of its own, outside the total
+//   granite load: kv [slot|draft ]<target> <bytes> <tokens> <max_bytes>
 //                                              the session state (KV and recurrent state) allocated on a device
 //                                              (`cuda<N>`) for <tokens> of context; an allocation, not a load.
 //                                              No kind: the solo session; `slot`: one batch slot's session; `draft`:
@@ -67,7 +67,7 @@ public:
         W& w = weights();
         w.total = bytes;
         w.announced = true;
-        basalt::log::info("basalt load", "total %llu", (unsigned long long) w.total);
+        basalt::log::info("granite load", "total %llu", (unsigned long long) w.total);
         print_weights_locked();
     }
     /// Each destination's part of the total, `(target, bytes)` in the order the pass places them: announced once per
@@ -111,7 +111,7 @@ public:
         if (!weights().announced || targets.empty()) return;
         std::string line;
         for (const std::string& t : targets) line += " " + t;
-        basalt::log::info("basalt load", "stages%s", line.c_str());
+        basalt::log::info("granite load", "stages%s", line.c_str());
     }
     /// Where the pass places from now on (`cuda<N>` or `ram`), once per change; the bar keeps its one total.
     static void into(const std::string& target) {
@@ -119,10 +119,10 @@ public:
         W& w = weights();
         if (!w.announced || w.into == target) return;
         w.into = target;
-        basalt::log::info("basalt load", "into %s", target.c_str());
+        basalt::log::info("granite load", "into %s", target.c_str());
     }
     /// The start begins planning: the first line, before the total.
-    static void planning() { basalt::log::info("basalt load", "planning"); }
+    static void planning() { basalt::log::info("granite load", "planning"); }
     /// The load is over: the final line, done == total.
     static void complete() {
         std::lock_guard<std::mutex> lk(weights_mu());
@@ -142,7 +142,7 @@ public:
     static void kv(const std::string& target, uint64_t bytes, int64_t tokens, const char* kind = "",
                    uint64_t max_bytes = 0) {
         std::lock_guard<std::mutex> lk(weights_mu());
-        basalt::log::info("basalt load", "kv %s%s%s %llu %lld %llu", kind, kind[0] ? " " : "", target.c_str(),
+        basalt::log::info("granite load", "kv %s%s%s %llu %lld %llu", kind, kind[0] ? " " : "", target.c_str(),
                      (unsigned long long) bytes, (long long) tokens,
                      (unsigned long long) (max_bytes > bytes ? max_bytes : bytes));
     }
@@ -175,17 +175,17 @@ private:
         W& w = weights();
         if (w.miscounted) return;
         w.miscounted = true;
-        basalt::log::warn("basalt load", "placed %s the announced total (%llu of %llu bytes so far)", how,
+        basalt::log::warn("granite load", "placed %s the announced total (%llu of %llu bytes so far)", how,
                           (unsigned long long) w.placed, (unsigned long long) w.total);
         assert(!"the start placed other bytes than it announced");
     }
     static void print_share_locked(const Share& s) {
-        basalt::log::info("basalt load", "share %s %llu %llu", s.target.c_str(), (unsigned long long) s.done,
+        basalt::log::info("granite load", "share %s %llu %llu", s.target.c_str(), (unsigned long long) s.done,
                           (unsigned long long) s.total);
     }
     static void print_weights_locked() {
         W& w = weights();
-        basalt::log::info("basalt load", "weights %llu %llu", (unsigned long long) w.done, (unsigned long long) w.total);
+        basalt::log::info("granite load", "weights %llu %llu", (unsigned long long) w.done, (unsigned long long) w.total);
         w.last_done = w.done;
         w.last = Clock::now();
     }
@@ -195,7 +195,7 @@ private:
         emit_locked(Clock::now());
     }
     void emit_locked(Clock::time_point now) {
-        basalt::log::info("basalt load", "%s %llu %llu", target_.c_str(), (unsigned long long) done_,
+        basalt::log::info("granite load", "%s %llu %llu", target_.c_str(), (unsigned long long) done_,
                      (unsigned long long) total_);
         last_done_ = done_;
         last_ = now;

@@ -43,7 +43,7 @@ void disk_wait_threads(std::FILE* f) {
 
 void stall_report(std::FILE* f, uint64_t layers_during) {
     basalt::core::Progress& p = basalt::core::progress();
-    std::fprintf(f, "basalt serve: error: stall report (engine %s): stage \"%s\" for %lld s; %llu layers served since the "
+    std::fprintf(f, "granite serve: error: stall report (engine %s): stage \"%s\" for %lld s; %llu layers served since the "
                     "last finished step (0 = stopped, more = slow)\n", BASALT_VERSION, stage_text().c_str(),
                  (long long) ((basalt::core::progress_now_ms() - p.since_ms.load()) / 1000),
                  (unsigned long long) layers_during);
@@ -289,9 +289,9 @@ int Runtime::init_protocol() {
         cudaMemGetInfo(&free_b, &total_b);
         const int64_t free_mib = (int64_t) (free_b >> 20);
         if (free_mib >= vram_floor_mib()) {
-            basalt::log::info("basalt serve", "%lld MiB of VRAM free with everything loaded", (long long) free_mib);
+            basalt::log::info("granite serve", "%lld MiB of VRAM free with everything loaded", (long long) free_mib);
         } else {
-            basalt::log::warn("basalt", "only %lld MiB of VRAM free, requests may stall; close other "
+            basalt::log::warn("granite", "only %lld MiB of VRAM free, requests may stall; close other "
                                  "programs that use the GPU", (long long) free_mib);
         }
     }
@@ -343,7 +343,7 @@ int Runtime::announce() {
                     const uint64_t b = p.beats.load();
                     if (!p.busy.load() || b != last) { last = b; ticks_at = p.ticks.load(); since = now; continue; }
                     if (now - since < std::chrono::seconds(limit)) continue;
-                    basalt::log::error("basalt serve", "no progress for %d s during a request (%s) - stopping "
+                    basalt::log::error("granite serve", "no progress for %d s during a request (%s) - stopping "
                                          "the engine so the server starts it again",
                                  limit, stage_text().c_str());
                     stall_report(basalt::log::stream(), p.ticks.load() - ticks_at);

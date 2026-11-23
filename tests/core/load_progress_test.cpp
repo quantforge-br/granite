@@ -54,19 +54,19 @@ int main() {
     for (const std::string& l : lines) {
         unsigned long long a = 0, b = 0;
         char target[32] = {};
-        if (std::sscanf(l.c_str(), "basalt load: share %31s %llu %llu", target, &a, &b) == 3) {
+        if (std::sscanf(l.c_str(), "granite load: share %31s %llu %llu", target, &a, &b) == 3) {
             if (shares[target].empty()) {
                 share_order.push_back(target);
                 if (a != 0 || last_done > 0) { std::fprintf(stdout, "FAIL share %s announced at 0, before any byte\n", target); ++fails; }
             }
             shares[target].emplace_back(a, b);
-        } else if (std::sscanf(l.c_str(), "basalt load: total %llu", &a) == 1) {
+        } else if (std::sscanf(l.c_str(), "granite load: total %llu", &a) == 1) {
             ++totals;
             total_first = last_done < 0 && a == 100;
-        } else if (std::sscanf(l.c_str(), "basalt load: weights %llu %llu", &a, &b) == 2) {
+        } else if (std::sscanf(l.c_str(), "granite load: weights %llu %llu", &a, &b) == 2) {
             if (b != 100 || (long long) a < last_done || a > b) ++fails;
             last_done = (long long) a;
-        } else if (l.find("basalt load: warning: placed more than the announced total") == 0) {
+        } else if (l.find("granite load: warning: placed more than the announced total") == 0) {
             ++warnings;
         }
     }

@@ -120,7 +120,7 @@ uint8_t* alloc_host(uint64_t bytes, uint64_t& mapped) {
     size_t n = (bytes + g - 1) / g * g;
     CUdeviceptr p = 0;
     const auto refused = [&](const char* op, CUresult error, uint64_t off) {
-        basalt::log::warn("basalt memory", "host VMM %s at %.2f of %.2f GiB on CUDA%d failed (driver code %d)",
+        basalt::log::warn("granite memory", "host VMM %s at %.2f of %.2f GiB on CUDA%d failed (driver code %d)",
                           op, off / 1073741824.0, n / 1073741824.0, dev, (int) error);
     };
     CUresult error = v.reserve(&p, n, 0, 0, 0);

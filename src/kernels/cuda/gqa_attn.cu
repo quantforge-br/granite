@@ -25,7 +25,7 @@ constexpr float kNeg = -1e30f;
 
 void check(const char* what) {
     const cudaError_t e = cudaGetLastError();
-    if (e != cudaSuccess) { basalt::log::error("basalt", "%s: %s", what, cudaGetErrorString(e)); std::exit(1); }
+    if (e != cudaSuccess) { basalt::log::error("granite", "%s: %s", what, cudaGetErrorString(e)); std::exit(1); }
 }
 
 __device__ __forceinline__ float warp_sum(float v) {
@@ -966,7 +966,7 @@ int opt_in_device() {
     int dev = 0;
     cudaGetDevice(&dev);
     if (dev < 0 || dev >= 64) {
-        basalt::log::error("basalt", "gqa_prompt_attn: device %d out of range", dev);
+        basalt::log::error("granite", "gqa_prompt_attn: device %d out of range", dev);
         std::exit(1);
     }
     return dev;
@@ -980,7 +980,7 @@ void launch_prompt_i8(const IO* q, int n_head, int n_kv, int pos0, int T, IO* ou
     if (!raised[dev].load(std::memory_order_acquire)) {
         if (cudaFuncSetAttribute(prompt_i8_kernel<W, Split, IO>, cudaFuncAttributeMaxDynamicSharedMemorySize, i8_smem<W>()) !=
             cudaSuccess) {
-            basalt::log::error("basalt", "gqa_prompt_attn: shared-memory opt-in failed");
+            basalt::log::error("granite", "gqa_prompt_attn: shared-memory opt-in failed");
             std::exit(1);
         }
         raised[dev].store(true, std::memory_order_release);
@@ -1037,7 +1037,7 @@ void gqa_decode_attn(const float* q, const uint16_t* k_cache, const uint16_t* v_
                      int64_t pos0, int T, float* scratch, int64_t max_cells, float* out, void* stream,
                      const int32_t* pos_dev, KvInt8 q8, const float* gate_q, uint16_t* gated16, KvFar far_kv) {
     if (T < 1 || T > kGqaMaxWindow || n_kv < 1 || n_head % n_kv || n_head / n_kv > GMAX || pos0 + T > max_cells) {
-        basalt::log::error("basalt", "gqa_decode_attn: invalid arguments");
+        basalt::log::error("granite", "gqa_decode_attn: invalid arguments");
         std::exit(1);
     }
     Range r;
@@ -1052,7 +1052,7 @@ void gqa_decode_attn(const float* q, const uint16_t* k_cache, const uint16_t* v_
 void gqa_decode_attn_segs(const float* q, int n_head, int n_kv, const GqaSeg* segs, int n_seg, float* scratch,
                           int64_t max_cells, float* out, void* stream, const float* gate_q, uint16_t* gated16) {
     if (n_seg < 1 || n_seg > kMaxSegs || n_kv < 1 || n_head % n_kv || n_head / n_kv > GMAX) {
-        basalt::log::error("basalt", "gqa_decode_attn_segs: invalid arguments");
+        basalt::log::error("granite", "gqa_decode_attn_segs: invalid arguments");
         std::exit(1);
     }
     DecSegs d;
@@ -1060,7 +1060,7 @@ void gqa_decode_attn_segs(const float* q, int n_head, int n_kv, const GqaSeg* se
     for (int k = 0; k < n_seg; ++k) {
         const GqaSeg& g = segs[k];
         if (g.T < 1 || g.pos0 + g.T > max_cells || d.row0[k] + g.T > kGqaMaxWindow) {
-            basalt::log::error("basalt", "gqa_decode_attn_segs: invalid segment");
+            basalt::log::error("granite", "gqa_decode_attn_segs: invalid segment");
             std::exit(1);
         }
         d.row0[k + 1] = d.row0[k] + g.T;
@@ -1081,7 +1081,7 @@ void gqa_window_attn(const float* q, const uint16_t* k_cache, const uint16_t* v_
                      float* out, void* stream, bool block) {
     if (T < 1 || T > kGqaMaxWindow || n_kv < 1 || n_head % n_kv || n_head / n_kv > GMAX || window <= 0 ||
         (head_dim != 128 && head_dim != 256) || hi < pos0 + T) {
-        basalt::log::error("basalt", "gqa_window_attn: invalid arguments");
+        basalt::log::error("granite", "gqa_window_attn: invalid arguments");
         std::exit(1);
     }
     Range r;
@@ -1096,7 +1096,7 @@ void gqa_window_attn(const float* q, const uint16_t* k_cache, const uint16_t* v_
     const int used = (int) ((hi + CHUNK - 1) / CHUNK) - r.base;
     const int n_chunks = (int) ((scratch_cells + CHUNK - 1) / CHUNK) + 1;
     if (used > n_chunks) {
-        basalt::log::error("basalt", "gqa_window_attn: the window passes its scratch");
+        basalt::log::error("granite", "gqa_window_attn: the window passes its scratch");
         std::exit(1);
     }
     if (head_dim == 128) launch_window<128>(q, k_cache, v_cache, n_head, n_kv, r, T, scratch, n_chunks, out, (cudaStream_t) stream);
@@ -1113,7 +1113,7 @@ void gqa_prompt_attn_bf16(const uint16_t* q, int n_head, int n_kv, int64_t pos0,
                           KvInt8 q8, float* split_scratch, size_t split_floats, KvFar far_kv) {
     if (T <= 0) return;
     if (!q8.k || n_kv < 1 || n_head % n_kv || pos0 + T > INT32_MAX) {
-        basalt::log::error("basalt", "gqa_prompt_attn_bf16: an int8 cache and a supported head layout");
+        basalt::log::error("granite", "gqa_prompt_attn_bf16: an int8 cache and a supported head layout");
         std::exit(1);
     }
     const cudaStream_t st = (cudaStream_t) stream;
@@ -1131,7 +1131,7 @@ void gqa_prompt_attn(const float* q, const uint16_t* k_cache, const uint16_t* v_
                      KvFar far_kv) {
     if (T <= 0) return;
     if (n_kv < 1 || n_head % n_kv || (!q8.k && PROWS % (n_head / n_kv)) || pos0 + T > INT32_MAX) {
-        basalt::log::error("basalt", "gqa_prompt_attn: unsupported head layout or cell count");
+        basalt::log::error("granite", "gqa_prompt_attn: unsupported head layout or cell count");
         std::exit(1);
     }
     const cudaStream_t st = (cudaStream_t) stream;
@@ -1146,7 +1146,7 @@ void gqa_prompt_attn(const float* q, const uint16_t* k_cache, const uint16_t* v_
         if (!raised[dev].load(std::memory_order_acquire)) {
             if (cudaFuncSetAttribute(prompt_f16_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) sizeof(PromptSmem16)) !=
                 cudaSuccess) {
-                basalt::log::error("basalt", "gqa_prompt_attn: shared-memory opt-in failed");
+                basalt::log::error("granite", "gqa_prompt_attn: shared-memory opt-in failed");
                 std::exit(1);
             }
             raised[dev].store(true, std::memory_order_release);

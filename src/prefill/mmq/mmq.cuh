@@ -998,7 +998,7 @@ void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args, 
             launch_mul_mat_q<type, 128, fallback>(ctx, args, stream);
             break;
         default:
-            basalt::log::error("basalt", "J_best=%d", J_best);
+            basalt::log::error("granite", "J_best=%d", J_best);
             GGML_ABORT("fatal error");
             break;
     }

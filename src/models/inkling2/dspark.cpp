@@ -222,7 +222,7 @@ model::Result dspark_plan(const Pack& pack, core::LoadPlan& reads, int file, int
     w->head_sc = w->dev(dspark_screen_bytes(kE, g.n_vocab), ok);
     w->fold_sc = w->dev(dspark_screen_bytes(kDsRank, g.n_vocab), ok);
     if (!ok) return fail("out of device memory");
-    basalt::log::info("basalt inkling2", "drafter: DSpark, %d layers reading target visits %d, %d, %d, %.2f GiB on the GPU (NVFP4 block products, Q8_0 context projections, the screen's copies), "
+    basalt::log::info("granite inkling2", "drafter: DSpark, %d layers reading target visits %d, %d, %d, %.2f GiB on the GPU (NVFP4 block products, Q8_0 context projections, the screen's copies), "
                       "%.0f MB of token rows in host memory",
                       d.n_layers, d.targets[0], d.targets[1], d.targets[2], (double) w->bytes() / (double) (1ull << 30),
                       (double) g.n_vocab * kDsRank * 2 / 1e6);
@@ -320,7 +320,7 @@ DsparkHook::~DsparkHook() {
     for (cudaGraphExec_t g : g_head_)
         if (g) cudaGraphExecDestroy(g);
     if (dump_) {
-        basalt::log::info("basalt inkling2", "--diag-dump: %lld drafts, %lld screened picks differ from the exact head's",
+        basalt::log::info("granite inkling2", "--diag-dump: %lld drafts, %lld screened picks differ from the exact head's",
                           (long long) dump_drafts_, (long long) dump_differ_);
         std::fclose(dump_);
     }
@@ -413,7 +413,7 @@ bool DsparkHook::init(const DsparkWeights* w, const Geometry& g, int64_t context
         dump_logits_ = f((size_t) kDsDrafts * V);
         const std::string path = dump + "/dspark.bin";
         dump_ = std::fopen(path.c_str(), "wb");
-        if (!dump_) basalt::log::warn("basalt inkling2", "--diag-dump: cannot write %s", path.c_str());
+        if (!dump_) basalt::log::warn("granite inkling2", "--diag-dump: cannot write %s", path.c_str());
     }
     if (!ok) {
         err = "out of device memory for the drafter";
@@ -615,7 +615,7 @@ bool DsparkHook::stage_graph(int k, int n, void* stream) {
         if (ci != cudaSuccess) {
             (void) cudaGetLastError();
             g = nullptr;
-            basalt::log::warn("basalt inkling2", "drafter: a graph of its block failed (%s); it runs without graphs", cudaGetErrorString(ci));
+            basalt::log::warn("granite inkling2", "drafter: a graph of its block failed (%s); it runs without graphs", cudaGetErrorString(ci));
             return false;
         }
     }
@@ -688,7 +688,7 @@ model::Result DsparkHook::draft_end(int32_t* ids, float* conf, int max_n, int& n
             ++dump_differ_;
             double z = 0;
             for (size_t v = 0; v < V; ++v) z += std::exp((double) l[v] - l[best]);
-            basalt::log::info("basalt inkling2", "--diag-dump: block at %lld draft %d: screened %d (logit %.4f), exact %zu (logit %.4f, p %.3f)",
+            basalt::log::info("granite inkling2", "--diag-dump: block at %lld draft %d: screened %d (logit %.4f), exact %zu (logit %.4f, p %.3f)",
                               (long long) block_pos_, i, ids_h_[i], l[ids_h_[i]], best, l[best], 1.0 / z);
         }
         std::fputc('B', dump_);
@@ -794,7 +794,7 @@ void dspark_finish_flags(program::CommonOptions& o) {
     // the pack's drafter offers a whole block (the window policy takes the rows that pay) unless --spec caps it
     if (!o.spec_given) o.spec = present ? kDsBlock : 0;
     if (o.spec >= 2 && !present) {
-        basalt::log::warn("basalt inkling2", "--spec %d off: the pack has no drafter", o.spec);
+        basalt::log::warn("granite inkling2", "--spec %d off: the pack has no drafter", o.spec);
         o.spec = 0;
     }
 }

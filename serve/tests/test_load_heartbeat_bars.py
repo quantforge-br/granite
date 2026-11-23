@@ -43,9 +43,9 @@ class BusyHeartbeat(unittest.TestCase):
             out = io.StringIO()
             t, done = narrate(log, out)
             with open(log, "a") as f:
-                f.write(f"basalt load: total {TOTAL}\n")
+                f.write(f"granite load: total {TOTAL}\n")
                 for i in range(1, 17):                   # a stream: 4 s in 16 steps
-                    f.write(f"basalt load: weights {TOTAL * i // 16} {TOTAL}\n")
+                    f.write(f"granite load: weights {TOTAL * i // 16} {TOTAL}\n")
                     f.flush()
                     time.sleep(0.25)
                 time.sleep(1.3)                          # silence: the idle heartbeat must still fire
@@ -70,16 +70,16 @@ class BusyHeartbeat(unittest.TestCase):
             out = io.StringIO()
             t, done = narrate(log, out)
             with open(log, "a") as f:
-                f.write(f"basalt load: total {total}\nbasalt load: weights 0 {total}\n"
-                        f"basalt load: share cuda0 0 {card}\nbasalt load: share ram 0 {ram}\n"
-                        "basalt load: stages cuda0 ram\nbasalt load: into cuda0\n")
+                f.write(f"granite load: total {total}\ngranite load: weights 0 {total}\n"
+                        f"granite load: share cuda0 0 {card}\ngranite load: share ram 0 {ram}\n"
+                        "granite load: stages cuda0 ram\ngranite load: into cuda0\n")
                 for i in range(1, 13):                   # 3 s in 12 steps; RAM reads land during the card's too
                     c, r = min(card, card * i // 4), ram * i // 12
                     stage = "cuda0" if c < card or i == 4 else "ram"
                     if i == 5:
-                        f.write("basalt load: into ram\n")
-                    f.write(f"basalt load: weights {c + r} {total}\n")
-                    f.write(f"basalt load: share {stage} {c if stage == 'cuda0' else r} {card if stage == 'cuda0' else ram}\n")
+                        f.write("granite load: into ram\n")
+                    f.write(f"granite load: weights {c + r} {total}\n")
+                    f.write(f"granite load: share {stage} {c if stage == 'cuda0' else r} {card if stage == 'cuda0' else ram}\n")
                     f.flush()
                     time.sleep(0.25)
             done.set()
@@ -102,9 +102,9 @@ class BusyHeartbeat(unittest.TestCase):
             out = Tty()
             t, done = narrate(log, out)
             with open(log, "a") as f:
-                f.write(f"basalt load: total {TOTAL}\n")
+                f.write(f"granite load: total {TOTAL}\n")
                 for i in range(1, 9):
-                    f.write(f"basalt load: weights {TOTAL * i // 8} {TOTAL}\n")
+                    f.write(f"granite load: weights {TOTAL * i // 8} {TOTAL}\n")
                     f.flush()
                     time.sleep(0.25)
             done.set()
@@ -169,9 +169,9 @@ class SparseLines(unittest.TestCase):
             out = io.StringIO()
             t, done = narrate(log, out)
             with open(log, "a") as f:
-                f.write(f"basalt load: total {total}\n")
+                f.write(f"granite load: total {total}\n")
                 for i in range(1, steps + 1):          # one 1%-line per gap, the last completes the row
-                    f.write(f"basalt load: weights {total * i // steps} {total}\n")
+                    f.write(f"granite load: weights {total * i // steps} {total}\n")
                     f.flush()
                     time.sleep(gap)
             done.set()
@@ -203,13 +203,13 @@ class BurstyLines(unittest.TestCase):
             out = io.StringIO()
             t, done = narrate(log, out)
             with open(log, "a") as f:
-                f.write(f"basalt load: total {total}\n")
+                f.write(f"granite load: total {total}\n")
                 for i in range(1, 5):               # the first percent fills in one cluster of reads
-                    f.write(f"basalt load: weights {total * i // 16} {total}\n")
+                    f.write(f"granite load: weights {total * i // 16} {total}\n")
                     f.flush()
                     time.sleep(burst)
                 for i in range(5, 8):               # then the size rule reads the row out, interval apart
-                    f.write(f"basalt load: weights {total * i // 8} {total}\n")
+                    f.write(f"granite load: weights {total * i // 8} {total}\n")
                     f.flush()
                     time.sleep(gap)
             done.set()
@@ -239,13 +239,13 @@ class DroughtLockLines(unittest.TestCase):
             out = io.StringIO()
             t, done = narrate(log, out, heartbeat=0.4)
             with open(log, "a") as f:
-                f.write(f"basalt load: total {total}\n")
+                f.write(f"granite load: total {total}\n")
                 for i in range(1, 3):              # the read-out starts tighter than it settles
-                    f.write(f"basalt load: weights {total * i // 20} {total}\n")
+                    f.write(f"granite load: weights {total * i // 20} {total}\n")
                     f.flush()
                     time.sleep(seed)
                 for i in range(3, 7):              # the steady 1%-read-out: gap > STALL x cadence
-                    f.write(f"basalt load: weights {total * i // 8} {total}\n")
+                    f.write(f"granite load: weights {total * i // 8} {total}\n")
                     f.flush()
                     time.sleep(gap)
             done.set()
@@ -277,10 +277,10 @@ class TerminalRates(unittest.TestCase):
                                  kwargs={"out": out, "gpus": [0, 1]}, daemon=True)
             t.start()
             with open(log, "a") as f:
-                f.write(f"basalt load: total {self.SIZE}\n")
+                f.write(f"granite load: total {self.SIZE}\n")
                 first = time.monotonic()
                 for i in range(self.STEPS + 1):
-                    f.write(f"basalt load: weights {self.SIZE * i // self.STEPS} {self.SIZE}\n")
+                    f.write(f"granite load: weights {self.SIZE * i // self.STEPS} {self.SIZE}\n")
                     f.flush()
                     if i < self.STEPS:
                         time.sleep(0.1)
@@ -343,14 +343,14 @@ class TotalMovesMidLoad(unittest.TestCase):
             out = io.StringIO()
             t, done = narrate(log, out)
             with open(log, "a") as f:
-                f.write(f"basalt load: total {total}\n")
+                f.write(f"granite load: total {total}\n")
                 for i in range(1, 7):
-                    f.write(f"basalt load: weights {2**30 * i} {total}\n")
+                    f.write(f"granite load: weights {2**30 * i} {total}\n")
                     f.flush()
                     time.sleep(0.3)
-                f.write(f"basalt load: total {more}\n")
+                f.write(f"granite load: total {more}\n")
                 for i in range(7, 15):
-                    f.write(f"basalt load: weights {2**30 * i} {more}\n")
+                    f.write(f"granite load: weights {2**30 * i} {more}\n")
                     f.flush()
                     time.sleep(0.3)
             done.set()

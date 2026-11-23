@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
         std::ifstream cf(crash_log);
         std::string cline;
         std::getline(cf, cline);
-        check(cline.find("basalt crash: error: unhandled exception (boom) in decode (17) chunk 64") != std::string::npos,
+        check(cline.find("granite crash: error: unhandled exception (boom) in decode (17) chunk 64") != std::string::npos,
               "crash handler writes exception and stage to stderr");
     }
     std::remove(crash_log.c_str());

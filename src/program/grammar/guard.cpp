@@ -229,7 +229,7 @@ Redraw Guard::redraw(const std::vector<float>& user_bias, const DrawFn& draw, co
         return std::any_of(b.begin(), b.end(), [](float v) { return v > -INFINITY; });
     };
     const auto dead = [&] {
-        basalt::log::error("basalt grammar", "no token is allowed here (%s); the reply ends", describe().c_str());
+        basalt::log::error("granite grammar", "no token is allowed here (%s); the reply ends", describe().c_str());
         on_ = false;
         return done(Redraw::dead);
     };
@@ -239,7 +239,7 @@ Redraw Guard::redraw(const std::vector<float>& user_bias, const DrawFn& draw, co
     int32_t t = 0;
     if (!draw(bias, t)) return done(Redraw::failed);
     if (feed(t)) { token = t; return done(Redraw::drawn); }
-    basalt::log::warn("basalt grammar", "a masked draw was refused by the grammar (token %d, %s); drawing again", (int) t,
+    basalt::log::warn("granite grammar", "a masked draw was refused by the grammar (token %d, %s); drawing again", (int) t,
                       describe().c_str());
     mask_bias(user_bias, false, bias);
     if (!allowed(bias)) return dead();
@@ -260,7 +260,7 @@ Redraw Guard::redraw(const std::vector<float>& user_bias, const DrawFn& draw, co
         if (!feed((int32_t) cand[i])) continue;
         token = (int32_t) cand[i];
         ++fallbacks_;
-        basalt::log::warn("basalt grammar", "the draw was refused again; token %d is the likeliest the grammar accepts", (int) token);
+        basalt::log::warn("granite grammar", "the draw was refused again; token %d is the likeliest the grammar accepts", (int) token);
         return done(Redraw::fallback);
     }
     return dead();

@@ -163,7 +163,7 @@ Flow Request::parse() {
         }
         if (!gerr.empty()) { std::printf("ERR grammar: %s\n", gerr.c_str()); return Flow::next; }
     } else if (!req_grammar_text.empty()) {
-        basalt::log::warn("basalt grammar", "the request has a grammar but this engine runs with --grammar off; ignored");
+        basalt::log::warn("granite grammar", "the request has a grammar but this engine runs with --grammar off; ignored");
     }
 
     grammar_resamples = 0;

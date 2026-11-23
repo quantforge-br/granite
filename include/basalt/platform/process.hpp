@@ -83,7 +83,7 @@ void ignore_broken_pipe();
 
 /// Installs handlers for unhandled C++ exceptions (`std::set_terminate`) and fatal OS faults (access violation,
 /// stack overflow, illegal instruction, integer divide by zero, page fault) so a dying engine writes a single
-/// `basalt crash: error: ...` line with the fault kind, address and `basalt::core::progress()` stage before exiting.
+/// `granite crash: error: ...` line with the fault kind, address and `basalt::core::progress()` stage before exiting.
 void install_crash_handler();
 
 /// Sets an environment variable of this process, which a child started from it inherits. The two platforms spell the

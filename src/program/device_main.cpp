@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
                         "  --link-rates    per GPU, one line \"pcie_h2d BUS_ID GB_PER_S\": pinned host-to-device copy speed\n");
             return 0;
         } else {
-            basalt::log::error("basalt", "unknown argument: %s", argv[i]);
+            basalt::log::error("granite", "unknown argument: %s", argv[i]);
             return 2;
         }
     }
@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
             void* a = arena.alloc(1 << 20, 256);
             void* b = arena.alloc(1 << 20, 4096);
             if (((uintptr_t) a % 256) || ((uintptr_t) b % 4096)) {
-                basalt::log::error("basalt", "selftest: alignment not honoured");
+                basalt::log::error("granite", "selftest: alignment not honoured");
                 return 1;
             }
             std::printf("\nselftest: arena %s, used %s after two 1 MiB allocations\n", human(arena.capacity()).c_str(),
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
             // and the arena must REFUSE rather than wrap
             try {
                 arena.alloc(bytes * 2);
-                basalt::log::error("basalt", "selftest: over-allocation did NOT throw");
+                basalt::log::error("granite", "selftest: over-allocation did NOT throw");
                 return 1;
             } catch (const basalt::core::CudaError&) {
                 std::printf("selftest: over-allocation refused as required\n");
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
         }
         return 0;
     } catch (const std::exception& e) {
-        basalt::log::error("basalt-device", "%s", e.what());
+        basalt::log::error("granite-device", "%s", e.what());
         return 1;
     }
 }

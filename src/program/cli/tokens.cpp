@@ -32,12 +32,12 @@ bool parse_i64_list(const char* s, std::vector<int64_t>& out, std::string& err) 
 
 std::optional<int> load_tokens_file(const char* path, std::vector<int64_t>& tokens) {
     std::ifstream input(path);
-    if (!input) { basalt::log::error("basalt", "cannot open token file"); return 2; }
+    if (!input) { basalt::log::error("granite", "cannot open token file"); return 2; }
     std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    if (input.bad()) { basalt::log::error("basalt", "cannot read token file"); return 2; }
+    if (input.bad()) { basalt::log::error("granite", "cannot read token file"); return 2; }
     std::string error;
     if (text.find('\0') != std::string::npos || !parse_i64_list(text.c_str(), tokens, error)) {
-        basalt::log::error("basalt", "malformed token file: %s", error.c_str()); return 2;
+        basalt::log::error("granite", "malformed token file: %s", error.c_str()); return 2;
     }
     return std::nullopt;
 }
@@ -48,7 +48,7 @@ std::optional<int> load_spec_oracle(const std::string& path, std::vector<int64_t
         std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         std::string e;
         if (!in || !parse_i64_list(text.c_str(), oracle, e)) {
-            basalt::log::error("basalt generate", "cannot read --spec-oracle %s", path.c_str());
+            basalt::log::error("granite generate", "cannot read --spec-oracle %s", path.c_str());
             return 2;
         }
     }

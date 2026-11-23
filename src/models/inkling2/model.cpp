@@ -245,12 +245,12 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
         vision_modules = std::min<uint64_t>(before > after ? before - after : 0, kCardSpare / 4);
         vis_.set_lender({[this](uint64_t bytes, std::string& e) { return lend_room(bytes, e); }, [this] { refill(); }});
         if (cards() > 1)
-            basalt::log::info("basalt inkling2", "image encoder: %.2f GiB staged in page-locked RAM, %.2f GiB of the first card kept "
+            basalt::log::info("granite inkling2", "image encoder: %.2f GiB staged in page-locked RAM, %.2f GiB of the first card kept "
                               "free for a request's pictures (its kernels' %.0f MiB inside the card's spare)",
                               (double) vis_.weights_bytes() / (double) kGiB, (double) vis_.region_bytes() / (double) kGiB,
                               (double) vision_modules / (double) kMiB);
         else
-            basalt::log::info("basalt inkling2", "image encoder: %.2f GiB staged in page-locked RAM, 0 GiB of the card kept for it (its "
+            basalt::log::info("granite inkling2", "image encoder: %.2f GiB staged in page-locked RAM, 0 GiB of the card kept for it (its "
                               "kernels' %.0f MiB inside the card's spare; a request's pictures borrow up to %.2f GiB of expert memory "
                               "and give it back)",
                               (double) vis_.weights_bytes() / (double) kGiB, (double) vision_modules / (double) kMiB,
@@ -324,7 +324,7 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
                 elastic_ = keep < 0 && want > core::kElasticKvBase;
                 uint64_t ram = 0;
                 for (int l = 0; l < g.n_layers; ++l) ram += (uint64_t) spill_.n_spill[(size_t) l] * stride[(size_t) l];
-                basalt::log::info("basalt inkling2",
+                basalt::log::info("granite inkling2",
                                   "experts: %lld of %lld in RAM (%.2f GiB, the least routed%s), %.2f GiB on the card with %.0f MiB of "
                                   "prompt staging, so --max-context %lld fits",
                                   (long long) spill_.spilled, (long long) g.n_layers * g.n_expert, (double) ram / (double) kGiB,
@@ -348,7 +348,7 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
         ctx_ = want;
         }
     }
-    basalt::log::info("basalt inkling2", "weights on the GPU: dense %.2f GiB%s, experts %.2f GiB%s; the embedding in host memory (%.2f GiB)",
+    basalt::log::info("granite inkling2", "weights on the GPU: dense %.2f GiB%s, experts %.2f GiB%s; the embedding in host memory (%.2f GiB)",
                       (double) dense / (double) kGiB, cards() > 1 ? " on each card" : "", (double) experts / (double) kGiB,
                       cards() > 1 ? " between the two" : "", (double) (n_vocab * n_embd * 2) / (double) kGiB);
     model::Result r;
@@ -730,11 +730,11 @@ void InklingModel::plan_cards(const model::LoadRequest& req) {
         why = "their SM counts or shared memory differ";
     else if (req.expert_cache > 0) why = "--expert-cache is a one-card diagnostic";
     if (!why.empty()) {
-        basalt::log::info("basalt inkling2", "CUDA%d idles (%s): CUDA%d runs alone", peer, why.c_str(), device_);
+        basalt::log::info("granite inkling2", "CUDA%d idles (%s): CUDA%d runs alone", peer, why.c_str(), device_);
         return;
     }
     second_ = peer;
-    basalt::log::info("basalt inkling2", "tensor parallelism on CUDA%d and CUDA%d: each holds every dense weight and half of every expert",
+    basalt::log::info("granite inkling2", "tensor parallelism on CUDA%d and CUDA%d: each holds every dense weight and half of every expert",
                       device_, peer);
 }
 
@@ -745,7 +745,7 @@ model::Result InklingModel::attach(const model::LoadRequest&, std::vector<std::u
         if (model::Result r = s->prepare(); !r.ok()) return r;
     if (elastic_) {   // the caches back only their base yet: the RAM experts come back while the card has room
         const uint64_t moved = promote(held_free(kCardSpare));
-        basalt::log::info("basalt inkling2", "elastic spill: %lld of %lld RAM experts copied back to the card (%.2f GiB); they go back "
+        basalt::log::info("granite inkling2", "elastic spill: %lld of %lld RAM experts copied back to the card (%.2f GiB); they go back "
                           "to RAM, the least routed first, as a conversation's caches grow",
                           (long long) n_copy_, (long long) spill_.spilled, (double) moved / (double) kGiB);
     }
@@ -907,7 +907,7 @@ void InklingModel::refill() {
         if (!(r.handle = core::vmm::map(r.va, r.own)) ||
             cudaMemcpy(r.va, it->bytes.get(), r.own, cudaMemcpyHostToDevice) != cudaSuccess) {
             // nothing may run on these experts now: the card is out of memory it just had
-            basalt::log::error("basalt inkling2", "the experts lent to the image encoder cannot come back to the card");
+            basalt::log::error("granite inkling2", "the experts lent to the image encoder cannot come back to the card");
             std::abort();
         }
         back += r.own;
@@ -918,7 +918,7 @@ void InklingModel::refill() {
     if (elastic_ && !lent_) promote(held_free(kCardSpare));
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     if (layers > 0 || lend_copies_ > 0)
-        basalt::log::info("basalt inkling2", "image encoder: borrowed %lld expert copies and %zu layers' experts (%.2f GiB) in %.0f ms, "
+        basalt::log::info("granite inkling2", "image encoder: borrowed %lld expert copies and %zu layers' experts (%.2f GiB) in %.0f ms, "
                           "back in %.0f ms (%lld copies)",
                           (long long) lend_copies_, layers, (double) back / (double) kGiB, lend_ms_, ms, (long long) (n_copy_ - copies));
     lend_ms_ = 0;

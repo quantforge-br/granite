@@ -118,7 +118,7 @@ __global__ void q8_to_planes_kernel(const uint8_t* __restrict__ blocks, int64_t 
 
 void to_blocks(const void* planes, int64_t rows, int64_t K, void* blocks, void* stream) {
     if (!fits(rows, K)) {
-        basalt::log::error("basalt", "nvfp4 planes: a [%lld x %lld] matrix", (long long) rows, (long long) K);
+        basalt::log::error("granite", "nvfp4 planes: a [%lld x %lld] matrix", (long long) rows, (long long) K);
         std::exit(1);
     }
     const int64_t n = rows * (K / 64);
@@ -126,14 +126,14 @@ void to_blocks(const void* planes, int64_t rows, int64_t K, void* blocks, void* 
                                                                                       (uint8_t*) blocks);
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        basalt::log::error("basalt", "nvfp4 planes: %s", cudaGetErrorString(e));
+        basalt::log::error("granite", "nvfp4 planes: %s", cudaGetErrorString(e));
         std::exit(1);
     }
 }
 
 void from_blocks(const void* blocks, int64_t rows, int64_t K, void* planes, void* stream) {
     if (!fits(rows, K)) {
-        basalt::log::error("basalt", "nvfp4 planes: a [%lld x %lld] matrix", (long long) rows, (long long) K);
+        basalt::log::error("granite", "nvfp4 planes: a [%lld x %lld] matrix", (long long) rows, (long long) K);
         std::exit(1);
     }
     const int64_t n = rows * (K / 64);
@@ -141,14 +141,14 @@ void from_blocks(const void* blocks, int64_t rows, int64_t K, void* planes, void
                                                                                         (uint8_t*) planes);
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        basalt::log::error("basalt", "nvfp4 planes: %s", cudaGetErrorString(e));
+        basalt::log::error("granite", "nvfp4 planes: %s", cudaGetErrorString(e));
         std::exit(1);
     }
 }
 
 void from_q8(const void* q8_blocks, int64_t rows, int64_t K, void* planes, float* scale, void* stream) {
     if (!fits(rows, K) || K % 32 != 0) {
-        basalt::log::error("basalt", "nvfp4p::from_q8: %lld x %lld", (long long) rows, (long long) K);
+        basalt::log::error("granite", "nvfp4p::from_q8: %lld x %lld", (long long) rows, (long long) K);
         std::exit(1);
     }
     const cudaStream_t s = (cudaStream_t) stream;

@@ -45,7 +45,7 @@ std::string LoadSummary::redraw(double now) {
 }
 
 std::string LoadSummary::feed(const std::string& raw, double now) {
-    static const std::string tag = "basalt load: ";
+    static const std::string tag = "granite load: ";
     basalt::log::Parsed p;
     if (basalt::log::parse(raw, p) && p.level != basalt::log::Level::info) {   // shown at once; a warning keeps its marker
         const std::string pre = drawn_ ? kClear : "";

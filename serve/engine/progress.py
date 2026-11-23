@@ -29,7 +29,7 @@ def start_failure_hint(log: str | None, offset: int) -> str:
     if DRAFT_HEAD_FAIL not in text:
         return ""
     said = [e.text for x in text.splitlines()
-            if (e := engine_line(x.strip())) is not None and e.tag == "basalt mtp"
+            if (e := engine_line(x.strip())) is not None and e.tag == "granite mtp"
             and ("draft head over" in e.text or "hint:" in e.text)]
     return ". mtp: " + DRAFT_HEAD_FAIL + ". " + (" ".join(said) if said else "Hint: " + DRAFT_HEAD_HINT)
 
@@ -61,7 +61,7 @@ class LoadBars:
     destination's own part so far: each card's share in turn ("loading model weights: cuda0 3.1/12.5", then "cuda1"
     ...), then "ram", the label padded to the longest so the bar stays put; the n-gram table lock is its own row,
     outside the total. finish() collapses the bars into one result line that splits the total by destination, as the
-    engine's plan does (`basalt load: share`). Off a terminal the rows print as text once per heartbeat, only while
+    engine's plan does (`granite load: share`). Off a terminal the rows print as text once per heartbeat, only while
     their bytes move, without a destination: a sample of the whole load is not any destination's part. Each
     destination instead prints one line when its last byte lands, with its exact total.
 
@@ -123,7 +123,7 @@ class LoadBars:
         return f"{head} {(self._part(sh['done'], sh['total']) if sh else '').rjust(width)}"
 
     def set_share(self, target: str, done: int, total: int) -> None:
-        """`done` of `total` bytes of the engine's plan land in `target` (`basalt load: share`): the label's part on a
+        """`done` of `total` bytes of the engine's plan land in `target` (`granite load: share`): the label's part on a
         terminal; off one, a line once its last byte lands."""
         with self.lock:
             if self.t0 is None:
@@ -157,12 +157,12 @@ class LoadBars:
         return " ".join(f"{self.key(t)}={u / 10:.1f}GiB" for (t, _), u in zip(parts, units))
 
     def set_stages(self, targets: list[str]) -> None:
-        """Where the engine will place, in order (`basalt load: stages <target>...`): the label is as wide as the longest."""
+        """Where the engine will place, in order (`granite load: stages <target>...`): the label is as wide as the longest."""
         with self.lock:
             self.into_pad = max([self.into_pad] + [len(self.key(t)) for t in targets])
 
     def set_into(self, target: str) -> None:
-        """The engine places into `target` from now on (`basalt load: into <target>`): the weights' row takes it as its
+        """The engine places into `target` from now on (`granite load: into <target>`): the weights' row takes it as its
         label on a terminal. Off one nothing prints: the destination's own line comes when its last byte lands."""
         with self.lock:
             self.into = target
@@ -425,9 +425,9 @@ def server_line(text: str) -> None:
 
 
 def load_progress(line: str):
-    """(target, done, total) from an engine `basalt load: <target> <done> <total>` line (`weights`, or `ngram`), else None."""
+    """(target, done, total) from an engine `granite load: <target> <done> <total>` line (`weights`, or `ngram`), else None."""
     parts = line.split()
-    if parts[:2] != ["basalt", "load:"] or len(parts) != 5 or parts[2] not in (LoadBars.WEIGHTS, LoadBars.TABLE):
+    if parts[:2] != ["granite", "load:"] or len(parts) != 5 or parts[2] not in (LoadBars.WEIGHTS, LoadBars.TABLE):
         return None
     try:
         return parts[2], int(parts[3]), int(parts[4])
@@ -437,10 +437,10 @@ def load_progress(line: str):
 
 def load_kv(line: str):
     """(target, bytes, tokens, kind, max bytes) from an engine
-    `basalt load: kv [slot|draft ]<target> <bytes> <tokens> [<max_bytes>]` line (kind "" for the solo session; the max
+    `granite load: kv [slot|draft ]<target> <bytes> <tokens> [<max_bytes>]` line (kind "" for the solo session; the max
     is the bytes when the line has none), else None."""
     parts = line.split()
-    if parts[:3] != ["basalt", "load:", "kv"]:
+    if parts[:3] != ["granite", "load:", "kv"]:
         return None
     rest = parts[3:]
     kind = rest.pop(0) if rest and rest[0] in ("slot", "draft") else ""
@@ -450,42 +450,42 @@ def load_kv(line: str):
 
 
 def load_planning(line: str) -> bool:
-    """Whether an engine line is `basalt load: planning`: the start is deciding where everything goes."""
-    return line.split() == ["basalt", "load:", "planning"]
+    """Whether an engine line is `granite load: planning`: the start is deciding where everything goes."""
+    return line.split() == ["granite", "load:", "planning"]
 
 
 _STAGE = re.compile(r"ram|cuda\d+")
 
 
 def load_stages(line: str):
-    """The targets of an engine `basalt load: stages <target>...` line, in order, else None."""
+    """The targets of an engine `granite load: stages <target>...` line, in order, else None."""
     parts = line.split()
-    if len(parts) >= 4 and parts[:3] == ["basalt", "load:", "stages"] and all(_STAGE.fullmatch(t) for t in parts[3:]):
+    if len(parts) >= 4 and parts[:3] == ["granite", "load:", "stages"] and all(_STAGE.fullmatch(t) for t in parts[3:]):
         return parts[3:]
     return None
 
 
 def load_share(line: str):
-    """(target, done, total) from an engine `basalt load: share <target> <done> <total>` line, else None."""
+    """(target, done, total) from an engine `granite load: share <target> <done> <total>` line, else None."""
     parts = line.split()
-    if (len(parts) == 6 and parts[:3] == ["basalt", "load:", "share"] and _STAGE.fullmatch(parts[3])
+    if (len(parts) == 6 and parts[:3] == ["granite", "load:", "share"] and _STAGE.fullmatch(parts[3])
             and parts[4].isdigit() and parts[5].isdigit()):
         return parts[3], int(parts[4]), int(parts[5])
     return None
 
 
 def load_into(line: str):
-    """Where the engine places now from a `basalt load: into <target>` line (`cuda<N>` or `ram`), else None."""
+    """Where the engine places now from a `granite load: into <target>` line (`cuda<N>` or `ram`), else None."""
     parts = line.split()
-    if len(parts) == 4 and parts[:3] == ["basalt", "load:", "into"] and _STAGE.fullmatch(parts[3]):
+    if len(parts) == 4 and parts[:3] == ["granite", "load:", "into"] and _STAGE.fullmatch(parts[3]):
         return parts[3]
     return None
 
 
 def load_total(line: str):
-    """The bytes of the whole start from an engine `basalt load: total <bytes>` line, else None."""
+    """The bytes of the whole start from an engine `granite load: total <bytes>` line, else None."""
     parts = line.split()
-    if len(parts) == 4 and parts[:3] == ["basalt", "load:", "total"] and parts[3].isdigit():
+    if len(parts) == 4 and parts[:3] == ["granite", "load:", "total"] and parts[3].isdigit():
         return int(parts[3])
     return None
 
@@ -497,9 +497,9 @@ def engine_warning(line: str):
 
 
 def engine_ram_floor(line: str):
-    """The text after `RAM floor ` of an engine `basalt generate: RAM floor ...` line, else None."""
+    """The text after `RAM floor ` of an engine `granite generate: RAM floor ...` line, else None."""
     e = engine_line(line)
-    if e is not None and e.tag == "basalt generate" and e.text.startswith("RAM floor ") and e.text[10:].strip():
+    if e is not None and e.tag == "granite generate" and e.text.startswith("RAM floor ") and e.text[10:].strip():
         return e.text[10:].strip()
     return None
 

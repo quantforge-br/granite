@@ -132,7 +132,7 @@ inline constexpr uint64_t kPromptFileReadBytes = 3584ull << 20;
 /// is false when the OS gives no reading (nothing is refused then).
 uint64_t ram_budget(bool* known = nullptr);
 
-/// Polls available_memory() until `stop_memory_watchdog`.  Below `floor_bytes` it prints a `basalt error:` line and
+/// Polls available_memory() until `stop_memory_watchdog`.  Below `floor_bytes` it prints a `granite error:` line and
 /// _exit(1)s, so a load that is exhausting RAM ends before the machine starts to swap.
 void start_memory_watchdog(uint64_t floor_bytes);
 /// Tells the watchdog the load builds a resident RAM copy of the experts (`resident`) and how big it is so far, so

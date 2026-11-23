@@ -576,7 +576,7 @@ class ProcessEngine:
                     break
             return f"{status}, last error in its log: {' | '.join(block)}"
         lines = [x.strip() for x in raw_lines]
-        last = next((x for x in reversed(lines) if x.startswith("basalt")), "")
+        last = next((x for x in reversed(lines) if x.startswith("granite")), "")
         return f"{status}, last log line: {last}" if last else f"{status}, nothing in its log"
 
     def alive(self) -> bool:

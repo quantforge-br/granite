@@ -30,16 +30,16 @@ void Runtime::shed_if_low() {
                 disk.put(std::move(sc), kDiskQueueCap))
                 ++to_disk;
         if (freed > 0)
-            basalt::log::info("basalt serve", "RAM guard: %zu parked conversations (%zu MiB) leave RAM, %zu of them "
+            basalt::log::info("granite serve", "RAM guard: %zu parked conversations (%zu MiB) leave RAM, %zu of them "
                               "to disk", parked, freed >> 20, to_disk);
     }
     if (const size_t pooled = basalt::core::CheckpointBytes::allocator_type::release_pooled(); pooled > 0)
-        basalt::log::info("basalt serve", "RAM guard: freed %zu MiB of checkpoint blocks kept for reuse",
+        basalt::log::info("granite serve", "RAM guard: freed %zu MiB of checkpoint blocks kept for reuse",
                           pooled >> 20);
     const uint64_t before = basalt::platform::available_memory();
     basalt::platform::release_free_heap();
     const uint64_t after = basalt::platform::available_memory();
-    basalt::log::info("basalt serve", "RAM guard: free heap returned to the OS, %lld MiB free now (%+lld MiB)",
+    basalt::log::info("granite serve", "RAM guard: free heap returned to the OS, %lld MiB free now (%+lld MiB)",
                       (long long) (after >> 20), ((long long) after - (long long) before) / (1ll << 20));
 }
 
@@ -53,7 +53,7 @@ void Runtime::ckd_finish() {
         ok = ckd_peer.finish(ce) && ok;
     }
     if (ok) return;
-    basalt::log::error("basalt serve", "%s", ce.c_str());
+    basalt::log::error("granite serve", "%s", ce.c_str());
     checks.erase(std::remove_if(checks.begin(), checks.end(),
                                 [&](const ConvCheckpoint& k) { return k.state_a.data() == dst; }), checks.end());
 }
@@ -97,7 +97,7 @@ int Runtime::run_requests() {
         const Flow flow = dispatch();
         if (flow == Flow::error) {
             if (basalt::core::gpu_left_running().load()) {   // the teardown would wait for the stuck window forever
-                basalt::log::error("basalt serve", "the GPU did not finish a released window: ending without the CUDA teardown");
+                basalt::log::error("granite serve", "the GPU did not finish a released window: ending without the CUDA teardown");
                 std::fflush(stdout);
                 std::_Exit(1);
             }
@@ -126,7 +126,7 @@ int Runtime::shutdown() {
         const auto t0 = Clock::now();
         const size_t written = spill_to_disk(true, SIZE_MAX);
         const auto st = disk.stats();
-        basalt::log::info("basalt serve", "conversation cache: %zu conversations written to disk at exit in %.0f ms; "
+        basalt::log::info("granite serve", "conversation cache: %zu conversations written to disk at exit in %.0f ms; "
                           "on disk %zu (%.2f GiB); since the start written %zu (%.2f GiB, %.2f GiB with the shared "
                           "files they reuse), read back %zu (%.2f GiB), evicted %zu, dropped %zu", written,
                           std::chrono::duration<double, std::milli>(Clock::now() - t0).count(), st.files,

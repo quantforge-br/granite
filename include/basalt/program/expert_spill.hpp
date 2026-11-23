@@ -20,7 +20,7 @@ struct ExpertSpill {
 inline void warn_spill(const ExpertSpill& s, const std::string& levers) {
     if (s.experts <= 0) return;
     const double gib = (double) s.bytes / 1073741824.0;
-    basalt::log::warn("basalt", "%lld experts on SSD (%.1f GiB) \xc2\xb7 free %.1f GiB RAM%s", (long long) s.experts, gib, gib,
+    basalt::log::warn("granite", "%lld experts on SSD (%.1f GiB) \xc2\xb7 free %.1f GiB RAM%s", (long long) s.experts, gib, gib,
                       levers.c_str());
 }
 

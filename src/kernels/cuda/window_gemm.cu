@@ -24,12 +24,12 @@ using detail::Kernel;
 void check(const char* what) {
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        basalt::log::error("basalt", "%s: %s", what, cudaGetErrorString(e));
+        basalt::log::error("granite", "%s: %s", what, cudaGetErrorString(e));
         std::exit(1);
     }
 }
 [[noreturn]] void refuse(const char* what, const Call& c) {
-    basalt::log::error("basalt", "window gemm: %s (%lld x %lld)", what, (long long) c.m[0].rows, (long long) c.K);
+    basalt::log::error("granite", "window gemm: %s (%lld x %lld)", what, (long long) c.m[0].rows, (long long) c.K);
     std::exit(1);
 }
 

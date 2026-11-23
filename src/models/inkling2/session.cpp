@@ -235,13 +235,13 @@ public:
         if (stream_) cudaStreamSynchronize(stream_);
         if (stream1_) cudaStreamSynchronize(stream1_);
         if (tp_checks_ > 0)
-            basalt::log::info("basalt inkling2", "diag-tp-check: the two cards held the same caches after each of %lld calls", (long long) tp_checks_);
+            basalt::log::info("granite inkling2", "diag-tp-check: the two cards held the same caches after each of %lld calls", (long long) tp_checks_);
         if (m_.spill().any() && ex_tally_) {   // how decode's lookups fell between the card and RAM
             std::vector<uint32_t> t;
             if (read_tally(t)) {
                 const CardShare sh = card_share(t, g_.n_expert, [&](int l, int e) { return m_.on_card(l, e); });
                 const uint64_t all = sh.all, card = sh.card;
-                basalt::log::info("basalt inkling2", "experts: %llu decode lookups, %.2f%% on the card, %llu on the CPU",
+                basalt::log::info("granite inkling2", "experts: %llu decode lookups, %.2f%% on the card, %llu on the CPU",
                                   (unsigned long long) all, all ? 100.0 * (double) card / (double) all : 100.0,
                                   (unsigned long long) (all - card));
             }
@@ -541,7 +541,7 @@ public:
         cudaStreamSynchronize(stream_);
         const int64_t before = m_.promoted();
         m_.lend(low, stream_);
-        basalt::log::info("basalt inkling2", low ? "sleep: %lld expert copies go back to RAM (decode reads them there)" : "wake: %lld expert copies return to the card",
+        basalt::log::info("granite inkling2", low ? "sleep: %lld expert copies go back to RAM (decode reads them there)" : "wake: %lld expert copies return to the card",
                           (long long) (low ? before : m_.promoted()));
         expert_slots = expert_pairs() - m_.spill().spilled + m_.promoted();
         return {};
@@ -599,7 +599,7 @@ public:
         const uint64_t keep_free = m_.held_free(kElasticKeep);
         if (free_b < grow + keep_free) {
             const uint64_t freed = m_.demote(grow + keep_free - free_b, stream_);
-            basalt::log::info("basalt inkling2", "elastic spill: the caches grow to %lld positions; %.2f GiB of expert copies go back to RAM "
+            basalt::log::info("granite inkling2", "elastic spill: the caches grow to %lld positions; %.2f GiB of expert copies go back to RAM "
                               "(%lld stay on the card)", (long long) target, (double) freed / (double) (1ull << 30), (long long) m_.promoted());
         }
         for (auto& a : elastic_)

@@ -722,7 +722,7 @@ void BASALT_IQ_EXPORT(iq4nl256_down_rows)(const uint8_t* w, size_t row_bytes, in
                         int r0, int r1) {
     // the tokens' block scales are held on the stack: rows of at most iq4nl_max_blocks blocks (iq4nl256_fits)
     if (n % QK4_NL != 0 || n / QK4_NL > iq4nl_max_blocks) {
-        basalt::log::error("basalt", "iq4nl256_down_rows: rows of %d values; at most %d, in blocks of %d", n,
+        basalt::log::error("granite", "iq4nl256_down_rows: rows of %d values; at most %d, in blocks of %d", n,
                            iq4nl_max_blocks * QK4_NL, QK4_NL);
         std::exit(1);
     }

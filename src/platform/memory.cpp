@@ -428,7 +428,7 @@ void start_memory_watchdog(uint64_t floor_bytes) {
         while (!g_watch_stop.load()) {
             const uint64_t avail = available_memory();
             if (avail > 0 && avail < floor_bytes) {
-                basalt::log::error("basalt", "%s", ram_exhausted_message(avail, g_resident_mode.load(), g_resident_copy.load(),
+                basalt::log::error("granite", "%s", ram_exhausted_message(avail, g_resident_mode.load(), g_resident_copy.load(),
                                                                    ram_reserve()).c_str());
                 _exit(1);
             }
@@ -537,16 +537,16 @@ void guard_judge(uint64_t avail) {
     g_guard_level = level;
     const unsigned long long mib = (unsigned long long) (avail >> 20);
     if (was == RamLevel::Ok && level != RamLevel::Ok)
-        basalt::log::warn("basalt", "RAM low: %llu MiB free < %llu MiB guard", mib, (unsigned long long) (floor >> 20));
+        basalt::log::warn("granite", "RAM low: %llu MiB free < %llu MiB guard", mib, (unsigned long long) (floor >> 20));
     if (level == RamLevel::Critical && was != RamLevel::Critical && stalls.known)
-        basalt::log::warn("basalt", "RAM critical: %llu MiB free, hard floor %llu MiB, memory stalls some "
+        basalt::log::warn("granite", "RAM critical: %llu MiB free, hard floor %llu MiB, memory stalls some "
                           "%.0f%% full %.0f%%", mib, (unsigned long long) (kRamHardFloor >> 20), stalls.some, stalls.full);
     if (level == RamLevel::Critical && was != RamLevel::Critical && !stalls.known && avail >= kRamHardFloor)
-        basalt::log::warn("basalt", "RAM critical: %llu MiB free, below the %llu MiB guard for %llu s", mib,
+        basalt::log::warn("granite", "RAM critical: %llu MiB free, below the %llu MiB guard for %llu s", mib,
                           (unsigned long long) (floor >> 20), (unsigned long long) (below_ms / 1000));
     if (level == RamLevel::Low && was == RamLevel::Critical)
-        basalt::log::info("basalt", "RAM low, no longer critical: %llu MiB free", mib);
-    if (level == RamLevel::Ok && was != RamLevel::Ok) basalt::log::info("basalt", "RAM back: %llu MiB free", mib);
+        basalt::log::info("granite", "RAM low, no longer critical: %llu MiB free", mib);
+    if (level == RamLevel::Ok && was != RamLevel::Ok) basalt::log::info("granite", "RAM back: %llu MiB free", mib);
     g_judged = level;
 }
 #if defined(_WIN32)
@@ -612,7 +612,7 @@ void start_ram_guard(uint64_t floor_bytes) {
                 }
                 if (have) {
                     if (!logged_reclaim) {
-                        basalt::log::info("basalt", "RAM guard: mapped experts view given back at %llu MiB free",
+                        basalt::log::info("granite", "RAM guard: mapped experts view given back at %llu MiB free",
                                      (unsigned long long) (avail >> 20));
                         logged_reclaim = true;
                     }

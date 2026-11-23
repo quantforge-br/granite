@@ -138,7 +138,7 @@ int main(int argc, char** argv) {
 #endif
         return cpu.encode(patches, sz, out);
     };
-    std::fprintf(stderr, "basalt-vision: model files loaded in %.1f s\n",
+    std::fprintf(stderr, "granite-vision: model files loaded in %.1f s\n",
                  std::chrono::duration<double>(std::chrono::steady_clock::now() - load_t0).count());
     if (gpu) {
         const auto warm_t0 = std::chrono::steady_clock::now();
@@ -148,10 +148,10 @@ int main(int argc, char** argv) {
         normalize_planar(to_canvas(gray, sz), planar);
         patchify(planar, sz, geo, patches);
         const bool ok = encode(patches, sz, out);
-        std::fprintf(stderr, "basalt-vision: warmed up at %d image tokens%s in %.1f s\n", sz.w / 32 * (sz.h / 32), ok ? "" : " (failed)",
+        std::fprintf(stderr, "granite-vision: warmed up at %d image tokens%s in %.1f s\n", sz.w / 32 * (sz.h / 32), ok ? "" : " (failed)",
                      std::chrono::duration<double>(std::chrono::steady_clock::now() - warm_t0).count());
     } else {
-        std::fprintf(stderr, "basalt-vision: on the CPU, %d threads, no warm-up\n", threads);
+        std::fprintf(stderr, "granite-vision: on the CPU, %d threads, no warm-up\n", threads);
     }
     const int n_embd = mp.hp().proj;
     std::printf("%s\n", video_line().c_str());

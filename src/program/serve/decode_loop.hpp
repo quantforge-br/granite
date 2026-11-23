@@ -217,7 +217,7 @@ Flow Request::decode_loop(B& b) {
         b.stamp_loop_end();
     }
     if (gguard != nullptr)
-        basalt::log::info("basalt grammar", "%lld windows checked, %lld masked resamples, %.3f ms in grammar code (%.2f us/window)",
+        basalt::log::info("granite grammar", "%lld windows checked, %lld masked resamples, %.3f ms in grammar code (%.2f us/window)",
                      (long long) gguard->windows(), (long long) grammar_resamples, gguard->ms(),
                      gguard->windows() > 0 ? gguard->ms() * 1000.0 / (double) gguard->windows() : 0.0);
     b.decode_end();

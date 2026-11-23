@@ -13,7 +13,7 @@ public:
     /// The next argument, the value of flag `what`; a flag without one ends the program.
     const char* next(const char* what) {
         if (i_ + 1 >= argc_) {
-            basalt::log::error("basalt", "%s needs a value", what);
+            basalt::log::error("granite", "%s needs a value", what);
             std::exit(2);
         }
         return argv_[++i_];

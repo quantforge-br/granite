@@ -1550,7 +1550,7 @@ void sample_wide(const float* logits, int n_tokens, int n_vocab, const int* hist
                  const SamplerParams& p, int k, int* out, const int* query, int n_query, float* qprob, void* stream) {
     WideBuffers w{};
     if (!wide_buffers(stream, n_vocab, w)) {
-        basalt::log::error("basalt", "sample_tokens: no memory for a %d-entry list (top_k %d)", k, p.top_k);
+        basalt::log::error("granite", "sample_tokens: no memory for a %d-entry list (top_k %d)", k, p.top_k);
         std::exit(1);
     }
     const cudaStream_t cs = (cudaStream_t) stream;
@@ -1565,7 +1565,7 @@ void sample_wide(const float* logits, int n_tokens, int n_vocab, const int* hist
             pr, k, w.keys_in, w.ids_in, w.rows);
         // each row's sort on a stream of its own, joined before the terms
         if (R > 1 && cudaEventRecord(w.fork, cs) != cudaSuccess) {
-            basalt::log::error("basalt", "sample_tokens sort: cannot fork the rows' sorts");
+            basalt::log::error("granite", "sample_tokens sort: cannot fork the rows' sorts");
             std::exit(1);
         }
         for (int t = 0; t < R; ++t) {
@@ -1578,13 +1578,13 @@ void sample_wide(const float* logits, int n_tokens, int n_vocab, const int* hist
                                                      w.ids_in + o, w.ids + o, n_vocab, 0, 32, ss);
             if (se == cudaSuccess && t > 0) se = cudaEventRecord(w.join[t - 1], ss);
             if (se != cudaSuccess) {
-                basalt::log::error("basalt", "sample_tokens sort: %s", cudaGetErrorString(se));
+                basalt::log::error("granite", "sample_tokens sort: %s", cudaGetErrorString(se));
                 std::exit(1);
             }
         }
         for (int t = 1; t < R; ++t)
             if (cudaStreamWaitEvent(cs, w.join[t - 1], 0) != cudaSuccess) {
-                basalt::log::error("basalt", "sample_tokens sort: cannot join the rows' sorts");
+                basalt::log::error("granite", "sample_tokens sort: cannot join the rows' sorts");
                 std::exit(1);
             }
         const dim3 grid(kWideChunks / 32, (unsigned) R), tgrid(kWideChunks / kWideTermChunks, (unsigned) R);
@@ -1650,7 +1650,7 @@ bool sample_greedy_cluster(const float* logits, int n_tokens, int n_vocab, int* 
     cfg.gridDim = dim3(kAmCtas, (unsigned) n_tokens, 1);
     const cudaError_t e = cudaLaunchKernelEx(&cfg, sampler_greedy_cluster_kernel, logits, n_vocab, out);
     if (e != cudaSuccess) {
-        basalt::log::error("basalt", "sample_tokens cluster launch: %s", cudaGetErrorString(e));
+        basalt::log::error("granite", "sample_tokens cluster launch: %s", cudaGetErrorString(e));
         std::exit(1);
     }
     return true;
@@ -1694,7 +1694,7 @@ bool sample_greedy_top_prob(const float* logits, int n_tokens, int n_vocab, cons
     const cudaError_t e = cudaLaunchKernelEx(&cfg, sampler_greedy_top_prob_cluster_kernel, logits, n_vocab, map, out,
                                              probs);
     if (e != cudaSuccess) {
-        basalt::log::error("basalt", "sample_greedy_top_prob launch: %s", cudaGetErrorString(e));
+        basalt::log::error("granite", "sample_greedy_top_prob launch: %s", cudaGetErrorString(e));
         std::exit(1);
     }
     return true;
@@ -1718,7 +1718,7 @@ void sample_tokens_impl(int split, const float* logits, int n_tokens, int n_voca
     if (n_tokens <= 0 || n_vocab <= 0) return;
     if (qprob == nullptr) n_query = 0;
     if (p.penalty_last_n > 0 && (history == nullptr || history_len <= 0)) {
-        basalt::log::error("basalt", "sample_tokens: penalty_last_n %d needs a history (got %p, len %d)",
+        basalt::log::error("granite", "sample_tokens: penalty_last_n %d needs a history (got %p, len %d)",
                      p.penalty_last_n, (const void*) history, history_len);
         std::exit(1);
     }
@@ -1748,7 +1748,7 @@ void sample_tokens_impl(int split, const float* logits, int n_tokens, int n_voca
             scratch = split_scratch(stream, (size_t) (n_tokens > 16 ? n_tokens : 16) * n_blocks * kSelMax, &done);
         const dim3 grid((unsigned) n_blocks, (unsigned) n_tokens);
         if ((k > kSelMax || split == 3) && p.n_drawn > 0) {
-            basalt::log::error("basalt", "sample_tokens: drawn drafts on the wide path (a list of %d)", k);
+            basalt::log::error("granite", "sample_tokens: drawn drafts on the wide path (a list of %d)", k);
             std::exit(1);
         }
         if (k > kSelMax || split == 3) {
@@ -1771,7 +1771,7 @@ void sample_tokens_impl(int split, const float* logits, int n_tokens, int n_voca
     }
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        basalt::log::error("basalt", "sample_tokens launch: %s", cudaGetErrorString(e));
+        basalt::log::error("granite", "sample_tokens launch: %s", cudaGetErrorString(e));
         std::exit(1);
     }
     if (stream == nullptr) cudaDeviceSynchronize();

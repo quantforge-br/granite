@@ -1,9 +1,9 @@
 """The level of a log line, read from the marker its writer put on it. No message text is searched for words.
 
 Markers, one per kind of writer:
-  engine   basalt <area>: <text>            info
-           basalt <area>: warning: <text>   warning
-           basalt <area>: error: <text>     error
+  engine   granite <area>: <text>           info
+           granite <area>: warning: <text>  warning
+           granite <area>: error: <text>    error
   server   [server] <text>                  info
            [server] warning: <text>         warning    (a startup block line reads `warning  <text>`)
            [server] error: <text>           error
@@ -17,14 +17,14 @@ from typing import NamedTuple
 
 INFO, WARN, ERR = "info", "warn", "err"
 _NAMES = {"warning": WARN, "error": ERR}
-ENGINE = re.compile(r"(?P<tag>basalt(?:-[a-z]+)?(?: [\w-]+)*):(?: (?P<lvl>warning|error):)? (?P<text>.*)", re.S)
+ENGINE = re.compile(r"(?P<tag>granite(?:-[a-z]+)?(?: [\w-]+)*):(?: (?P<lvl>warning|error):)? (?P<text>.*)", re.S)
 SERVER = re.compile(r"\[server\] (?:(?P<lvl>warning|error)(?:: | {2,}))?")
 TRACEBACK = "Traceback (most recent call last):"
 CHAINED = ("During handling of the above exception", "The above exception was the direct cause")
 
 
 class EngineLine(NamedTuple):
-    tag: str        # "basalt generate"; "basalt" for a line of no area
+    tag: str        # "granite generate"; "granite" for a line of no area
     level: str      # INFO, WARN or ERR
     text: str       # the message, without the tag and the marker
 

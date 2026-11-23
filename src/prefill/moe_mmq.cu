@@ -15,7 +15,7 @@ namespace {
 
 void ck(cudaError_t e, const char* what) {
     if (e != cudaSuccess) {
-        basalt::log::error("basalt", "prefill mmq: %s: %s", what, cudaGetErrorString(e));
+        basalt::log::error("granite", "prefill mmq: %s: %s", what, cudaGetErrorString(e));
         std::exit(1);
     }
 }
@@ -164,7 +164,7 @@ void with_type(ggml_type t, F&& f) {
         case GGML_TYPE_Q6_K: f(std::integral_constant<ggml_type, GGML_TYPE_Q6_K>{}); break;
         case GGML_TYPE_NVFP4: f(std::integral_constant<ggml_type, GGML_TYPE_NVFP4>{}); break;
         default:
-            basalt::log::error("basalt", "prefill mmq: type %d is not covered", (int) t);
+            basalt::log::error("granite", "prefill mmq: type %d is not covered", (int) t);
             std::exit(1);
     }
 }
@@ -208,7 +208,7 @@ bool fits(int t, int64_t w_rows) {
             static bool said[GGML_TYPE_COUNT] = {};
             if (t >= 0 && t < GGML_TYPE_COUNT && !said[t]) {
                 said[t] = true;
-                basalt::log::warn("basalt", "prompt kernels: llama.cpp's MMQ has no tile for %s (%lld rows) on GPU %d "
+                basalt::log::warn("granite", "prompt kernels: llama.cpp's MMQ has no tile for %s (%lld rows) on GPU %d "
                                      "(%zu bytes of shared memory per block): that product takes the non-MMQ path ", ggml_type_name((ggml_type) t), (long long) w_rows, id, smpbo);
             }
             return false;

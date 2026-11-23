@@ -1,4 +1,4 @@
-// include/basalt/program/load_summary.hpp - the engine's `basalt load:` stderr lines (format in
+// include/basalt/program/load_summary.hpp - the engine's `granite load:` stderr lines (format in
 // basalt/core/load_progress.hpp) condensed into the lines a benchmark program prints while the engine starts.
 #pragma once
 

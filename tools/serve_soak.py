@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Concurrent-stream load for a running basalt server: a fixed set of streams on different topics (`topics`), or
+"""Concurrent-stream load for a running granite server: a fixed set of streams on different topics (`topics`), or
 random OpenAI/Anthropic streaming traffic with cancels, near-limit and over-long prompts and images (`soak`).
 
   serve_soak.py BASE_URL topics --secs 300 --streams 4

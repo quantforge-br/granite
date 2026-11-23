@@ -588,7 +588,7 @@ bool ConversationStore::open(const std::string& dir, uint64_t identity, uint64_t
                 for (int64_t c : e->checks) ok = ok && c > 0 && c <= e->head.n_ids;
             }
             if (!ok) {   // fail closed: a file of this identity that does not check out is removed
-                basalt::log::warn("basalt serve", "conversation cache: %s dropped (%s)", f.name.c_str(),
+                basalt::log::warn("granite serve", "conversation cache: %s dropped (%s)", f.name.c_str(),
                                   why.empty() ? "its tokens do not match its key" : why.c_str());
                 rf.close();
                 basalt::platform::remove_file(path);
@@ -608,7 +608,7 @@ bool ConversationStore::open(const std::string& dir, uint64_t identity, uint64_t
         bool whole = true;
         for (const auto& r : e.refs) whole = whole && parts_.count(r) != 0;
         if (!whole) {
-            basalt::log::warn("basalt serve", "conversation cache: %s dropped (a block or state file is missing)",
+            basalt::log::warn("granite serve", "conversation cache: %s dropped (a block or state file is missing)",
                               e.name.c_str());
             basalt::platform::remove_file(dir_ + "/" + e.name);
             entries_.erase(entries_.begin() + (std::ptrdiff_t) i);
@@ -1206,11 +1206,11 @@ void ConversationStore::writer() {
         const bool room = free_bytes >= job->bytes + kSpaceFloor;
         const bool ok = room && write_job(*job, wrote, whole, why);
         if (!room)
-            basalt::log::warn("basalt serve", "conversation cache: %s has %.1f GiB free, not written (%.1f GiB "
+            basalt::log::warn("granite serve", "conversation cache: %s has %.1f GiB free, not written (%.1f GiB "
                               "image, %.0f GiB kept free)", dir_.c_str(), (double) free_bytes / 1073741824.0,
                               (double) job->bytes / 1073741824.0, (double) kSpaceFloor / 1073741824.0);
         else if (!ok)
-            basalt::log::warn("basalt serve", "conversation cache: %s", why.c_str());
+            basalt::log::warn("granite serve", "conversation cache: %s", why.c_str());
         std::lock_guard<std::mutex> lk(mu_);
         if (!queue_.empty() && queue_.front() == job) {
             queue_.pop_front();

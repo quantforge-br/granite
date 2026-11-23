@@ -16,8 +16,8 @@ from serve.engine.process import EngineStartError, ProcessEngine
 
 LOGGED = r'''
 import sys
-sys.stderr.write("basalt serve: warning: the profile copy was skipped\n")
-sys.stderr.write("basalt serve: error: a swap failed (layer 3)\n")
+sys.stderr.write("granite serve: warning: the profile copy was skipped\n")
+sys.stderr.write("granite serve: error: a swap failed (layer 3)\n")
 sys.stderr.flush()
 '''
 HEALTHY = LOGGED + r'''
@@ -25,7 +25,7 @@ print("INFO engine=fake", flush=True)
 print("READY 4096 stop", flush=True)
 for raw in sys.stdin:
     if raw.startswith("GEN"):
-        sys.stderr.write("basalt serve: error: an eviction copy failed (layer 5)\n")
+        sys.stderr.write("granite serve: error: an eviction copy failed (layer 5)\n")
         sys.stderr.flush()
         print("T 65", flush=True)
         print("DONE 1 3 1.0 1.0 length 0 0 0", flush=True)

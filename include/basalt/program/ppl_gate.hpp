@@ -88,7 +88,7 @@ private:
         int32_t nv[2] = {0, 0};
         if (fd_ < 0 || !read_at(magic, 8, 0) || std::memcmp(magic, "_logits_", 8) != 0 || !read_at(&n_ctx, 4, 8) ||
             !read_at(nv, 8, 12) || n_ctx < 4 || nv[0] <= 0 || nv[1] <= 0) {
-            basalt::log::error("basalt ppl", "%s is not a llama.cpp KL-divergence base", base);
+            basalt::log::error("granite ppl", "%s is not a llama.cpp KL-divergence base", base);
             close_fd();
             return;
         }
@@ -98,7 +98,7 @@ private:
         row_u16_ = 2 * ((n_vocab_ + 1) / 2) + 4;
         out_ = basalt::platform::open_file_utf8(paths().second, "ab");
         if (out_ == nullptr) {
-            basalt::log::error("basalt ppl", "cannot write %s", out);
+            basalt::log::error("granite ppl", "cannot write %s", out);
             close_fd();
         }
     }

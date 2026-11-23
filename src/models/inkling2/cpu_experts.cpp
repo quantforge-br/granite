@@ -122,7 +122,7 @@ std::unique_ptr<CpuExperts> CpuExperts::make(const InklingModel& m, std::string&
     const model::LoadRequest& fl = m.flags();
     const cpu::PoolAffinity affinity = fl.pool_affinity_given ? fl.pool_affinity : cpu::PoolAffinity::All;
     p.pool = std::make_unique<cpu::ExpertPool>(cpu::start_pool_workers(fl.pool_workers, fl.pool_affinity_given, affinity), affinity);
-    basalt::log::info("basalt inkling2", "experts in RAM run on the CPU: %d pool workers", p.pool->workers());
+    basalt::log::info("granite inkling2", "experts in RAM run on the CPU: %d pool workers", p.pool->workers());
     return out;
 }
 

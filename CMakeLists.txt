@@ -449,7 +449,7 @@ target_compile_definitions(basalt-bench PRIVATE
   BASALT_BENCH_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
   BASALT_BENCH_CUDA="${CMAKE_CUDA_COMPILER_VERSION}")
 
-# basalt-probe: starts the engine, measures its rates and cold decode speed, prints a report
+# granite-probe: starts the engine, measures its rates and cold decode speed, prints a report
 add_executable(basalt-probe src/program/probe_main.cpp)
 basalt_ship_to_bin(basalt-probe)
 add_dependencies(basalt-probe basalt)
@@ -610,7 +610,7 @@ if(NOT _iq_python STREQUAL "")
   basalt_cpu_test(NAME migration_tests COMMAND ${_iq_python} -m unittest discover -s tools/migrations -p "test_*.py"
            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 else()
-  message(STATUS "basalt tests: no python3 with numpy was found (the configured interpreter and .venv "
+  message(STATUS "granite tests: no python3 with numpy was found (the configured interpreter and .venv "
                  "were probed) - the iq_parity fixtures and its test and the converter tests are not registered; "
                  "they need python3 with numpy and gguf-py")
 endif()
@@ -684,7 +684,7 @@ foreach(_t cpu_test compiler_test region_test process_pipe_test system_test file
   set_tests_properties(platform_${_t} PROPERTIES TIMEOUT 120)
 endforeach()
 
-# the engine's load lines condensed for basalt-bench: lines, throttling, terminal mode (CPU only)
+# the engine's load lines condensed for granite-bench: lines, throttling, terminal mode (CPU only)
 add_executable(load_summary_test tests/program/load_summary_test.cpp)
 target_link_libraries(load_summary_test PRIVATE engine_session warnings)
 basalt_embed_manifest(load_summary_test)

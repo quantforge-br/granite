@@ -32,7 +32,7 @@ std::optional<int> find_model(int argc, char** argv, const model::ModelAdapter*&
     basalt::core::ModelFile file;
     std::string err;
     if (!file.open(path, err) || !file.load_meta(err)) {
-        basalt::log::error("basalt", "--model: %s", err.c_str());
+        basalt::log::error("granite", "--model: %s", err.c_str());
         return 2;
     }
     const basalt::core::Json* kv = file.meta().get("gguf_kv");
@@ -40,7 +40,7 @@ std::optional<int> find_model(int argc, char** argv, const model::ModelAdapter*&
     const std::string name = arch && arch->is_string() ? arch->s : std::string();
     adapter = model::find_adapter(name);
     if (adapter == nullptr) {
-        basalt::log::error("basalt", "--model: %s", model::unavailable_architecture(name).c_str());
+        basalt::log::error("granite", "--model: %s", model::unavailable_architecture(name).c_str());
         return 2;
     }
     return std::nullopt;
@@ -54,7 +54,7 @@ void pack_tokens(const model::ModelAdapter& adapter, CommonOptions& o) {
     basalt::core::Json vocab;
     if (!file.open(o.model, err) || !file.load_meta(err) || !basalt::core::read_range(file.range("tokenizer/vocab.json"), text, err) ||
         !basalt::core::parse_json((const char*) text.data(), text.size(), vocab, err)) {
-        basalt::log::warn("basalt", "the pack's vocabulary cannot be read (%s): no end-of-turn or turn token", err.c_str());
+        basalt::log::warn("granite", "the pack's vocabulary cannot be read (%s): no end-of-turn or turn token", err.c_str());
         return;
     }
     // a name with one `*` matches the first token whose text has that start and end (a model whose special tokens carry a suffix
@@ -95,7 +95,7 @@ std::optional<int> start(int argc, char** argv, std::unique_ptr<CommonOptions>& 
     basalt::platform::prefer_oom_victim();
     // the CPU expert pool keeps its speed while the window is in the background
     if (!basalt::platform::keep_full_speed())
-        basalt::log::warn("basalt", "full-speed scheduling refused: decode slows while the window is in the background");
+        basalt::log::warn("granite", "full-speed scheduling refused: decode slows while the window is in the background");
     // Kernels load on first use: loading every kernel of the engine and of cuBLAS at context creation holds a few
     // hundred MiB of device memory for code that never runs.  The expert cache's sizing keeps back room for what loads
     // later (`kLazyKernelsMib`).  CUDA_MODULE_LOADING=EAGER restores the up-front load; batched serving sets it (below).
@@ -118,7 +118,7 @@ std::optional<int> start(int argc, char** argv, std::unique_ptr<CommonOptions>& 
         pack_tokens(*adapter, o);
         // nothing would end a reply
         if (o.eos_ids.empty() && o.generates && !o.gpu_plan && (o.serve || (o.max_new > 0 && o.stop_eos))) {
-            basalt::log::error("basalt", "this pack names no end-of-text token: give --eos-ids");
+            basalt::log::error("granite", "this pack names no end-of-text token: give --eos-ids");
             return 2;
         }
         basalt::program::grammar::set_tool_form(adapter->tool_form());
@@ -133,7 +133,7 @@ std::optional<int> start(int argc, char** argv, std::unique_ptr<CommonOptions>& 
 
 std::optional<int> prepare_model_process(const CommonOptions& o) {
     if (o.model.empty()) {
-        basalt::log::error("basalt generate", "--model FILE.basalt is required");
+        basalt::log::error("granite generate", "--model FILE.basalt is required");
         usage();
         return 2;
     }
