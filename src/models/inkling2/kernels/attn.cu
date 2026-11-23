@@ -126,7 +126,7 @@ __global__ void __launch_bounds__(kThreads, 2) attn_split_kernel(AttnArgs a, int
                                                                  float* __restrict__ part_acc) {
     extern __shared__ __align__(16) unsigned char smem_raw[];
     Smem& sm = *reinterpret_cast<Smem*>(smem_raw);
-    const int r0 = blockIdx.x * kRows, g = blockIdx.y, s = blockIdx.z;
+    const int r0 = blockIdx.x * kRows, g = a.g0 + blockIdx.y, s = blockIdx.z;
     const int slot = threadIdx.x >> 7, w = (threadIdx.x >> 5) & (kWarps - 1), lane = threadIdx.x & 31;
     bk::pdl_wait();
     bk::pdl_launch_dependents();
@@ -355,12 +355,13 @@ __global__ void __launch_bounds__(kThreads, 2) attn_split_kernel(AttnArgs a, int
 }
 
 // A block per (row, head), a thread a channel: the row's slices merged with the sink, gated, written in fp32 and/or as
-// q8_1 (a warp a block of 32 channels).
+// q8_1 (a warp a block of 32 channels; also into the other card's, then counted as sent).
 __global__ void __launch_bounds__(kHeadDim) attn_combine_kernel(AttnArgs a, int z, const float* __restrict__ part_ml,
                                                                 const float* __restrict__ part_acc, float* __restrict__ out) {
     bk::pdl_wait();
     bk::pdl_launch_dependents();
-    const int r = blockIdx.x, h = blockIdx.y, d = threadIdx.x;
+    const int r = blockIdx.x, h = a.g0 * kGroup + blockIdx.y, d = threadIdx.x;
+    if (a.sent && blockIdx.x == 0 && blockIdx.y == 0 && d == 0) *a.sent += 1;   // read by attn_exchange, the kernel after
     int p, lo, n;
     row_keys(a, r, p, lo, n);
     const int span = span_of(n), splits = (n + span - 1) / span;
@@ -382,9 +383,17 @@ __global__ void __launch_bounds__(kHeadDim) attn_combine_kernel(AttnArgs a, int 
         const float amax = warp_max(fabsf(o));
         const float sum = warp_sum(o);
         const float dq = bk::q8_1_finite(amax / 127.0f);
-        Q81& b = reinterpret_cast<Q81*>(a.q8)[(size_t) r * (kHeads * kHeadDim / 32) + c / 32];
-        b.qs[c % 32] = bk::q8_1_quant(o, dq, amax);
-        if ((c & 31) == 0) b.ds = bk::q8_1_ds(dq, sum);
+        const size_t at = (size_t) r * (kHeads * kHeadDim / 32) + c / 32;
+        const auto q = bk::q8_1_quant(o, dq, amax);
+        const auto ds = bk::q8_1_ds(dq, sum);
+        Q81& b = reinterpret_cast<Q81*>(a.q8)[at];
+        b.qs[c % 32] = q;
+        if ((c & 31) == 0) b.ds = ds;
+        if (a.q8_peer) {
+            Q81& pb = reinterpret_cast<Q81*>(a.q8_peer)[at];
+            pb.qs[c % 32] = q;
+            if ((c & 31) == 0) pb.ds = ds;
+        }
     }
 }
 
@@ -418,11 +427,13 @@ void attention_decode(const AttnArgs& a, int rows, int64_t max_keys, void* scrat
         set = true;
     }
     if (a.cap < kStage) throw std::runtime_error("inkling2 attention_decode: the cache holds fewer cells than a stage");
-    const dim3 grid((unsigned) ((rows + kRows - 1) / kRows), kKvHeads, (unsigned) z);
+    if (a.g0 < 0 || a.ng < 1 || a.g0 + a.ng > kKvHeads) throw std::runtime_error("inkling2 attention_decode: groups");
+    const dim3 grid((unsigned) ((rows + kRows - 1) / kRows), (unsigned) a.ng, (unsigned) z);
     if (a.fp8) bk::launch_pdl(attn_split_kernel<true>, grid, dim3(kThreads), sizeof(Smem), s, a, rows, z, part_ml, part_acc);
     else bk::launch_pdl(attn_split_kernel<false>, grid, dim3(kThreads), sizeof(Smem), s, a, rows, z, part_ml, part_acc);
     check("attention_decode");
-    bk::launch_pdl(attn_combine_kernel, dim3((unsigned) rows, kHeads), dim3(kHeadDim), 0, s, a, z, (const float*) part_ml, (const float*) part_acc, out);
+    bk::launch_pdl(attn_combine_kernel, dim3((unsigned) rows, (unsigned) (kGroup * a.ng)), dim3(kHeadDim), 0, s, a, z, (const float*) part_ml,
+                   (const float*) part_acc, out);
     check("attention_decode/combine");
 }
 

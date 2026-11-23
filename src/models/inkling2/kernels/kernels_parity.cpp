@@ -457,6 +457,28 @@ void test_attention() {
         std::vector<double> wd(want.begin(), want.end());
         report("  gated", gg, wd, 1e-6);
         check_q8("  gated, its q8_1 blocks", gq.q8, gg, R, kHeads * kHeadDim);
+        // tensor parallelism: each half of the key/value groups alone, its heads' blocks into both cards' rows
+        {
+            const size_t q8b = (size_t) R * kHeads * kHeadDim / 32 * 36;
+            uint8_t *qa = zeros<uint8_t>(q8b), *qb = zeros<uint8_t>(q8b);
+            uint32_t* sent = zeros<uint32_t>(2);
+            for (int half = 0; half < 2; ++half) {
+                AttnArgs t = gq;
+                t.g0 = half * kKvHeads / 2;
+                t.ng = kKvHeads / 2;
+                t.q8 = half ? qb : qa;
+                t.q8_peer = half ? qa : qb;
+                t.sent = sent + half;
+                attention_decode(t, R, max_keys, scr, nullptr, nullptr);
+            }
+            const std::vector<uint8_t> whole = host(static_cast<const uint8_t*>(gq.q8), q8b);
+            same_bits("  halves of the groups, card 0", host(qa, q8b).data(), whole.data(), q8b);
+            same_bits("  halves of the groups, card 1", host(qb, q8b).data(), whole.data(), q8b);
+            const std::vector<uint32_t> n = host(sent, 2);
+            const bool counted = n[0] == 1 && n[1] == 1;
+            std::printf("%-34s %s\n", "  halves counted as sent", counted ? "ok" : "FAIL");
+            failures += !counted;
+        }
         const double us = time_us([&] { attention_decode(one, 1, max_keys, scr, out1, nullptr); });
         const double keys = window ? kExtent : p0 + 3;
         std::printf("  %.1f us a call (1 row, %.0f keys: %.0f GB/s of K and V)\n", us, keys,
@@ -1025,6 +1047,31 @@ void test_decode_prepare() {
                     host(a.v_ring, (size_t) kConvRing * 1024) == host(b.v_ring, (size_t) kConvRing * 1024);
         std::printf("%-34s %s\n", tag, same ? "bitwise = attn_prepare" : "FAIL");
         failures += !same;
+        // tensor parallelism: each half of the groups prepares every key and value and only its own query heads
+        for (int half = 0; half < 2; ++half) {
+            AttnPrep t = a;
+            t.g0 = half * kKvHeads / 2;
+            t.ng = kKvHeads / 2;
+            t.k_ring = dev(kr); t.v_ring = dev(vr);
+            t.k_cache = zeros<uint16_t>((size_t) kKvHeads * cap * kHeadDim); t.v_cache = zeros<uint16_t>((size_t) kKvHeads * cap * kHeadDim);
+            t.q = zeros<float>((size_t) R * kHeads * kHeadDim); t.r = zeros<float>((size_t) R * kHeads * kRel); t.sink = zeros<float>((size_t) R * kHeads);
+            decode_prepare(t, R, nullptr);
+            cudaDeviceSynchronize();
+            bool ok = !std::memcmp(host((uint8_t*) t.k_cache, kvb).data(), host((uint8_t*) a.k_cache, kvb).data(), kvb) &&
+                      !std::memcmp(host((uint8_t*) t.v_cache, kvb).data(), host((uint8_t*) a.v_cache, kvb).data(), kvb) &&
+                      host(t.k_ring, (size_t) kConvRing * 1024) == host(a.k_ring, (size_t) kConvRing * 1024) &&
+                      host(t.v_ring, (size_t) kConvRing * 1024) == host(a.v_ring, (size_t) kConvRing * 1024);
+            const int h0 = t.g0 * (kHeads / kKvHeads), nh = t.ng * (kHeads / kKvHeads);
+            const std::vector<float> tq = host(t.q, (size_t) R * kHeads * kHeadDim), aq = host(a.q, tq.size());
+            const std::vector<float> tr = host(t.r, (size_t) R * kHeads * kRel), ar = host(a.r, tr.size());
+            const std::vector<float> ts = host(t.sink, (size_t) R * kHeads), as = host(a.sink, ts.size());
+            for (int r = 0; r < R && ok; ++r)
+                ok = !std::memcmp(&tq[((size_t) r * kHeads + h0) * kHeadDim], &aq[((size_t) r * kHeads + h0) * kHeadDim], (size_t) nh * kHeadDim * 4) &&
+                     !std::memcmp(&tr[((size_t) r * kHeads + h0) * kRel], &ar[((size_t) r * kHeads + h0) * kRel], (size_t) nh * kRel * 4) &&
+                     !std::memcmp(&ts[(size_t) r * kHeads + h0], &as[(size_t) r * kHeads + h0], (size_t) nh * 4);
+            std::printf("  %-32s %s\n", half ? "groups 4..7 alone" : "groups 0..3 alone", ok ? "bitwise" : "FAIL");
+            failures += !ok;
+        }
         if (!full) std::printf("  %.1f us a call (1 row)\n", time_us([&] { decode_prepare(a, 1, nullptr); }));
     }
 }

@@ -99,6 +99,9 @@ struct AttnPrep {
     float* q = nullptr;                ///< out: the clipped (and scaled) queries [rows][kHeads][kHeadDim]
     float* r = nullptr;                ///< out: the relative states [rows][kHeads][kRel]
     float* sink = nullptr;             ///< out: [rows][kHeads]
+    /// decode_prepare: the key/value groups [g0, g0 + ng) whose query heads (3g..3g + 2) it prepares (a card's share under
+    /// tensor parallelism; yq is read only at their rows); every group's keys and values go to the cache
+    int g0 = 0, ng = kKvHeads;
     Segments seg;                      ///< a batch window's (decode_prepare only): each segment's caches and rings
 };
 /// Convolves the window's keys and values (positions before the window read from the rings, below position 0 zero),
@@ -122,6 +125,11 @@ struct AttnArgs {
     const float* gate = nullptr;       ///< set: the output is gated by sigmoid(gate[r * gate_ld + h * kHeadDim + d])
     int64_t gate_ld = 0;
     void* q8 = nullptr;                ///< set: the (gated) output also as q8_1 blocks, [rows][kHeads * kHeadDim / 32]
+    /// attention_decode: the heads of key/value groups [g0, g0 + ng) only (a card's share under tensor parallelism; the
+    /// other heads' outputs are left as they are)
+    int g0 = 0, ng = kKvHeads;
+    void* q8_peer = nullptr;           ///< set: the q8_1 blocks also into the other card's q8 (a peer address)
+    uint32_t* sent = nullptr;          ///< set: counted there as sent (attn_exchange reads it, the kernel after)
     Segments seg;                      ///< a batch window's: each segment's caches
 };
 /// The kernels' shared-memory opt-ins are per device (a layer split runs them on two cards): the current device's index
@@ -264,17 +272,20 @@ struct PostAttn {
 };
 void post_attn(const PostAttn& a, int rows, void* stream);
 
-/// Tensor parallelism: the words of the cards' exchange of their experts' sums. Each card counts the sums it has sent
-/// (moe_combine) and tells the other card its count in that card's box; a card's finish waits until its box holds its
-/// own count, so the other card's sum of the same visit is in. A wait that passes its bound sets `abort` (mapped host
-/// memory, read by the host after each call) and falls through, as does every wait that has waited a moment once the
-/// word is set: the call ends with garbage rows and the host fails it.
+/// Tensor parallelism: the words of the cards' exchanges, a visit's attention heads' outputs (attention_decode's q8_peer)
+/// and then its experts' sums. Each card counts what it has sent (attn_combine, moe_combine) and tells the other card its
+/// count in that card's box; a card's wait (attn_exchange, its finish) passes once its box holds its own count, so the
+/// other card's share of the same exchange is in. A wait that passes its bound sets `abort` (mapped host memory, read by
+/// the host after each call) and falls through, as does every wait that has waited a moment once the word is set: the
+/// call ends with garbage rows and the host fails it.
 struct Exchange {
-    const uint32_t* sent = nullptr;   ///< the card's count of sums sent
+    const uint32_t* sent = nullptr;   ///< the card's count of shares sent
     const uint32_t* box = nullptr;    ///< the other card's count, written by it
     uint32_t* peer_box = nullptr;     ///< the other card's box (a peer address)
     uint32_t* abort = nullptr;
 };
+/// The attention's exchange: the other card's heads' outputs are in this card's q8_1 rows once it returns (one block).
+void attn_exchange(const Exchange& x, void* stream);
 
 /// The experts' sum of each row (w[r][slot] * rows[r * k + slot], slot order), its convolution (the ring for the positions
 /// before the window) plus `resid` into `out`.

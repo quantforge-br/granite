@@ -578,6 +578,7 @@ __global__ void __launch_bounds__(kThreads) ctrl_blend_kernel(CtrlArgs a) {
 // ring), warp 1 its values (normed), warps 2 and 3 its three query heads, their relative states and sinks (prep.cuh).
 __global__ void __launch_bounds__(128) prepare_kernel(AttnPrep a) {
     const int r = blockIdx.x, g = blockIdx.y, w = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    if (w >= 2 && (g < a.g0 || g >= a.g0 + a.ng)) return;   // another card's query heads
     float wt[4][kConv];   // the weights, read while the kernel before finishes
     prep::load_weights(a, g, w, lane, wt);
     bk::pdl_wait();
@@ -709,6 +710,16 @@ __device__ __noinline__ void exchange_wait(Exchange x, uint32_t want) {
     }
 }
 
+// One thread: this card's count of the attention's exchange to the other card, then the wait for the other's.
+__global__ void attn_exchange_kernel(Exchange x) {
+    bk::pdl_wait();
+    bk::pdl_launch_dependents();
+    if (threadIdx.x != 0) return;
+    const uint32_t want = *x.sent;
+    st_release_sys(x.peer_box, want);
+    exchange_wait(x, want);
+}
+
 // Block (row, 256 channels), a thread a channel: the experts' weighted sums of this row and the rows before it in the
 // window that its convolution reads, the ring for the positions before the window, plus the residual; the ring takes this
 // row's sum.
@@ -819,6 +830,12 @@ void post_attn(const PostAttn& a, int rows, void* stream) {
     if (a.n_blocks + (a.boundary ? 1 : 0) + 1 > kMaxMix) throw std::runtime_error("inkling2 post_attn: blocks");
     bk::launch_pdl(post_attn_kernel, dim3((unsigned) rows), dim3(kThreads), 0, (cudaStream_t) stream, a);
     check("post_attn");
+}
+
+void attn_exchange(const Exchange& x, void* stream) {
+    if (!x.sent || !x.box || !x.peer_box || !x.abort) throw std::runtime_error("inkling2 attn_exchange: words");
+    bk::launch_pdl(attn_exchange_kernel, dim3(1), dim3(32), 0, (cudaStream_t) stream, x);
+    check("attn_exchange");
 }
 
 void moe_finish(const MoeFinish& a, int rows, void* stream) {
