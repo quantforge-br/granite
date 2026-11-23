@@ -20,7 +20,7 @@ const shortGpu = s => String(s || "").replace(/^NVIDIA\s+/i, "").replace(/^GeFor
 const shortCpu = s => String(s || "").replace(/\((R|TM)\)/gi, "").replace(/\s+\d+-Core Processor$/i, "")
   .replace(/\s+CPU\s+@.*$/i, "").replace(/\s+Processor$/i, "").replace(/\s+/g, " ").trim();
 
-let apiKey = sessionStorage.getItem("basalt.key") || "";
+let apiKey = sessionStorage.getItem("granite.key") || "";
 let M = null;          // the last /metrics reading, with .slots from /slots
 
 async function get(path) {
@@ -276,10 +276,10 @@ function drawWeights(eng) {
 /* ---- tabs: Requests | Slots | Hardware | Logs (keys 1-4 and L; #tab=req|slots|hw|logs opens one) ---- */
 const TABS = ["req", "slots", "hw", "logs"];
 const fromHash = (/tab=(\w+)/.exec(location.hash) || [])[1];
-let tab = (t => TABS.includes(t) ? t : "req")(fromHash || sessionStorage.getItem("basalt.tab3"));
+let tab = (t => TABS.includes(t) ? t : "req")(fromHash || sessionStorage.getItem("granite.tab3"));
 function setTab(t) {
   if (!TABS.includes(t)) return;
-  tab = t; try { sessionStorage.setItem("basalt.tab3", tab); } catch (err) { /* private mode */ }
+  tab = t; try { sessionStorage.setItem("granite.tab3", tab); } catch (err) { /* private mode */ }
   draw(); drawPanes();
 }
 $("#tabs").addEventListener("click", e => { const b = e.target.closest("button[data-t]"); if (b) setTab(b.dataset.t); });
@@ -897,7 +897,7 @@ async function pollLog() {
   setTimeout(pollLog, 1000);
 }
 $("#auth").onsubmit = e => {
-  e.preventDefault(); apiKey = $("#key").value.trim(); sessionStorage.setItem("basalt.key", apiKey);
+  e.preventDefault(); apiKey = $("#key").value.trim(); sessionStorage.setItem("granite.key", apiKey);
 };
 
 $("#host").textContent = location.host;

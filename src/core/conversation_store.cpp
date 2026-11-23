@@ -42,7 +42,7 @@ struct ConversationStoreBuffer {
 
 namespace {
 
-constexpr char kMagic[8] = {'B', 'A', 'S', 'A', 'L', 'T', 'C', 'V'};
+constexpr char kMagic[8] = {'G', 'R', 'A', 'N', 'I', 'T', 'C', 'V'};
 constexpr uint64_t kAlign = 4096;
 constexpr uint64_t kBlock = 1ull << 20;    // one hash per block
 constexpr uint64_t kStage = 8ull << 20;    // one write

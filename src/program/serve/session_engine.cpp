@@ -61,7 +61,7 @@ public:
         conversations.emplace((size_t) o.conversation_cache_mib << 20, (size_t) o.conversation_cache_slots);
         if (o.conversation_cache_disk_mib > 0) {
             const auto t0 = Clock::now();
-            std::string text = "basalt conversation state " + model_.desc().arch + " vision_in_engine " + (o.vision_in_engine ? "1" : "0");
+            std::string text = "granite conversation state " + model_.desc().arch + " vision_in_engine " + (o.vision_in_engine ? "1" : "0");
             const uint64_t identity = granite::core::conversation_store_hash_file(
                 o.model, granite::core::conversation_store_hash(text.data(), text.size(), 1));
             std::string de;
