@@ -11,6 +11,7 @@ from unittest import mock
 from serve.engine import modelfile
 from serve.server import engine_args, gpus_in_play
 from model_file import ModelFile, ModelWriter  # noqa: E402
+from gguf_writer import GGUFWriter  # noqa: E402
 
 META = {"name": "tiny-granite",
         "gguf_kv": {"general.sampling.temp": 0.699999988079071, "general.sampling.top_p": 0.8999999761581421,
@@ -101,6 +102,60 @@ class Derivation(Tmp):
         (self.dir / "junk").write_bytes(b"x" * 5000)
         with self.assertRaises(ValueError):
             modelfile.model_config(modelfile.ModelSpec(str(self.dir / "junk")), str(self.engine_bin))
+
+
+class Gguf(Tmp):
+    """A GGUF opened as it is: its metadata is the meta, its byte-level BPE tables the tokenizer files a pack carries."""
+
+    def build_gguf(self, tokenizer=True, name="tiny.gguf"):
+        w = GGUFWriter()
+        w.add("general.architecture", "inkling2_loop")
+        w.add("general.name", "tiny-gguf")
+        w.add("general.sampling.temp", 0.699999988079071, "f32")
+        w.add("general.sampling.top_k", 20, "i32")
+        if tokenizer:
+            w.add("tokenizer.ggml.model", "gpt2")
+            w.add("tokenizer.ggml.pre", "inkling2")
+            w.add("tokenizer.ggml.tokens", ["a", "b", "ab", "<|end|>"])
+            w.add("tokenizer.ggml.merges", ["a b"])
+            w.add("tokenizer.ggml.token_type", [1, 1, 1, 3])
+            w.add("tokenizer.ggml.eos_token_id", 3, "u32")
+            w.add("tokenizer.chat_template", "{{ messages }}")
+        w.add_f32("t", __import__("numpy").zeros(8))
+        return str(w.write(self.dir / name))
+
+    def test_config(self):
+        path = self.build_gguf()
+        cfg = modelfile.model_config(modelfile.ModelSpec(path), str(self.engine_bin))
+        self.assertEqual(cfg["args"], ["--model", path])
+        self.assertEqual(cfg["model_name"], "tiny-gguf")
+        self.assertEqual(cfg["arch"], "inkling2_loop")
+        self.assertEqual(cfg["sampling"], {"temperature": 0.7, "top_k": 20})
+        tok = cfg["tokenizer"]
+        self.assertEqual(json.loads(tok["vocab.json"]), {"a": 0, "b": 1, "ab": 2, "<|end|>": 3})
+        self.assertEqual(tok["merges.txt"], b"a b")
+        self.assertEqual(json.loads(tok["token_type.json"]), [1, 1, 1, 3])
+        self.assertEqual(json.loads(tok["tokenizer.json"])["pre"], "inkling2")
+        self.assertEqual(tok["chat_template.jinja"], b"{{ messages }}")
+
+    def test_cache_key_is_the_header_hash(self):
+        # the metadata and the tensor directory name the model; the tensor data is not read
+        import hashlib
+        from gguf_reader import GGUFFile
+        path = self.build_gguf()
+        head = Path(path).read_bytes()[:GGUFFile(Path(path)).data_start]
+        cfg = modelfile.model_config(modelfile.ModelSpec(path), str(self.engine_bin))
+        self.assertEqual(Path(cfg["log"]), self.dir / "cache" / hashlib.sha256(head).hexdigest()[:16] / "engine.log")
+
+    def test_refusals(self):
+        with self.assertRaisesRegex(ValueError, "does not carry a tokenizer"):
+            modelfile.model_config(modelfile.ModelSpec(self.build_gguf(tokenizer=False)), str(self.engine_bin))
+        cut = self.dir / "cut.gguf"
+        cut.write_bytes(Path(self.build_gguf()).read_bytes()[:60])
+        with self.assertRaisesRegex(ValueError, "cut.gguf"):
+            modelfile.model_config(modelfile.ModelSpec(str(cut)), str(self.engine_bin))
+        with self.assertRaisesRegex(ValueError, "projector"):
+            modelfile.model_config(modelfile.ModelSpec(self.build_gguf(), vision="dynamic"), str(self.engine_bin))
 
 
 class Peer(Tmp):

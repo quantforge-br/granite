@@ -537,7 +537,7 @@ def build_parser() -> argparse.ArgumentParser:
                                  allow_abbrev=False)
     ap.add_argument("--mock-engine", action="store_true",
                     help="run a scripted engine instead of the model, for clients and tests (no --model needed)")
-    ap.add_argument("--model", help="the .granite model file: the engine, tokenizer, sampling and vision come from it")
+    ap.add_argument("--model", help="the .granite model file (or a GGUF): the engine, tokenizer, sampling and vision come from it")
     ap.add_argument("--engine-bin", help=argparse.SUPPRESS)      # set by `granite serve`
     ap.add_argument("--alias", help="the model name the API reports (default: the name stored in the model file)")
     ap.add_argument("--parallel", type=parallel_count, metavar="N",

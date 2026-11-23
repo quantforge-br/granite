@@ -35,6 +35,9 @@ The default pack is `Inkling-2-Mini-NVFP4-DQ8.granite` (19.7 GB), converted once
 - Mean KLD 0.00289 and top-1 97.76% on one RTX 3090 against the release with its experts dequantized to BF16
   ([precision](docs/precision/inkling2.md)).
 
+granite also opens llama.cpp's Inkling 2 GGUF as it is ([GGUF](docs/models/inkling2.md#gguf)): Unsloth's UD-Q4_K_XL is the
+pack's bytes with a Q8_0 token embedding (KLD 0.00309), without the drafter and the vision encoder.
+
 On Ampere, NVFP4 decodes like any 4-bit GGUF type (a 16-entry table to int8, then `dp4a` against 8-bit activations), so
 it costs the same per byte; it wins on quality because nothing is rounded twice. Requantized GGUFs of the same model
 lose more: ggml-org's IQ4_NL (the NVFP4 experts requantized to IQ4_NL) scores 0.0095 KLD and 95.5% top-1 against the

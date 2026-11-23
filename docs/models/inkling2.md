@@ -34,15 +34,15 @@ python3 tools/migrations/pack_to_granite.py models/Inkling-2-Mini-NVFP4-DQ8.basa
 
 ## GGUF
 
-The engine also opens llama.cpp's `inkling2_loop` GGUF of one file as it is, with no conversion
-(`granite --model FILE.gguf`); a split GGUF is joined first with `llama-gguf-split --merge`. One card, two cards and
+The engine and the server also open llama.cpp's `inkling2_loop` GGUF of one file as it is, with no conversion
+(`granite serve --model FILE.gguf`); a split GGUF is joined first with `llama-gguf-split --merge`. One card, two cards and
 experts in RAM run it as they run the pack. What loads:
 
 - Routed experts: llama.cpp's fused gate and up tensor and its down tensor, in a type both the decode and the prompt kernels
   run; NVFP4 with its per-expert scales.
 - Projections and the head: Q8_0 as stored, or BF16 rounded to Q8_0 as it loads (the pack's rounding). Token embedding
   Q8_0 or BF16. Loop controllers stored as F32 load as BF16, the values they hold.
-- The tokenizer and chat template come from the file's metadata.
+- The tokenizer and chat template come from the file's metadata, the sampling defaults from its `general.sampling.*` keys.
 
 Anything else is refused at load, naming the tensor or layer and the type it found. The file carries no DSpark drafter and
 no vision encoder: `--spec` is off and `--vision` is refused.

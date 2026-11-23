@@ -66,7 +66,7 @@ class Dialect:
 
 def dialect_for(arch: str | None) -> Dialect:
     """The dialect of a model file's architecture; None (no file: the mock engine) is the plain chat-template one."""
-    if arch == "inkling2":
+    if arch in ("inkling2", "inkling2_loop"):   # a pack's name for it, llama.cpp's
         from serve.models.inkling2 import Inkling2
         return Inkling2()
     if arch is None:

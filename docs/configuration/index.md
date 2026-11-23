@@ -51,7 +51,7 @@ Command line `--name`; the Where column says which config block takes it.
 
 | Setting | Where | Type, values | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `model` | model entry | path | required | The `.granite` file: weights, tokenizer, chat template, drafter, vision projector and default sampling. |
+| `model` | model entry | path | required | The `.granite` file: weights, tokenizer, chat template, drafter, vision projector and default sampling. Or a GGUF ([GGUF](../models/inkling2.md#gguf)). |
 | `alias` | model entry | string | name in the file | The model name the API reports. |
 | `host` | server | address | `127.0.0.1` | Listen address. `0.0.0.0` serves the network; never without `api-key`. |
 | `port` | server | integer | `8080` | TCP port. |
