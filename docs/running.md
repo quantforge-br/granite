@@ -88,7 +88,8 @@ The engine's own figures, which the server asks for with `STATS` once the engine
 - `/slots` per slot: `started` (epoch seconds), `path` (the endpoint) and `prompt_ms` (the read time) of the running request;
   for its current or last request `accept_pos` (drafts accepted over offered by draft position) and `accept_hist` (tokens per
   decode window, a sample a second over 60 s); for a model with routed experts `hit`: its windows' lookups split `vram`, `peer`
-  (a bus copy or another card) and `cpu`, with `lookups_s`, `peer_s` and `ram_s` a second. A batch window several slots share
+  (always 0: Inkling 2 Mini copies no expert over the bus) and `cpu` (experts in RAM), with `lookups_s`, `peer_s` and
+  `ram_s` a second. A batch window several slots share
   counts its lookups for each of them.
 - `/metrics` `engine`: `commit` (the build's), and `expert_slots`, the experts every card holds now (fewer while asleep).
 - `/metrics` `hardware`: each card's `sm_clock` and `mem_clock` (MHz), `throttle` (what holds the clocks down, empty for nothing),
