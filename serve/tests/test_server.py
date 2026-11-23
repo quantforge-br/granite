@@ -2562,7 +2562,7 @@ class WebApp(unittest.TestCase):
         try:
             props = json.loads(self.get("/props")[2])
             self.assertEqual(props["model_path"], engine.model_path)
-            self.assertEqual(props["build_info"], "basalt 0.1.21")
+            self.assertEqual(props["build_info"], "granite 0.1.21")
             for busy in (True, False):
                 with self.svc.status_lock:
                     self.svc.status["busy"] = busy

@@ -37,7 +37,7 @@ from serve.util.text import stop_strings
 
 
 CONTROL_BODY_MAX = 64 << 10                 # the unused body of /load and /unload
-# What this server offers beyond the OpenAI, Anthropic and llama.cpp APIs, listed under /props "basalt"
+# What this server offers beyond the OpenAI, Anthropic and llama.cpp APIs, listed under /props "granite"
 CAPABILITIES = ["answer_now", "logprobs", "documents"]
 TURN_POLL_S = 0.5                           # how soon a request waiting for its turn notices its client left
 # The longest a connection may stay silent before its handler thread gives it up. Without one, a client whose
@@ -386,7 +386,7 @@ def make_handler(target: Service | Router):
                 load = shown.load_progress()
                 self._json(200, {"status": "ok", "max_context": shown.engine.max_context, "model": shown.model,
                                  "images": shown.vision is not None, "api_key": bool(svc.api_key),
-                                 "loaded": shown.loaded(), "loading": shown.loading, "service": "basalt",
+                                 "loaded": shown.loaded(), "loading": shown.loading, "service": "granite",
                                  "percent": load.get("percent") if load else None, "swap": router.swap_status()})
             elif path == "/status":
                 if not self._authorized():                  # it shows the last answer's tail
@@ -604,9 +604,9 @@ def make_handler(target: Service | Router):
                 props["model_path"] = svc.engine.model_path
             version = getattr(svc.engine, "info", {}).get("version")
             if version:
-                props["build_info"] = "basalt " + str(version)
+                props["build_info"] = "granite " + str(version)
             # "video" only where a video can be read: image input on, a model that reads video, FFmpeg found
-            props["basalt"] = {"version": str(version) if version else None,
+            props["granite"] = {"version": str(version) if version else None,
                                "capabilities": list(CAPABILITIES) + (["video"] if svc.video_on() else [])}
             self._json(200, props)
 

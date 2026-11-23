@@ -79,7 +79,7 @@ class Service:
     def model_entry(self) -> dict:
         """This model's row in /v1/models."""
         value = "loading" if self.loading else "loaded" if self.loaded() else "unloaded"
-        return {"id": self.model, "object": "model", "created": int(self.started_at), "owned_by": "basalt",
+        return {"id": self.model, "object": "model", "created": int(self.started_at), "owned_by": "granite",
                 "status": {"value": value},
                 "asleep": getattr(self.engine, "asleep", False) is True,
                 "meta": {"n_ctx": self.engine.max_context},
@@ -895,7 +895,7 @@ class Service:
         busy, ctx = bool(s.get("busy")), self.engine.max_context
         images = self.vision is not None
         return {
-            "service": "basalt", "model": self.model,
+            "service": "granite", "model": self.model,
             "loaded": self.loaded(), "loading": self.loading, "load": self.load_progress(), "asleep": getattr(self.engine, "asleep", False) is True,
             "auto_load": hasattr(self.engine, "restart"),
             "structured_output": {"formats": ["json_object", "json_schema"], "method": "grammar",

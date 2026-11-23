@@ -255,21 +255,21 @@ class AnswerNowServer(unittest.TestCase):
         th.join(30)
 
     def test_capabilities_in_props(self):
-        """/props names Basalt and what it offers in one added key; llama.cpp's own fields stay as they were."""
+        """/props names Granite and what it offers in one added key; llama.cpp's own fields stay as they were."""
         code, _, props = self.request("/props")
         self.assertEqual(code, 200)
-        self.assertEqual(props["basalt"], {"version": None, "capabilities": ["answer_now", "logprobs", "documents"]})
+        self.assertEqual(props["granite"], {"version": None, "capabilities": ["answer_now", "logprobs", "documents"]})
         self.assertEqual(set(props), {"default_generation_settings", "total_slots", "model_alias", "chat_template",
-                                      "modalities", "models_autoload", "is_sleeping", "chat_template_caps", "basalt"})
+                                      "modalities", "models_autoload", "is_sleeping", "chat_template_caps", "granite"})
         self.engine.info = {"version": "0.4.0"}
         _, _, props = self.request("/props")
-        self.assertEqual((props["build_info"], props["basalt"]["version"]), ("basalt 0.4.0", "0.4.0"))
+        self.assertEqual((props["build_info"], props["granite"]["version"]), ("granite 0.4.0", "0.4.0"))
         # "video" while the encoder reads video, and not when it found no FFmpeg
         base = ["answer_now", "logprobs", "documents"]
         for state, caps in (("on FFmpeg 8 (test)", base + ["video"]), ("off no FFmpeg libraries found", base)):
             self.svc.vision = type("V", (), {"video_state": lambda _self, s=state: s})()
             _, _, props = self.request("/props")
-            self.assertEqual(props["basalt"]["capabilities"], caps, state)
+            self.assertEqual(props["granite"]["capabilities"], caps, state)
             self.assertEqual(props["modalities"]["video"], len(caps) == len(base) + 1)
         self.svc.vision = None
 

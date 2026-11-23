@@ -96,10 +96,10 @@ curl -s localhost:8080/v1/answer_now -H 'Content-Type: application/json' -d '{"r
 
 The call takes the API key like every `/v1` route. A page on another origin reads `X-Request-Id` through `--cors-origin`.
 
-### Detecting Basalt
+### Detecting Granite
 
-`/props` (llama.cpp's route, unchanged for its clients) carries one extra key, `basalt`: `{"version": "...", "capabilities":
-["answer_now", "logprobs", "documents"]}`. A client that finds `basalt` there talks to Basalt; `"answer_now" in basalt.capabilities` says the
+`/props` (llama.cpp's route, unchanged for its clients) carries one extra key, `granite`: `{"version": "...", "capabilities":
+["answer_now", "logprobs", "documents"]}`. A client that finds `granite` there talks to Granite; `"answer_now" in granite.capabilities` says the
 endpoint above is served, `"logprobs"` that logprobs come back on all three APIs with the thinking's and tool calls' tokens
 ([logprobs](#logprobs)), `"documents"` that messages may carry PDF and text documents ([documents](documents.md)), and `"video"` (only
 while video is on) that this model takes video parts now (image input on, a model that reads video, FFmpeg found:
