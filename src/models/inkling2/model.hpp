@@ -63,19 +63,23 @@ public:
     const Geometry& geo() const { return pack_.geo; }
     /// Layer l's weights on card `card`.
     const LayerWeights& layer(int l, int card = 0) const { return layers_[card][(size_t) l]; }
-    const uint8_t* head() const { return head_; }              ///< Q8_0 [n_vocab][n_embd]
+    /// The head, Q8_0 [n_vocab][n_embd], on card `card` from row head_first(card): the first card holds every row (the
+    /// drafter's fold reads them all); with tensor parallelism the second holds rows [head_first(1), n_vocab), which a
+    /// window's head runs there.
+    const uint8_t* head(int card = 0) const { return head_[card]; }
+    int head_first(int card) const { return card == 0 ? 0 : head_lo_; }
     const uint16_t* embedding() const { return embd_dev_; }    ///< BF16 [n_vocab][n_embd], mapped host memory
     const float* embed_norm(int card = 0) const { return embed_norm_[card]; }
-    const float* output_norm() const { return output_norm_; }
-    const float* output_query() const { return output_query_; }
+    const float* output_norm(int card = 0) const { return output_norm_[card]; }
+    const float* output_query(int card = 0) const { return output_query_[card]; }
     /// [core layers][kStreams][n_embd]: every core layer's message queries, layer loop_start first, on card `card`
     const float* msg_queries(int card = 0) const { return msg_queries_[card]; }
     int device() const { return device_; }
     /// Tensor parallelism (docs/models/inkling2.md): with two cards each holds every layer's attention, glue and router
     /// weights and its half of every expert, card c the gate and up rows [c F, c F + F) and the down matrix's columns
     /// there (F = layer(l, c).n_ff, half the experts' width). Both run every visit on the same rows, and each adds the
-    /// two cards' sums of their halves in card order, so both hold the same bits. The head, the drafter and the image
-    /// encoder are the first card's. One card: card 0, whole experts.
+    /// two cards' sums of their halves in card order, so both hold the same bits. Each card runs half of the head's rows
+    /// (head()); the sampler, the drafter and the image encoder are the first card's. One card: card 0, whole experts.
     int cards() const { return second_ >= 0 ? 2 : 1; }
     int card_device(int card) const { return card == 0 ? device_ : second_; }
     int sessions() const { return flags_.sessions > 0 ? flags_.sessions : 1; }
@@ -154,12 +158,13 @@ private:
     model::ModelDesc desc_;
     std::vector<LayerWeights> layers_[2];   ///< each card's (the second: tensor parallelism)
     std::vector<void*> dev_;                 ///< every device allocation, freed with the model
-    uint8_t* head_ = nullptr;
+    uint8_t* head_[2] = {};
+    int head_lo_ = 0;                        ///< the first head row the second card holds
     uint16_t* embd_host_ = nullptr;          ///< pinned, mapped
     uint16_t* embd_dev_ = nullptr;           ///< its device address
     const float* embed_norm_[2] = {};
-    const float* output_norm_ = nullptr;
-    const float* output_query_ = nullptr;
+    const float* output_norm_[2] = {};
+    const float* output_query_[2] = {};
     float* msg_queries_[2] = {};
     int second_ = -1;                        ///< tensor parallelism's second card (-1: one card)
     // tensor parallelism: every expert's whole down rows and tail as the reads land them, [layer][expert] from each

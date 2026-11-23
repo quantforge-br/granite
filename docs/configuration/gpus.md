@@ -24,8 +24,8 @@ The start prints a `gpus:` line with the cards, then Inkling 2 Mini's own line s
 
 - **Tensor parallel:** `tensor parallelism on CUDA0 and CUDA1: each holds every dense weight and half of every expert`. Both
   cards run every layer on the same rows; each computes its half of every routed expert, writes its sum into the other's
-  memory, and both add the two sums in the same order, so both hold the same bits. The first card alone runs the head, the
-  sampler, the drafter and the image encoder.
+  memory, and both add the two sums in the same order, so both hold the same bits. Each card runs half of the head's rows
+  and the second copies its logits into the first card's, which alone runs the sampler, the drafter and the image encoder.
 - **Runs alone:** `CUDA1 idles (...): CUDA0 runs alone`, with the reason: no peer access both ways, SM counts or shared
   memory per block that differ, or `--expert-cache` given (a one-card diagnostic).
 - **Context:** it must fit beside the weights on both cards. Two cards keep no experts in RAM; the start says how much is

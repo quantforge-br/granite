@@ -203,19 +203,19 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
     {
         const TensorRef* t = pack_.find("output.weight");
         if (!t || t->type != kTypeBF16 || t->bytes != n_vocab * n_embd * 2) return fail("output.weight is not BF16 [n_embd][n_vocab]");
-        if (!(head_ = device_buf(n_vocab * kQ8Row))) return fail("out of device memory loading the head");
+        if (!(head_[0] = device_buf(n_vocab * kQ8Row))) return fail("out of device memory loading the head");
         core::LoadItem it;
         it.file = file;
         it.off = t->offset;
         it.bytes = t->bytes;
-        it.dev = head_;
+        it.dev = head_[0];
         it.device = device_;
         it.conv = core::Conv::Bf16ToQ8_0;
         reads.add(it);
     }
     if (!(embed_norm_[0] = small("token_embd_norm.weight", n_embd, reads, file, err)) ||
-        !(output_norm_ = small("output_norm.weight", n_embd, reads, file, err)) ||
-        !(output_query_ = small("output_res_query.weight", n_embd, reads, file, err)))
+        !(output_norm_[0] = small("output_norm.weight", n_embd, reads, file, err)) ||
+        !(output_query_[0] = small("output_res_query.weight", n_embd, reads, file, err)))
         return fail(err);
 
     uint64_t dense = n_vocab * kQ8Row, experts = 0;
@@ -374,6 +374,22 @@ model::Result InklingModel::plan_layers(int card, core::LoadPlan& to, int file, 
     ldev_ = card_device(card);
     cudaSetDevice(ldev_);
     if (card > 0 && !(embed_norm_[card] = small("token_embd_norm.weight", n_embd, to, file, err))) return fail(err);
+    if (card > 0) {   // the second half of the head's rows, which a window's head runs here (session.cpp's split_head)
+        head_lo_ = g.n_vocab / 2;
+        const uint64_t bytes = (uint64_t) (g.n_vocab - head_lo_) * kQ8Row;
+        if (!(head_[1] = device_buf(bytes))) return fail("out of device memory loading the head");
+        core::LoadItem it;
+        it.from = head_[0] + (uint64_t) head_lo_ * kQ8Row;
+        it.from_device = device_;
+        it.bytes = bytes;
+        it.dev = head_[1];
+        it.device = ldev_;
+        it.count = 0;   // the first card's read counts it
+        to.add(it);
+        if (!(output_norm_[1] = small("output_norm.weight", n_embd, to, file, err)) ||
+            !(output_query_[1] = small("output_res_query.weight", n_embd, to, file, err)))
+            return fail(err);
+    }
     // the loop's message queries of every core layer in one array: a pass's messages are one launch
     const uint64_t msg_floats = (uint64_t) kStreams * n_embd;
     if (!(msg_queries_[card] = reinterpret_cast<float*>(device_buf((uint64_t) (g.loop_end - g.loop_start) * msg_floats * 4))))
@@ -740,7 +756,7 @@ void InklingModel::plan_cards(const model::LoadRequest& req) {
 
 model::Result InklingModel::attach(const model::LoadRequest&, std::vector<std::unique_ptr<model::ModelSession>>& sessions) {
     if (dspark_)   // DSPARK HOOK: the drafter's head folds, once the reads have landed
-        if (model::Result r = dspark_->finish(head_, embd_dev_, embed_norm_[0], nullptr); !r.ok()) return r;
+        if (model::Result r = dspark_->finish(head_[0], embd_dev_, embed_norm_[0], nullptr); !r.ok()) return r;
     for (auto& s : sessions)
         if (model::Result r = s->prepare(); !r.ok()) return r;
     if (elastic_) {   // the caches back only their base yet: the RAM experts come back while the card has room

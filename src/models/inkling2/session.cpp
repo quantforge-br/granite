@@ -59,6 +59,7 @@ constexpr int kMaxRows = kDecodeRows;    // rows of one forward call (a decode w
 constexpr int kTypeBF16 = 30;
 constexpr int kOutRows = 3072;           // the attention output's width (heads x head width)
 constexpr int kStage = 64;               // windows whose tokens and positions are in flight from the pinned ring at once
+constexpr int kHeadChunks = 4;           // tensor parallelism: the second card's head rows in this many products (split_head)
 
 // The full-attention visits' launch bound of a call whose last row sits at `last`: its keys rounded up to a power of two.
 int64_t full_keys_of(int64_t last) {
@@ -93,6 +94,7 @@ struct Scratch {
     int32_t *io_d_ = nullptr, *tok_d_ = nullptr, *pos_d_ = nullptr;   // a call's tokens, then its positions
     float* part_ = nullptr;                     // tensor parallelism: the card's experts' sum [rows][E]
     float* recv_[2] = {};                       // and the other card's, by the exchange's parity
+    float* hlog_ = nullptr;                     // and the card's head rows of a window, [rows][its rows] (split_head)
     static constexpr int kGuessExperts = 8;     // the experts a window's guess requests a visit (rows x kGuessExperts / rows)
     static constexpr int kGuessRows = 2;        // the widest window guessed (wider ones keep the read-ahead)
 };
@@ -184,6 +186,7 @@ struct Shared {
         if (m.cards() > 1) {
             x.part_ = f(R * E);
             for (float*& p : x.recv_) p = f(R * E);
+            x.hlog_ = f(R * (g.n_vocab - m.head_first(first ? 0 : 1)));
         }
         if (first && m.dspark()) tap = (float*) alloc(dspark_tap_bytes(std::max(kMaxRows, kPromptChunk)));   // DSPARK HOOK
         if (!ok) {
@@ -262,8 +265,9 @@ public:
         if (stream_) cudaStreamDestroy(stream_);
         if (m_.cards() > 1) {
             OnCard on(m_.card_device(1));
-            for (cudaEvent_t e : {join_ev_, st1_ev_, sent_[1]})
+            for (cudaEvent_t e : {join_ev_, st1_ev_, sent_[1], hc_ev_, hc_join_})
                 if (e) cudaEventDestroy(e);
+            if (hc_st_) cudaStreamDestroy(hc_st_);
             if (stream1_) cudaStreamDestroy(stream1_);
         }
     }
@@ -284,12 +288,15 @@ public:
             return false;
         }
         const bool tp = m_.cards() > 1;
-        if (tp) {   // the second card's stream and the events recorded on it
+        if (tp) {   // the second card's streams and the events recorded on them
             OnCard on(m_.card_device(1));
             if (cudaStreamCreateWithFlags(&stream1_, cudaStreamNonBlocking) != cudaSuccess ||
+                cudaStreamCreateWithFlags(&hc_st_, cudaStreamNonBlocking) != cudaSuccess ||
                 cudaEventCreateWithFlags(&join_ev_, cudaEventDisableTiming) != cudaSuccess ||
                 cudaEventCreateWithFlags(&st1_ev_, cudaEventDisableTiming) != cudaSuccess ||
-                cudaEventCreateWithFlags(&sent_[1], cudaEventDisableTiming) != cudaSuccess) {
+                cudaEventCreateWithFlags(&sent_[1], cudaEventDisableTiming) != cudaSuccess ||
+                cudaEventCreateWithFlags(&hc_ev_, cudaEventDisableTiming) != cudaSuccess ||
+                cudaEventCreateWithFlags(&hc_join_, cudaEventDisableTiming) != cudaSuccess) {
                 err = "cannot create a stream on CUDA" + std::to_string(m_.card_device(1));
                 return false;
             }
@@ -1282,9 +1289,53 @@ private:
         if (head <= 0) return;
         const size_t q8_row = (size_t) E / 32 * 36;   // the head's rows' q8_1 blocks follow the rows before them
         float* lg = view_ ? blog_ : logits_;          // a batch window's rows go to each session in batch_take
-        bk::native_q8_0_mmvq(m_.head(), (const uint8_t*) xq_[0] + (size_t) (rows - head - first) * q8_row, lg, E, g_.n_vocab, head,
-                             stream_);
+        const void* hx = (const uint8_t*) xq_[0] + (size_t) (rows - head - first) * q8_row;
+        if (nc > 1) return split_head(lg, hx, rows, head);
+        bk::native_q8_0_mmvq(m_.head(), hx, lg, E, g_.n_vocab, head, stream_);
         softcap(lg, head, g_.n_vocab, g_.n_vocab, g_.logit_softcap, stream_);
+    }
+
+    // Tensor parallelism: the head's rows [0, s) on the first card and [s, n_vocab) on the second (s = head_first(1)),
+    // after its own final norm of the head's rows (the same bits: both cards hold the same states), in kHeadChunks chunks
+    // whose logits a side stream copies into the first card's while the next chunk runs. Each row's logit takes the
+    // kernels one card's does, so it keeps its bits.
+    void split_head(float* lg, const void* hx, int rows, int head) {
+        const int V = g_.n_vocab, E = g_.n_embd;
+        const size_t w_row = (size_t) E / 32 * 34;
+        const int s = m_.head_first(1);
+        {
+            OnCard on(lane_[1].device);
+            const Scratch& x1 = *lane_[1].x;
+            MixNorm hn;
+            for (int i = 0; i < walk_.n_blocks; ++i) hn.st.s[hn.st.n++] = buf(1, walk_.blocks[i]) + (size_t) (rows - head) * E;
+            hn.st.s[hn.st.n++] = buf(1, walk_.final_hid) + (size_t) (rows - head) * E;
+            hn.queries = m_.output_query(1);
+            hn.norm[0] = m_.output_norm(1);
+            hn.q8[0] = x1.xq_[0];
+            hn.norm_out = x1.fin_;
+            hn.eps = g_.rms_eps;
+            mix_norm(hn, 1, head, stream1_);
+            const int n1 = V - s;
+            for (int c = 0, r0 = 0; c < kHeadChunks; ++c) {
+                const int r1 = (int) ((int64_t) n1 * (c + 1) / kHeadChunks), n = r1 - r0;
+                float* y = x1.hlog_ + (size_t) r0 * head;
+                bk::native_q8_0_mmvq(m_.head(1) + (size_t) r0 * w_row, x1.xq_[0], y, E, n, head, stream1_);
+                softcap(y, head, n, n, g_.logit_softcap, stream1_);
+                cudaEventRecord(hc_ev_, stream1_);
+                cudaStreamWaitEvent(hc_st_, hc_ev_, 0);
+                cudaMemcpy2DAsync(lg + s + r0, (size_t) V * 4, y, (size_t) n * 4, (size_t) n * 4, (size_t) head, cudaMemcpyDeviceToDevice,
+                                  hc_st_);
+                r0 = r1;
+            }
+            cudaEventRecord(hc_join_, hc_st_);
+            cudaStreamWaitEvent(stream1_, hc_join_, 0);
+        }
+        // the first card's rows: one row straight into the logits, more through its own [head][s] block
+        float* y = head == 1 ? lg : hlog_;
+        bk::native_q8_0_mmvq(m_.head(0), hx, y, E, s, head, stream_);
+        softcap(y, head, s, head == 1 ? V : s, g_.logit_softcap, stream_);
+        if (head > 1)
+            cudaMemcpy2DAsync(lg, (size_t) V * 4, y, (size_t) s * 4, (size_t) s * 4, (size_t) head, cudaMemcpyDeviceToDevice, stream_);
     }
 
     bool check(std::string& err) {
@@ -1369,6 +1420,8 @@ private:
     // join: back; pre1/st1: a window's first rows on the second card; sent: behind each card's experts' sum)
     std::vector<VisitCache> vc1_;
     cudaStream_t stream1_ = nullptr;
+    cudaStream_t hc_st_ = nullptr;                    // the second card's copies of its head rows (split_head)
+    cudaEvent_t hc_ev_ = nullptr, hc_join_ = nullptr;
     cudaEvent_t fork_ev_ = nullptr, join_ev_ = nullptr, pre1_ev_ = nullptr, st1_ev_ = nullptr, sent_[2] = {};
     std::shared_ptr<Shared> sh_;             // the scratch, the prompt path and the batch graphs every session shares
     DsparkHook dspark_;                      // DSPARK HOOK
