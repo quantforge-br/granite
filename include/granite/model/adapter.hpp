@@ -89,6 +89,7 @@ struct LoadRequest {
     bool pool_affinity_given = false;
     int vram_reserve_mib = 0;         ///< VRAM the main card leaves free beyond what the model needs (0: none)
     int spec = 0;                     ///< rows a decode window may hold (0 or 1: one)
+    std::string drafter;              ///< --drafter: the drafter's file (empty: the model file's own)
     std::string kv;                   ///< --kv: the KV storage as the model names it, checked by its flags (empty: default)
     bool diag_tp_check = false;       ///< diagnostic: after each call a tensor-parallel model checks its cards hold the same state
 };

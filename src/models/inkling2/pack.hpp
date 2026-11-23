@@ -39,7 +39,7 @@ struct Geometry {
     bool boundary(int layer) const { return layer % block == 0; }
 };
 
-/// The DSpark drafter's settings (`inkling2.dspark.*`), present when the pack carries it.
+/// The DSpark drafter's settings (`inkling2.dspark.*`), present when the pack carries it or --drafter gives one.
 struct DsparkGeometry {
     bool present = false;
     int n_layers = 0, block = 0, n_head = 0, n_head_kv = 0, head_dim = 0, n_ff = 0, window = 0, markov_rank = 0;
@@ -85,6 +85,7 @@ struct Pack {
     core::ModelFile file;
     Geometry geo;
     DsparkGeometry dspark;
+    std::string drafter_path;              ///< the file the drafter's dspark.* tensors are in (empty: this one; take_drafter)
     std::map<std::string, TensorRef> tensors;
     std::vector<ExpertLayer> experts;      ///< per layer
     core::FileRange vision;                ///< the vision/mmproj section (empty when the pack carries none)
@@ -114,5 +115,12 @@ std::vector<Visit> loop_visits(int layers, int start, int end, int passes);
 /// Opens the pack or the GGUF and fills `p`. False with `err` when it is not Inkling 2, is malformed or has a layout this
 /// engine does not run.
 bool open_pack(const std::string& path, Pack& p, std::string& err);
+
+/// Takes the drafter in `path` in place of `p`'s own (--drafter): its settings and its dspark.* tensors, which then load
+/// from that file (`drafter_path`).  The file is an Inkling 2 pack that carries one, or a GGUF of architecture dflash in
+/// the layout of Unsloth's Inkling 2 DSpark files (dspark_fuse, dspark_hidden_out; BF16 or Q8_0 projections), whose keys
+/// and names it maps onto the pack's.  False with `err` when the file holds no drafter for `p`'s model or holds one in
+/// another layout.
+bool take_drafter(Pack& p, const std::string& path, std::string& err);
 
 }  // namespace granite::models::inkling2

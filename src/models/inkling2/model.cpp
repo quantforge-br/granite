@@ -176,6 +176,7 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
     std::string err;
     const std::string& path = req.paths.front();
     if (!open_pack(path, pack_, err)) return {model::Status::Error, "inkling2: " + err};
+    if (!req.drafter.empty() && !take_drafter(pack_, req.drafter, err)) return {model::Status::Error, "inkling2: --drafter " + err};
     flags_ = req;
     cudaGetDevice(&device_);
     ldev_ = device_;
@@ -246,8 +247,10 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
     ldev_ = device_;
     cudaSetDevice(device_);
     // DSPARK HOOK: the drafter's weights (none with --spec 1), before the context is sized from what the weights leave
-    if (req.spec >= 2)
-        if (model::Result r = dspark_plan(pack_, reads, file, device_, dspark_); !r.ok()) return r;
+    if (req.spec >= 2) {
+        const int drafter_file = pack_.drafter_path.empty() ? file : reads.file(pack_.drafter_path);
+        if (model::Result r = dspark_plan(pack_, reads, drafter_file, device_, dspark_); !r.ok()) return r;
+    }
 
     // [vision] the image encoder staged before the context is sized; it keeps none of the card: a request's pictures borrow
     // their region from the experts (lend_room) and give it back (refill). What staging leaves on the card (the encoder's

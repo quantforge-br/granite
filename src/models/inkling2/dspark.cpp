@@ -36,8 +36,6 @@ namespace {
 
 namespace bk = granite::kernels;
 
-constexpr int kTypeF32 = 0;
-constexpr int kTypeBF16 = 30;
 constexpr int kE = kWidth;
 constexpr int kQ = kHeads * kHeadDim;      // 3072
 constexpr int kKV = kKvHeads * kHeadDim;   // 1024
@@ -146,37 +144,30 @@ model::Result dspark_plan(const Pack& pack, core::LoadPlan& reads, int file, int
     w->logit_softcap = g.logit_softcap;
     bool ok = true;
     std::string err;
-    // a tensor of the pack to the card: its type and size checked, read as it is or rounded as it loads
-    auto load = [&](const std::string& name, int type, uint64_t values, core::Conv conv, uint64_t dst_bytes, bool host = false) -> void* {
+    // a tensor of the drafter to the card (or to mapped host memory): its type and size checked (Pack::source), read as it is
+    // or rounded to Q8_0 as it loads
+    auto load = [&](const std::string& name, Form form, uint64_t values, bool host = false) -> void* {
         if (!ok) return nullptr;
-        const TensorRef* t = pack.find(name);
-        const uint64_t want = values * (type == kTypeF32 ? 4 : 2);
-        if (!t || t->type != type || t->bytes != want) {
-            err = name + (t ? " has another type or size" : " is missing");
+        core::LoadItem it;
+        if (!pack.source(name, form, values, file, it, err)) {
             ok = false;
             return nullptr;
         }
+        const uint64_t dst_bytes = form == Form::F32 ? values * 4 : form == Form::Bf16 ? values * 2 : values / 32 * 34;
         void* p = host ? w->mapped(dst_bytes, ok) : w->dev(dst_bytes, ok);
         if (!ok) {
             err = std::string("out of ") + (host ? "pinned host" : "device") + " memory for " + name;
             return nullptr;
         }
-        core::LoadItem it;
-        it.file = file;
-        it.off = t->offset;
-        it.bytes = t->bytes;
         if (host) it.host = (uint8_t*) w->pinned_.back();
         else it.dev = p;
         it.device = device;
-        it.conv = conv;
         reads.add(it);
         return p;
     };
-    auto f32 = [&](const std::string& name, uint64_t n) { return (float*) load(name, kTypeF32, n, core::Conv::Copy, n * 4); };
-    auto bf16 = [&](const std::string& name, uint64_t n) { return (uint16_t*) load(name, kTypeBF16, n, core::Conv::Copy, n * 2); };
-    auto q8 = [&](const std::string& name, uint64_t rows, uint64_t n_in) {
-        return load(name, kTypeBF16, rows * n_in, core::Conv::Bf16ToQ8_0, q8_bytes(rows, n_in));
-    };
+    auto f32 = [&](const std::string& name, uint64_t n) { return (float*) load(name, Form::F32, n); };
+    auto bf16 = [&](const std::string& name, uint64_t n) { return (uint16_t*) load(name, Form::Bf16, n); };
+    auto q8 = [&](const std::string& name, uint64_t rows, uint64_t n_in) { return load(name, Form::Q8_0, rows * n_in); };
     w->layer.assign((size_t) d.n_layers, DsparkLayer{});
     for (int l = 0; l < d.n_layers; ++l) {
         DsparkLayer& L = w->layer[(size_t) l];
@@ -205,7 +196,7 @@ model::Result dspark_plan(const Pack& pack, core::LoadPlan& reads, int file, int
     w->markov_norm = f32("dspark.markov.dflare_norm.weight", kE);
     {   // the Markov head's token rows in mapped host memory: a step reads the previous draft's row
         const uint64_t n = (uint64_t) g.n_vocab * kDsRank;
-        w->w1 = (uint16_t*) load("dspark.markov.w1.weight", kTypeBF16, n, core::Conv::Copy, n * 2, true);
+        w->w1 = (uint16_t*) load("dspark.markov.w1.weight", Form::Bf16, n, true);
     }
     w->rnn_w = bf16("dspark.markov.rnn.weight", (uint64_t) kDsRnn * (2 * kDsRank + 2 * kE));
     w->rnn_b = f32("dspark.markov.rnn.bias", kDsRnn);
@@ -775,6 +766,8 @@ bool dspark_parse_flag(const std::string& a, model::FlagArgs& args, program::Com
     if (a == "--spec") {
         o.spec = std::atoi(args.next("--spec"));
         o.spec_given = true;
+    } else if (a == "--drafter") {
+        o.drafter = args.next("--drafter");
     } else if (a == "--draft-log") {
         core::diagnostics().draft_log = args.next("--draft-log");
     } else {
@@ -787,11 +780,11 @@ void dspark_finish_flags(program::CommonOptions& o) {
     core::ModelFile file;
     std::string err;
     const core::Json* kv = !o.model.empty() && file.open(o.model, err) && file.load_meta(err) ? file.meta().get("gguf_kv") : nullptr;
-    const bool present = kv != nullptr && kv->get("inkling2.dspark.block_count") != nullptr;
-    // the pack's drafter offers a whole block (the window policy takes the rows that pay) unless --spec caps it
+    const bool present = !o.drafter.empty() || (kv != nullptr && kv->get("inkling2.dspark.block_count") != nullptr);
+    // the drafter offers a whole block (the window policy takes the rows that pay) unless --spec caps it
     if (!o.spec_given) o.spec = present ? kDsBlock : 0;
     if (o.spec >= 2 && !present) {
-        granite::log::warn("granite inkling2", "--spec %d off: the model file has no drafter", o.spec);
+        granite::log::warn("granite inkling2", "--spec %d off: the model file has no drafter (--drafter FILE gives one)", o.spec);
         o.spec = 0;
     }
 }

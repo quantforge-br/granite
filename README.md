@@ -36,7 +36,8 @@ The default pack is `Inkling-2-Mini-NVFP4-DQ8.granite` (19.7 GB), converted once
   ([precision](docs/precision/inkling2.md)).
 
 granite also opens llama.cpp's Inkling 2 GGUF as it is ([GGUF](docs/models/inkling2.md#gguf)): Unsloth's UD-Q4_K_XL is the
-pack's bytes with a Q8_0 token embedding (KLD 0.00309), without the drafter and the vision encoder.
+pack's bytes with a Q8_0 token embedding (KLD 0.00309), without the vision encoder; its drafter comes from Unsloth's
+DSpark GGUF (`--drafter FILE`).
 
 On Ampere, NVFP4 decodes like any 4-bit GGUF type (a 16-entry table to int8, then `dp4a` against 8-bit activations), so
 it costs the same per byte; it wins on quality because nothing is rounded twice. Requantized GGUFs of the same model

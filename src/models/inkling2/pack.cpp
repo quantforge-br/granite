@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <set>
 #include <sstream>
 
 namespace granite::models::inkling2 {
@@ -58,6 +59,98 @@ bool read_f32(const Pack& p, const TensorRef& t, uint64_t n, std::vector<float>&
     return core::read_range_at(core::FileRange(p.file.path()), t.offset, out.data(), t.bytes, err);
 }
 
+// Keeps the first `rows` rows of a [n][rows or more] tensor: llama.cpp pads the vocabulary to a multiple of 64 rows, and
+// the rows past the tokenizer's are not the model's.
+bool cut_rows(TensorRef& t, uint64_t rows, std::string& err) {
+    if (t.shape.size() != 2 || t.shape[1] < rows || t.bytes % t.shape[1]) {
+        err = t.name + " has fewer rows than the vocabulary";
+        return false;
+    }
+    t.bytes = t.bytes / t.shape[1] * rows;
+    t.shape[1] = rows;
+    return true;
+}
+
+// The meta's tensor table: each tensor's type, shape, size and absolute offset in `file`.
+bool read_tensors(const core::ModelFile& file, const Json& tj, std::map<std::string, TensorRef>& out, std::string& err) {
+    for (const auto& [name, t] : tj.members) {
+        TensorRef r;
+        r.name = name;
+        r.type = (int) num_or(t.get("type_id"), 0);
+        if (const Json* sh = t.get("shape"))
+            for (const Json& dd : sh->items) r.shape.push_back(dd.u64());
+        r.bytes = (uint64_t) num_or(t.get("bytes"), 0);
+        std::string section = "gguf";
+        if (const Json* s = t.get("section"); s && s->is_string()) section = s->s;
+        const core::ModelFile::Section* sec = file.find(section);
+        if (!sec) {
+            err = file.path() + ": tensor " + name + " names a missing section " + section;
+            return false;
+        }
+        r.offset = sec->offset + t.get("offset")->u64();
+        out.emplace(name, std::move(r));
+    }
+    return true;
+}
+
+// Where a file keeps the drafter's settings: the pack's keys under inkling2.dspark., a dflash GGUF's under dflash.
+struct DsparkKeys {
+    const char *layers, *block, *targets, *swa, *window, *heads, *kv_heads, *head_dim, *ff, *rope, *eps, *rank;
+};
+constexpr DsparkKeys kPackDspark{"dspark.block_count", "dspark.block_size", "dspark.target_layers",
+                                 "dspark.sliding_window_pattern", "dspark.sliding_window", "dspark.attention.head_count",
+                                 "dspark.attention.head_count_kv", "dspark.attention.key_length", "dspark.feed_forward_length",
+                                 "dspark.rope.freq_base", "dspark.attention.layer_norm_rms_epsilon", "dspark.markov_rank"};
+constexpr DsparkKeys kDflash{"block_count", "block_size", "target_layers", "attention.sliding_window_pattern",
+                             "attention.sliding_window", "attention.head_count", "attention.head_count_kv",
+                             "attention.key_length", "feed_forward_length", "rope.freq_base",
+                             "attention.layer_norm_rms_epsilon", "dspark.markov_rank"};
+
+// The drafter's settings from keys `prefix` + n's; not present when the file has no block count.
+DsparkGeometry read_dspark(const Json& kv, const std::string& prefix, const DsparkKeys& n) {
+    DsparkGeometry d;
+    auto k = [&](const char* s) { return kv.get(prefix + s); };
+    auto u = [&](const char* s) { return (int) num_or(k(s), 0); };
+    if (const Json* dl = k(n.layers); !dl || !dl->is_number()) return d;
+    d.present = true;
+    d.n_layers = u(n.layers);
+    d.block = u(n.block);
+    d.targets = ints(k(n.targets));
+    d.swa = bools(k(n.swa));
+    d.window = u(n.window);
+    d.n_head = u(n.heads);
+    d.n_head_kv = u(n.kv_heads);
+    d.head_dim = u(n.head_dim);
+    d.n_ff = u(n.ff);
+    d.rope_base = (float) num_or(k(n.rope), 1e6);
+    d.rms_eps = (float) num_or(k(n.eps), 1e-6);
+    d.markov_rank = u(n.rank);
+    return d;
+}
+
+// Unsloth's dflash names onto the pack's dspark.* ones; empty for a tensor the drafter does not have.
+std::string dflash_name(const std::string& n) {
+    static const std::map<std::string, std::string> kTop = {
+        {"dspark_fuse.weight", "dspark.fuse_weight"},
+        {"mask_embd.weight", "dspark.mask_embed"},
+        {"output_norm.weight", "dspark.norm.weight"},
+        {"dspark_norm.weight", "dspark.markov.dflare_norm.weight"},
+        {"dspark_hidden_out.weight", "dspark.markov.out.weight"},
+        {"dspark_hidden_out.bias", "dspark.markov.out.bias"},
+        {"joint_proj.weight", "dspark.markov.rnn.weight"},
+        {"joint_proj.bias", "dspark.markov.rnn.bias"},
+        {"markov_w1.weight", "dspark.markov.w1.weight"}};
+    static const std::set<std::string> kLayer = {
+        "attn_q.weight", "attn_k.weight", "attn_v.weight", "attn_output.weight", "attn_k_ctx.weight", "attn_v_ctx.weight",
+        "ffn_gate.weight", "ffn_up.weight", "ffn_down.weight", "attn_norm.weight", "ffn_norm.weight", "dflare_norm.weight",
+        "attn_q_norm.weight", "attn_k_norm.weight", "attn_k_ctx_norm.weight"};
+    if (auto it = kTop.find(n); it != kTop.end()) return it->second;
+    const size_t dot = n.rfind("blk.", 0) == 0 ? n.find('.', 4) : std::string::npos;
+    if (dot == std::string::npos || !kLayer.count(n.substr(dot + 1))) return {};
+    const std::string rest = n.substr(dot + 1);
+    return "dspark." + n.substr(0, dot + 1) + (rest == "ffn_norm.weight" ? "post_attention_norm.weight" : rest);
+}
+
 // llama.cpp's names and shapes onto the pack's: the sink rows' name, the vocabulary's padding rows, the relative bias
 // table's orientation, and the experts' fused tensors and scales.
 bool map_gguf(Pack& p, std::string& err) {
@@ -71,23 +164,13 @@ bool map_gguf(Pack& p, std::string& err) {
             p.tensors[r.name] = std::move(r);
         }
     }
-    // llama.cpp pads the vocabulary to a multiple of 64 rows; the rows past the tokenizer's are not the model's
     if (const Json* v = p.file.meta().get("gguf_kv")->get(std::string(kGgufArch) + ".vocab_size_unpadded");
         v && v->is_number() && v->u64() != (uint64_t) g.n_vocab) {
         err = "the tokenizer has " + std::to_string(g.n_vocab) + " tokens, the model " + std::to_string(v->u64()) + " (vocab_size_unpadded)";
         return false;
     }
-    for (const char* name : {"token_embd.weight", "output.weight"}) {
-        auto it = p.tensors.find(name);
-        if (it == p.tensors.end()) continue;
-        TensorRef& t = it->second;
-        if (t.shape.size() != 2 || t.shape[1] < (uint64_t) g.n_vocab || t.bytes % t.shape[1]) {
-            err = std::string(name) + " has fewer rows than the vocabulary";
-            return false;
-        }
-        t.bytes = t.bytes / t.shape[1] * (uint64_t) g.n_vocab;
-        t.shape[1] = (uint64_t) g.n_vocab;
-    }
+    for (const char* name : {"token_embd.weight", "output.weight"})
+        if (auto it = p.tensors.find(name); it != p.tensors.end() && !cut_rows(it->second, (uint64_t) g.n_vocab, err)) return false;
     // the relative bias table is [extent][rel] in llama.cpp's file, [rel][extent] in the pack
     const uint64_t rel = (uint64_t) g.rel, extent = (uint64_t) g.extent;
     for (int l = 0; l < g.n_layers; ++l) {
@@ -252,41 +335,10 @@ bool open_pack(const std::string& path, Pack& p, std::string& err) {
     }
     g.visits = loop_visits(g.n_layers, g.loop_start, g.loop_end, g.loop_passes);
 
-    DsparkGeometry& d = p.dspark;
-    if (const Json* dl = k("dspark.block_count"); dl && dl->is_number()) {
-        d.present = true;
-        d.n_layers = u("dspark.block_count");
-        d.block = u("dspark.block_size");
-        d.targets = ints(k("dspark.target_layers"));
-        d.swa = bools(k("dspark.sliding_window_pattern"));
-        d.window = u("dspark.sliding_window");
-        d.n_head = u("dspark.attention.head_count");
-        d.n_head_kv = u("dspark.attention.head_count_kv");
-        d.head_dim = u("dspark.attention.key_length");
-        d.n_ff = u("dspark.feed_forward_length");
-        d.rope_base = f("dspark.rope.freq_base", 1e6);
-        d.rms_eps = f("dspark.attention.layer_norm_rms_epsilon", 1e-6);
-        d.markov_rank = u("dspark.markov_rank");
-    }
+    p.dspark = read_dspark(*kv, want + ".", kPackDspark);
 
     p.vision = p.file.range("vision/mmproj");
-    for (const auto& [name, t] : tj->members) {
-        TensorRef r;
-        r.name = name;
-        r.type = (int) num_or(t.get("type_id"), 0);
-        if (const Json* sh = t.get("shape"))
-            for (const Json& dd : sh->items) r.shape.push_back(dd.u64());
-        r.bytes = (uint64_t) num_or(t.get("bytes"), 0);
-        std::string section = "gguf";
-        if (const Json* s = t.get("section"); s && s->is_string()) section = s->s;
-        const core::ModelFile::Section* sec = p.file.find(section);
-        if (!sec) {
-            err = path + ": tensor " + name + " names a missing section " + section;
-            return false;
-        }
-        r.offset = sec->offset + t.get("offset")->u64();
-        p.tensors.emplace(name, std::move(r));
-    }
+    if (!read_tensors(p.file, *tj, p.tensors, err)) return false;
     if (gguf) {
         if (!map_gguf(p, err)) {
             err = path + ": " + err;
@@ -324,6 +376,61 @@ bool open_pack(const std::string& path, Pack& p, std::string& err) {
             err = "experts.layout lists no experts for layer " + std::to_string(l);
             return false;
         }
+    return true;
+}
+
+bool take_drafter(Pack& p, const std::string& path, std::string& err) {
+    const Geometry& g = p.geo;
+    auto fail = [&](const std::string& e) {
+        err = path + ": " + e;
+        return false;
+    };
+    DsparkGeometry d;
+    std::map<std::string, TensorRef> taken;
+    core::ModelFile f;
+    if (!f.open(path, err) || !f.load_meta(err)) return false;
+    if (!f.gguf()) {   // a pack's own drafter
+        Pack src;
+        if (!open_pack(path, src, err)) return false;
+        if (!src.dspark.present) return fail("the pack carries no drafter");
+        if (src.geo.n_embd != g.n_embd || src.geo.n_vocab != g.n_vocab) return fail("a pack of another model (width or vocabulary)");
+        d = src.dspark;
+        for (const auto& [name, t] : src.tensors)
+            if (name.rfind("dspark.", 0) == 0) taken.emplace(name, t);
+    } else {
+        const Json& meta = f.meta();
+        const Json* arch = meta.get("arch");
+        const Json* kv = meta.get("gguf_kv");
+        const Json* tj = meta.get("tensors");
+        if (!arch || !arch->is_string() || arch->s != "dflash")
+            return fail("a GGUF of architecture '" + (arch && arch->is_string() ? arch->s : std::string()) + "', not a dflash drafter");
+        if (!kv || !kv->is_object() || !tj || !tj->is_object()) return fail("no metadata or tensor table");
+        std::map<std::string, TensorRef> raw;
+        if (!read_tensors(f, *tj, raw, err)) return false;
+        if (raw.count("markov_w2.weight"))
+            return fail("llama.cpp's DSpark layout with its own output rows (markov_w2) and per-layer context mixes, which this "
+                        "engine does not run; it runs the layout with dspark_fuse and dspark_hidden_out");
+        const double width = num_or(kv->get("dflash.embedding_length"), 0);
+        if (width != g.n_embd)
+            return fail("a drafter of width " + std::to_string((long long) width) + ", the model's is " + std::to_string(g.n_embd));
+        // the Markov head's token rows past the tokenizer's are padding (cut below); a vocabulary the file states must be the model's
+        if (const Json* v = kv->get("dflash.vocab_size_unpadded"); v && v->is_number() && v->u64() != (uint64_t) g.n_vocab)
+            return fail("a drafter over " + std::to_string(v->u64()) + " tokens, the model has " + std::to_string(g.n_vocab));
+        d = read_dspark(*kv, "dflash.", kDflash);
+        if (!d.present) return fail("no dflash.block_count");
+        for (auto& [name, t] : raw) {
+            const std::string to = dflash_name(name);
+            if (to.empty()) return fail("tensor " + name + ", which this engine's drafter does not have");
+            t.name = to;
+            if (to == "dspark.markov.w1.weight" && !cut_rows(t, (uint64_t) g.n_vocab, err)) return fail(err);
+            taken.emplace(to, std::move(t));
+        }
+    }
+    for (auto it = p.tensors.begin(); it != p.tensors.end();)
+        it = it->first.rfind("dspark.", 0) == 0 ? p.tensors.erase(it) : std::next(it);
+    p.tensors.merge(taken);
+    p.dspark = d;
+    p.drafter_path = path;
     return true;
 }
 

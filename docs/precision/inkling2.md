@@ -85,4 +85,4 @@ card unless the row says otherwise. On the 5060 Ti the CPU computes the experts 
 
 The DSpark drafter only proposes; the target checks every draft, and a decode row rounds the same in any window. Greedy output
 with drafting equals plain greedy output (prose, struct and conversation, after short and 16K-token prompts, and a
-2,405-token prompt checked).
+2,405-token prompt checked; prose with the GGUF and Unsloth's DSpark GGUF as `--drafter`).

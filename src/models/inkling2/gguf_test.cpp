@@ -1,8 +1,10 @@
 // src/models/inkling2/gguf_test.cpp - llama.cpp's inkling2_loop GGUF read as the pack.
 //
-// No arguments: open_pack on synthetic GGUFs (no model, no GPU): the names, shapes, relative bias table and expert pieces
-// it maps, and the files it refuses.  A pack and the GGUF of the same weights: every dense tensor the pack holds, as the
-// model loads it (Pack::source through the loader), and sampled expert blobs, byte for byte; skipped without the files.
+// No arguments: open_pack and take_drafter on synthetic GGUFs (no model, no GPU): the names, shapes, relative bias table,
+// expert pieces and drafter keys they map, and the files they refuse.  A pack and the GGUF of the same weights: every dense
+// tensor the pack holds, as the model loads it (Pack::source through the loader), and sampled expert blobs, byte for byte.
+// --drafters PACK FILE...: each file's drafter (take_drafter) against the pack's own, as the model loads it, byte for byte.
+// The runs on files skip when a file is missing.
 #include "models/inkling2/pack.hpp"
 
 #include "core/gguf_fixture.hpp"
@@ -186,6 +188,91 @@ void synthetic_cases(const std::string& base) {
     std::remove((base + "_bad.gguf").c_str());
 }
 
+// A dflash drafter in the layout of Unsloth's Inkling 2 DSpark files, at toy sizes (take_drafter maps names and keys; the
+// model checks the sizes): one layer's tensors, the Markov head's token rows padded to 64.
+Spec dflash() {
+    using namespace fixture;
+    const std::string d = "dflash.";
+    Spec s;
+    s.kv = {str("general.architecture", "dflash"), u32(d + "embedding_length", kEmbd), u32(d + "vocab_size_unpadded", kVocab),
+            u32(d + "block_count", 3), u32(d + "block_size", 8), i32s(d + "target_layers", {5, 23, 41, 48}),
+            i32s(d + "attention.sliding_window_pattern", {1, 0, 1}), u32(d + "attention.sliding_window", 1024),
+            u32(d + "attention.head_count", 24), u32(d + "attention.head_count_kv", 8), u32(d + "attention.key_length", 128),
+            u32(d + "feed_forward_length", 9216), f32(d + "rope.freq_base", 1e6f), f32(d + "attention.layer_norm_rms_epsilon", 1e-6f),
+            u32(d + "dspark.markov_rank", 256)};
+    s.ts = {{"dspark_fuse.weight", {4, 4}, kF32, 1, {}},
+            {"markov_w1.weight", {256, kPadded}, kBF16, 2, {}},
+            {"blk.0.attn_q.weight", {64, 2}, kQ8_0, 3, {}},
+            {"blk.0.attn_k.weight", {64, 2}, kBF16, 4, {}},
+            {"blk.0.ffn_norm.weight", {64}, kF32, 5, {}},
+            {"dspark_norm.weight", {64}, kF32, 6, {}},
+            {"dspark_hidden_out.weight", {64, 2}, kBF16, 7, {}},
+            {"joint_proj.bias", {64}, kF32, 8, {}},
+            {"mask_embd.weight", {64}, kF32, 9, {}},
+            {"output_norm.weight", {64}, kF32, 10, {}}};
+    return s;
+}
+
+void drafter_cases(const std::string& base) {
+    Pack target;
+    std::string err;
+    if (!open(base + ".gguf", synthetic(), target, err)) {
+        expect(false, "the synthetic GGUF opens: " + err);
+        return;
+    }
+    const Spec s = dflash();
+    const fixture::Written w = fixture::write(base + "_dflash.gguf", s.kv, s.ts);
+    auto at = [&](size_t i) { return w.data_start + w.offsets[i]; };
+    Pack p = target;
+    if (!take_drafter(p, base + "_dflash.gguf", err)) {
+        expect(false, "the synthetic drafter is taken: " + err);
+        return;
+    }
+    const DsparkGeometry& d = p.dspark;
+    expect(d.present && d.n_layers == 3 && d.block == 8 && d.targets == std::vector<int>{5, 23, 41, 48} &&
+               d.swa == std::vector<bool>{true, false, true} && d.window == 1024 && d.n_head == 24 && d.n_head_kv == 8 &&
+               d.head_dim == 128 && d.n_ff == 9216 && d.rope_base == 1e6f && d.rms_eps == 1e-6f && d.markov_rank == 256,
+           "the drafter's settings read from the dflash keys");
+    expect(p.drafter_path == base + "_dflash.gguf" && p.find("token_embd.weight"), "the drafter's file noted, the target's tensors kept");
+    const TensorRef* fuse = p.find("dspark.fuse_weight");
+    const TensorRef* w1 = p.find("dspark.markov.w1.weight");
+    expect(fuse && fuse->offset == at(0), "dspark_fuse reads as dspark.fuse_weight");
+    expect(w1 && w1->shape == std::vector<uint64_t>{256, kVocab} && w1->bytes == 256 * kVocab * 2 && w1->offset == at(1),
+           "the Markov head's padding rows are cut");
+    expect(p.find("dspark.blk.0.post_attention_norm.weight") && !p.find("dspark.blk.0.ffn_norm.weight"),
+           "a layer's ffn_norm reads as post_attention_norm");
+    expect(p.find("dspark.markov.dflare_norm.weight") && p.find("dspark.markov.out.weight") && p.find("dspark.markov.rnn.bias") &&
+               p.find("dspark.mask_embed") && p.find("dspark.norm.weight"),
+           "the Markov head's, the mask's and the final norm's names");
+    core::LoadItem q, k;
+    expect(p.source("dspark.blk.0.attn_q.weight", Form::Q8_0, 128, 0, q, err) && q.conv == core::Conv::Copy &&
+               p.source("dspark.blk.0.attn_k.weight", Form::Q8_0, 128, 0, k, err) && k.conv == core::Conv::Bf16ToQ8_0,
+           "Q8_0 projections load as they are, BF16 ones rounded");
+
+    auto refuses = [&](const std::string& what, const Spec& bad, const char* says) {
+        fixture::write(base + "_bad.gguf", bad.kv, bad.ts);
+        Pack q = target;
+        std::string why;
+        const bool taken = take_drafter(q, base + "_bad.gguf", why);
+        expect(!taken && why.find(says) != std::string::npos, what + " is refused (" + (taken ? "it was taken" : why) + ")");
+    };
+    Spec b = s;
+    b.kv[0].s = "inkling2_loop";
+    refuses("a GGUF of the target's architecture", b, "not a dflash drafter");
+    b = s;
+    b.kv[2].u = kVocab + 1;
+    refuses("a drafter over another vocabulary", b, "over 5 tokens");
+    b = s;
+    b.ts.push_back({"markov_w2.weight", {256, kVocab}, kBF16, 11, {}});
+    refuses("llama.cpp's later DSpark layout", b, "markov_w2");
+    b = s;
+    b.ts.push_back({"blk.0.ctx_mix.weight", {4}, kF32, 11, {}});
+    refuses("a tensor the drafter does not have", b, "blk.0.ctx_mix.weight");
+    std::remove((base + ".gguf").c_str());
+    std::remove((base + "_dflash.gguf").c_str());
+    std::remove((base + "_bad.gguf").c_str());
+}
+
 // ---- a pack and a GGUF of the same weights
 
 // Bytes [at, at + n) of expert e's blob in layer l, through the pieces the loads read.
@@ -213,14 +300,15 @@ struct Load {
 
 uint64_t form_bytes(Form f, uint64_t values) { return f == Form::F32 ? values * 4 : f == Form::Bf16 ? values * 2 : values / 32 * 34; }
 
-// Loads `batch` from `p` into host memory, as the model sources it.
+// Loads `batch` from `p` into host memory, as the model sources it: the drafter's tensors from its file.
 bool load(const Pack& p, int which, std::vector<Load>& batch, std::string& err) {
     core::LoadPlan plan;
     const int file = plan.file(p.file.path());
+    const int drafter = p.drafter_path.empty() ? file : plan.file(p.drafter_path);
     for (Load& x : batch) {
         x.out[which].assign(form_bytes(x.form, x.values), 0);
         core::LoadItem it;
-        if (!p.source(x.name, x.form, x.values, file, it, err)) return false;
+        if (!p.source(x.name, x.form, x.values, x.name.rfind("dspark.", 0) == 0 ? drafter : file, it, err)) return false;
         it.host = x.out[which].data();
         plan.add(it);
     }
@@ -319,22 +407,70 @@ int parity(const std::string& pack_path, const std::string& gguf_path) {
     return failures ? 1 : 0;
 }
 
+// Each file's drafter in place of the pack's own: its settings, and every drafter tensor as the model loads it (F32 as it is,
+// the Markov head's BF16 rows as BF16, the layers' projections as Q8_0).
+int drafter_parity(const std::string& pack_path, const std::vector<std::string>& files) {
+    Pack a;
+    std::string err;
+    if (!open_pack(pack_path, a, err) || !a.dspark.present) {
+        std::fprintf(stderr, "%s\n", err.empty() ? "the pack carries no drafter" : err.c_str());
+        return 1;
+    }
+    for (const std::string& path : files) {
+        Pack b;
+        if (!open_pack(pack_path, b, err) || !take_drafter(b, path, err)) {
+            expect(false, path + ": " + err);
+            continue;
+        }
+        const DsparkGeometry& x = a.dspark;
+        const DsparkGeometry& y = b.dspark;
+        expect(x.n_layers == y.n_layers && x.block == y.block && x.n_head == y.n_head && x.n_head_kv == y.n_head_kv &&
+                   x.head_dim == y.head_dim && x.n_ff == y.n_ff && x.window == y.window && x.markov_rank == y.markov_rank &&
+                   x.rope_base == y.rope_base && x.rms_eps == y.rms_eps && x.targets == y.targets && x.swa == y.swa,
+               path + ": the drafter's settings");
+        std::vector<Load> batch;
+        size_t n = 0, theirs = 0;
+        for (const auto& [name, t] : b.tensors) theirs += name.rfind("dspark.", 0) == 0;
+        for (const auto& [name, t] : a.tensors) {
+            if (name.rfind("dspark.", 0) != 0) continue;
+            uint64_t values = 1;
+            for (uint64_t dd : t.shape) values *= dd;
+            const Form form = t.type == (int) kF32 ? Form::F32 : name.rfind("dspark.blk.", 0) == 0 ? Form::Q8_0 : Form::Bf16;
+            batch.push_back({name, form, values, {}});
+            ++n;
+        }
+        expect(n == theirs, path + ": " + std::to_string(theirs) + " drafter tensors, the pack's " + std::to_string(n));
+        std::string e;
+        if (!load(a, 0, batch, e) || !load(b, 1, batch, e)) expect(false, path + ": loading the drafter: " + e);
+        else
+            for (const Load& l : batch) expect(l.out[0] == l.out[1], path + ": " + l.name + " loads to the pack's bytes");
+        std::printf("inkling2 drafter parity: %s, %zu tensors\n", path.c_str(), n);
+    }
+    std::printf("inkling2 drafter parity: %s\n", failures ? "FAILED" : "the pack's bytes");
+    return failures ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     if (argc == 1) {
-        synthetic_cases(granite::platform::temp_dir() + "/inkling2_gguf_test_" + std::to_string((long long) granite::platform::process_id()));
+        const std::string base =
+            granite::platform::temp_dir() + "/inkling2_gguf_test_" + std::to_string((long long) granite::platform::process_id());
+        synthetic_cases(base);
+        drafter_cases(base);
         std::printf("inkling2 gguf: %s\n", failures ? "FAILED" : "all passed");
         return failures ? 1 : 0;
     }
-    if (argc != 3) {
-        std::fprintf(stderr, "usage: inkling2_gguf_test [<pack> <gguf>]\n");
+    const bool drafters = std::string(argv[1]) == "--drafters";
+    if (drafters ? argc < 4 : argc != 3) {
+        std::fprintf(stderr, "usage: inkling2_gguf_test [<pack> <gguf> | --drafters <pack> <file>...]\n");
         return 2;
     }
-    for (int i = 1; i < 3; ++i)
+    for (int i = drafters ? 2 : 1; i < argc; ++i)
         if (!std::ifstream(argv[i]).good()) {
             std::printf("no model at %s: skipped\n", argv[i]);
             return 77;
         }
+    if (drafters) return drafter_parity(argv[2], std::vector<std::string>(argv + 3, argv + argc));
     return parity(argv[1], argv[2]);
 }

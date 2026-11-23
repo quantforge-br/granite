@@ -44,8 +44,8 @@ experts in RAM run it as they run the pack. What loads:
   Q8_0 or BF16. Loop controllers stored as F32 load as BF16, the values they hold.
 - The tokenizer and chat template come from the file's metadata, the sampling defaults from its `general.sampling.*` keys.
 
-Anything else is refused at load, naming the tensor or layer and the type it found. The file carries no DSpark drafter and
-no vision encoder: `--spec` is off and `--vision` is refused.
+Anything else is refused at load, naming the tensor or layer and the type it found. The file carries no vision encoder
+(`--vision` is refused) and no DSpark drafter: drafting is off unless `--drafter FILE` gives one ([drafting](#drafting)).
 
 Unsloth's `Inkling-2-Mini-UD-Q4_K_XL.gguf` (17.6 GB, SHA-256
 `e64276656f072e9b2197a61723667cbdb71da66a716ffd966e572c21088f3cd3`) loads to the pack's bytes on the card except the token
@@ -139,13 +139,20 @@ At 400 W with every expert on the card, prompts of 2K, 16K, 32K and 128K tokens 
 
 ## Drafting
 
-On when the pack has the DSpark drafter. One block pass drafts up to seven tokens: three dense layers over the anchor and seven
+On when the model file has the DSpark drafter or `--drafter FILE` gives one. One block pass drafts up to seven tokens: three dense layers over the anchor and seven
 mask rows, reading keys and values made from the target's visits 5, 23 and 41 and its final state, then a recurrent Markov
 head over the target's head (screened through 2-bit copies of its rows). The draft policy picks each window by expected
 tokens per millisecond (`include/granite/spec/draft_policy.hpp`). `--spec N` caps the window (default 8: the last accepted token
 plus the block); `--spec 1` turns it off. The target checks every draft: output is plain decoding's.
 A window also takes a draft copied from an earlier repeat of at least 3 tokens of the context when the policy expects more
 from it than from the block: upstream, a 2,405-token copy prompt decoded 13 % faster.
+
+`--drafter FILE` takes the drafter from another file: a `.granite` pack that carries one, or Unsloth's DSpark GGUF of the
+model (architecture `dflash`: `dspark/dspark-Inkling-2-Mini-BF16.gguf`, or `dspark-Inkling-2-Mini-Q8_0_Old.gguf` with
+Q8_0 projections). Their names map onto the pack's and the Markov head's 966 padding token rows are cut; both load to the
+pack's drafter bytes (`inkling2_drafter_parity`). With the UD-Q4_K_XL GGUF on one RTX 3090 at 270 W, the BF16 file and the
+pack's drafter both decode conv 167, struct 317 and prose 139 tok/s. llama.cpp's later DSpark layout (Unsloth's
+`dspark-Inkling-2-Mini-Q8_0.gguf`: its own output rows, `markov_w2`, and per-layer context mixes) is refused.
 
 ## Parallel slots
 

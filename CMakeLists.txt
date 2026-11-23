@@ -185,6 +185,12 @@ if(BUILD_TESTING)
                   ${CMAKE_CURRENT_SOURCE_DIR}/models/Inkling-2-Mini-NVFP4-DQ8.granite
                   ${CMAKE_CURRENT_SOURCE_DIR}/models/Inkling-2-Mini-UD-Q4_K_XL.gguf)
   set_tests_properties(inkling2_gguf_parity PROPERTIES SKIP_RETURN_CODE 77)
+  granite_cpu_test(NAME inkling2_drafter_parity COMMAND inkling2_gguf_test --drafters
+                  ${CMAKE_CURRENT_SOURCE_DIR}/models/Inkling-2-Mini-NVFP4-DQ8.granite
+                  ${CMAKE_CURRENT_SOURCE_DIR}/models/Inkling-2-Mini-NVFP4-DQ8.granite
+                  ${CMAKE_CURRENT_SOURCE_DIR}/models/unsloth/dspark/dspark-Inkling-2-Mini-BF16.gguf
+                  ${CMAKE_CURRENT_SOURCE_DIR}/models/unsloth/dspark-Inkling-2-Mini-Q8_0_Old.gguf)
+  set_tests_properties(inkling2_drafter_parity PROPERTIES SKIP_RETURN_CODE 77)
   add_executable(inkling2_spill_test src/models/inkling2/spill_test.cpp src/models/inkling2/spill.cpp)
   target_include_directories(inkling2_spill_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   granite_cpu_test(NAME inkling2_spill_test COMMAND inkling2_spill_test)

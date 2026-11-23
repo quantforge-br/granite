@@ -363,6 +363,7 @@ int run_session_model(granite::program::CommonOptions& o, const granite::model::
         lreq.pool_affinity_given = o.pool_affinity_given;
         lreq.vram_reserve_mib = o.vram_reserve_given ? o.vram_reserve_mib : 0;
         lreq.spec = o.spec;
+        lreq.drafter = o.drafter;
         lreq.kv = o.kv;
         lreq.diag_tp_check = o.diag_tp_check;
         const granite::model::Result r = adapter->start(lreq, started);
