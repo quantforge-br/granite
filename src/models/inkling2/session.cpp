@@ -926,9 +926,38 @@ private:
             ca.eps = g_.rms_eps;
             controllers(ca, 3, rows, k.stream);
         }
+        // tensor parallelism: card c the query heads of key/value groups [g0, g0 + ng) (their q, r, gate and sink rows) and
+        // every group's keys and values, as both cards hold whole caches; the heads' outputs meet on both cards before the
+        // output projection, which each card runs whole on the same rows (both keep one card's bits)
+        const int ng = kKvHeads / m_.cards(), g0 = card * ng;
         // the projections: one product over every row of the fused matrix when the three inputs are one
         AttnPrep ap;
-        if (!full && !msgs) {
+        if (m_.cards() > 1) {
+            const bool one = !full && !msgs;
+            const int h0 = g0 * (kHeads / kKvHeads), nh = ng * (kHeads / kKvHeads);
+            const int ldq = one ? kProj : kProjQ, ldkv = one ? kProj : kProjKV;
+            float* yk = one ? x.y_ + kProjQ : x.y_ + (size_t) rows * kProjQ;
+            float* yv = one ? yk + kProjKV : yk + (size_t) rows * kProjKV;
+            bk::Q80Segments sg;
+            const auto add = [&](int row0, int n, const void* in, float* y, int ld) {
+                sg.row0[sg.n] = row0, sg.n_out[sg.n] = n, sg.x[sg.n] = in, sg.y[sg.n] = y, sg.ld[sg.n] = ld;
+                ++sg.n;
+            };
+            // the card's query-side rows (each range's first row and rows a head), each where the whole product writes it
+            constexpr int kSide[4][2] = {{kOffQ, kHeadDim}, {kOffR, kRel}, {kOffGate, kHeadDim}, {kOffSink, 1}};
+            for (const auto& s : kSide) add(s[0] + h0 * s[1], nh * s[1], x.xq_[0], x.y_ + s[0] + h0 * s[1], ldq);
+            if (one) add(kRowK, 2 * kProjKV, x.xq_[0], yk, ldkv);
+            else {
+                add(kRowK, kProjKV, x.xq_[1], yk, ldkv);
+                add(kRowV, kProjKV, x.xq_[2], yv, ldkv);
+            }
+            bk::native_q8_0_mmvq_segments(w.proj, sg, E, rows, k.stream);
+            ap.yq = x.y_;
+            ap.yk = yk;
+            ap.yv = yv;
+            ap.ldq = ldq;
+            ap.ldk = ap.ldv = ldkv;
+        } else if (!full && !msgs) {
             bk::native_q8_0_mmvq(w.proj, x.xq_[0], x.y_, E, kProj, rows, k.stream);
             ap.yq = x.y_;
             ap.yk = x.y_ + kProjQ;
@@ -1002,9 +1031,16 @@ private:
         aa.gate = ap.yq + kOffGate;
         aa.gate_ld = ap.ldq;
         aa.q8 = x.xo_;
+        ap.g0 = aa.g0 = g0;
+        ap.ng = aa.ng = ng;
+        if (m_.cards() > 1) {   // the card's heads into the other card's rows too, then each card waits for the other's
+            aa.q8_peer = lane_[1 - card].x->xo_;
+            aa.sent = x.xch_;
+        }
         const Segments seg = segments(card, v.slot);   // a batch window's: each conversation's caches of this visit
         ap.seg = aa.seg = seg;
         attention_window(ap, aa, rows, c.ring ? (int64_t) g_.window : full_keys, x.att_scr_, k.stream);
+        if (m_.cards() > 1) attn_exchange(exchange_of(card), k.stream);
         bk::native_q8_0_mmvq(w.out, x.xo_, x.o_, kOutRows, E, rows, k.stream);
         // a wider window: the experts this visit took in the window before into L2 on the side stream, while the glue
         // before the experts runs (it starts once the output projection is done)
@@ -1082,6 +1118,17 @@ private:
             moe_combine(x.ex_rows_, x.rw_, rows, g_.n_used, x.part_, k.stream, lane_[1 - card].x->recv_[parity], x.xch_);
     }
 
+    // Tensor parallelism: card `card`'s words of the cards' exchanges (one count of both a visit's exchanges).
+    Exchange exchange_of(int card) const {
+        const Scratch& x = *lane_[card].x;
+        Exchange e;
+        e.sent = x.xch_;
+        e.box = x.xch_ + 1;
+        e.peer_box = lane_[1 - card].x->xch_ + 1;
+        e.abort = sh_->xch_abort;
+        return e;
+    }
+
     // Visit `v`'s end on card `card`: the experts' sum (tensor parallelism: both cards' sums, card 0's first, once the other
     // card's is in: the kernel waits for it, Exchange), the MLP's convolution and the residual into `out`, and into `tap`
     // too when set.
@@ -1093,10 +1140,7 @@ private:
         mf.w = x.rw_;
         mf.k = g_.n_used;
         if (m_.cards() > 1) {
-            mf.xch.sent = x.xch_;
-            mf.xch.box = x.xch_ + 1;
-            mf.xch.peer_box = lane_[1 - card].x->xch_ + 1;
-            mf.xch.abort = sh_->xch_abort;
+            mf.xch = exchange_of(card);
             mf.part[0] = card == 0 ? x.part_ : x.recv_[parity];
             mf.part[1] = card == 0 ? x.recv_[parity] : x.part_;
         }
