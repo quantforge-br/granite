@@ -113,6 +113,7 @@ public:
         }
         if (cudaStreamSynchronize(st) != cudaSuccess) return {Status::Error, who + ": the batch window failed"};
         for (int i = 0; i < n; ++i) {
+            if (const Result rl = ss[(size_t) i]->batch_landed(v, i); !rl.ok()) return rl;
             const DecodeRequest& r = reqs[i];
             const int h = head[(size_t) i];
             if (h == 0) continue;
@@ -158,6 +159,9 @@ protected:
     /// On session i, queued on v.stream: its draws of its head rows with its own sampler; the host array of the picks it
     /// returns is read after the batch's sync (null with `err`: the draw failed).
     virtual const int32_t* batch_draw(const BatchView& v, int i, std::string& err) = 0;
+    /// On session i, after the batch's sync: a check of the state the window left it (a diagnostic); an error fails the
+    /// batch.
+    virtual Result batch_landed(const BatchView& v, int i) { (void) v; (void) i; return {}; }
 };
 
 }  // namespace basalt::model

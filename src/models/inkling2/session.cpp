@@ -446,6 +446,7 @@ protected:
     const int32_t* batch_draw(const model::BatchView& v, int i, std::string& err) override {
         return draw(v.reqs[i], 0, v.head[i], err, v.stream);
     }
+    model::Result batch_landed(const model::BatchView&, int) override { return cards_agree({}); }
 
 public:
     model::Result prefill_chunk(const model::PrefillRequest& r) override {
