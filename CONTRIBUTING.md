@@ -62,7 +62,6 @@ granite is a local inference engine for NVIDIA RTX 30-series Ampere GPUs (sm_86)
   4. Open a pull request; the `community` workflow runs the same check.
 - Any RTX 30-series (sm_86) machine with spare hours helps, with one card or two alike.
 - A few hours of remote access to a machine speeds up development.
-- Or sponsor the project through GitHub Sponsors (the repository's Sponsor button): it pays for tokens for agentic development and for time on different hardware to test on.
 
 ## License
 
