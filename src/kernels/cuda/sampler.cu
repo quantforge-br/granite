@@ -40,7 +40,7 @@
 #include <vector>
 #include "granite/log.hpp"
 
-namespace basalt::kernels {
+namespace granite::kernels {
 namespace {
 
 // `count_in_history` and the penalty application, transcribed from `llama_sampler_penalties_apply`.
@@ -1472,7 +1472,7 @@ void sample_wide(const float* logits, int n_tokens, int n_vocab, const int* hist
                  const SamplerParams& p, int k, int* out, const int* query, int n_query, float* qprob, void* stream) {
     WideBuffers w{};
     if (!wide_buffers(stream, n_vocab, w)) {
-        basalt::log::error("granite", "sample_tokens: no memory for a %d-entry list (top_k %d)", k, p.top_k);
+        granite::log::error("granite", "sample_tokens: no memory for a %d-entry list (top_k %d)", k, p.top_k);
         std::exit(1);
     }
     const cudaStream_t cs = (cudaStream_t) stream;
@@ -1487,7 +1487,7 @@ void sample_wide(const float* logits, int n_tokens, int n_vocab, const int* hist
             pr, k, w.keys_in, w.ids_in, w.rows);
         // each row's sort on a stream of its own, joined before the terms
         if (R > 1 && cudaEventRecord(w.fork, cs) != cudaSuccess) {
-            basalt::log::error("granite", "sample_tokens sort: cannot fork the rows' sorts");
+            granite::log::error("granite", "sample_tokens sort: cannot fork the rows' sorts");
             std::exit(1);
         }
         for (int t = 0; t < R; ++t) {
@@ -1500,13 +1500,13 @@ void sample_wide(const float* logits, int n_tokens, int n_vocab, const int* hist
                                                      w.ids_in + o, w.ids + o, n_vocab, 0, 32, ss);
             if (se == cudaSuccess && t > 0) se = cudaEventRecord(w.join[t - 1], ss);
             if (se != cudaSuccess) {
-                basalt::log::error("granite", "sample_tokens sort: %s", cudaGetErrorString(se));
+                granite::log::error("granite", "sample_tokens sort: %s", cudaGetErrorString(se));
                 std::exit(1);
             }
         }
         for (int t = 1; t < R; ++t)
             if (cudaStreamWaitEvent(cs, w.join[t - 1], 0) != cudaSuccess) {
-                basalt::log::error("granite", "sample_tokens sort: cannot join the rows' sorts");
+                granite::log::error("granite", "sample_tokens sort: cannot join the rows' sorts");
                 std::exit(1);
             }
         const dim3 grid(kWideChunks / 32, (unsigned) R), tgrid(kWideChunks / kWideTermChunks, (unsigned) R);
@@ -1553,7 +1553,7 @@ void sample_tokens_impl(int split, const float* logits, int n_tokens, int n_voca
     if (n_tokens <= 0 || n_vocab <= 0) return;
     if (qprob == nullptr) n_query = 0;
     if (p.penalty_last_n > 0 && (history == nullptr || history_len <= 0)) {
-        basalt::log::error("granite", "sample_tokens: penalty_last_n %d needs a history (got %p, len %d)",
+        granite::log::error("granite", "sample_tokens: penalty_last_n %d needs a history (got %p, len %d)",
                      p.penalty_last_n, (const void*) history, history_len);
         std::exit(1);
     }
@@ -1585,7 +1585,7 @@ void sample_tokens_impl(int split, const float* logits, int n_tokens, int n_voca
         const int k = sampled_k(p.top_k, n_vocab);
         int2* scratch = k <= kSelMax && split != 3 ? split_lists() : nullptr;
         if ((k > kSelMax || split == 3) && p.n_drawn > 0) {
-            basalt::log::error("granite", "sample_tokens: drawn drafts on the wide path (a list of %d)", k);
+            granite::log::error("granite", "sample_tokens: drawn drafts on the wide path (a list of %d)", k);
             std::exit(1);
         }
         if (k > kSelMax || split == 3) {
@@ -1608,7 +1608,7 @@ void sample_tokens_impl(int split, const float* logits, int n_tokens, int n_voca
     }
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        basalt::log::error("granite", "sample_tokens launch: %s", cudaGetErrorString(e));
+        granite::log::error("granite", "sample_tokens launch: %s", cudaGetErrorString(e));
         std::exit(1);
     }
     if (stream == nullptr) cudaDeviceSynchronize();
@@ -1628,4 +1628,4 @@ void sample_tokens_split(int split, const float* logits, int n_tokens, int n_voc
     sample_tokens_impl(split, logits, n_tokens, n_vocab, history, history_len, p, out, query, n_query, qprob, stream);
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

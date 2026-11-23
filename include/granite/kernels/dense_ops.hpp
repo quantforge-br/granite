@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 /// out[r][c] = x[r][c] * rsqrt(mean_c x[r]^2 + eps) * w[c]  (w holds an offset norm's 1 + w already); out rows
 /// `ld_out` floats apart (0: cols).
@@ -108,4 +108,4 @@ void candidate_path(const float* lp_rows, int stride, int top, const float* h, c
                     int rank, const int32_t* anchor, int n, int32_t* ids, float* conf, const CandidateDraw& draw,
                     void* stream);
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace basalt::program {
+namespace granite::program {
 
 namespace {
 
@@ -65,7 +65,7 @@ struct NvmlCards {
 
 NvmlCards read_nvml() {
     NvmlCards out;
-    const basalt::platform::DynLib lib = basalt::platform::DynLib::open_nvml();
+    const granite::platform::DynLib lib = granite::platform::DynLib::open_nvml();
     if (!lib) return out;
     struct MemInfo { unsigned long long total, free, used; };
     const auto init = lib.sym<int (*)()>("nvmlInit_v2");
@@ -317,8 +317,8 @@ void apply_gpus(const std::vector<GpuCard>& visible, const std::vector<int>& car
         list += (i >= 0 && (size_t) i < visible.size()) ? visible[(size_t) i].token : std::to_string(i);
     }
     // numbers are nvidia-smi's, which is the PCI bus order; CUDA's own default order differs
-    basalt::platform::set_env("CUDA_DEVICE_ORDER", "PCI_BUS_ID");
-    basalt::platform::set_env("CUDA_VISIBLE_DEVICES", list);
+    granite::platform::set_env("CUDA_DEVICE_ORDER", "PCI_BUS_ID");
+    granite::platform::set_env("CUDA_VISIBLE_DEVICES", list);
 }
 
 // a card named only by its index
@@ -360,8 +360,8 @@ bool select_gpus(const std::string& text, const char* label, std::string& engine
     const std::vector<GpuCard> visible = visible_gpus(known);
     const GpuChoice c = choose_gpus(spec, visible, known);
     if (!c.error.empty()) { err = c.error; return false; }
-    for (const std::string& s : c.notes) basalt::log::info(label, "%s", s.c_str());
-    if (!c.warning.empty()) basalt::log::warn(label, "%s", c.warning.c_str());
+    for (const std::string& s : c.notes) granite::log::info(label, "%s", s.c_str());
+    if (!c.warning.empty()) granite::log::warn(label, "%s", c.warning.c_str());
     apply_gpus(visible, c.cards);
     used.clear();
     for (int i : c.cards) used.push_back((size_t) i < visible.size() ? visible[(size_t) i] : unknown_card(i));
@@ -369,4 +369,4 @@ bool select_gpus(const std::string& text, const char* label, std::string& engine
     return true;
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

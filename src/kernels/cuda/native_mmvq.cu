@@ -42,7 +42,7 @@
 #include <type_traits>
 #include <string>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 namespace {
 
 constexpr int QK = 256;
@@ -2418,4 +2418,4 @@ void native_mmvq(int ggml_type, const void* weights, const void* x_q8_1, float* 
 }
 
 
-} // namespace basalt::kernels
+} // namespace granite::kernels

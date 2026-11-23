@@ -16,7 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 namespace {
 
 const ggml_type_traits_cpu* traits(int type) { return ggml_get_type_traits_cpu((ggml_type) type); }
@@ -255,4 +255,4 @@ void native_down_rows(const NativeFmt& f, const uint8_t* blob, const void* const
     }
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

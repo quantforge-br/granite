@@ -27,7 +27,7 @@
 #include "granite/vision/encoder_cuda.hpp"
 #include "vision_kernels.cuh"
 
-using namespace basalt::vision;
+using namespace granite::vision;
 
 namespace {
 
@@ -302,7 +302,7 @@ void check_rotation(int gx, int gy) {
 }
 
 // The CUDA encoder against the CPU encoder per stage on a w x h picture, and the merge + projection against double.
-void check_encoder(const basalt::core::FileRange& fr, int w, int h) {
+void check_encoder(const granite::core::FileRange& fr, int w, int h) {
     Mmproj mp;
     std::string err;
     if (!mp.open(fr, err, "class_token_test")) { std::printf("open: %s\n", err.c_str()); g_fail++; return; }
@@ -432,7 +432,7 @@ int main() {
     check_positions(32, 32);   // the table itself
     check_positions(64, 40);   // larger than it
     check_rotation(6, 4);
-    basalt::core::FileRange fr;
+    granite::core::FileRange fr;
     fr.path = path;
     check_encoder(fr, 57, 23);       // 2 x 1 cells, padded both ways
     check_encoder(fr, 240, 160);     // 6 x 4 cells: patches fewer than the table's

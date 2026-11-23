@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// Where an expert lives, as the map draws it.
 enum class ExpertHome : uint8_t { Vram = 0, Peer = 1, Ram = 2, File = 3 };
@@ -61,4 +61,4 @@ private:
     std::vector<uint32_t> n_;
 };
 
-}  // namespace basalt::core
+}  // namespace granite::core

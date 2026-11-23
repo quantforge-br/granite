@@ -2,7 +2,7 @@
 #include "state.hpp"
 #include "../cli/tokens.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 namespace {
 // the busy clock runs while a request or a batch window does
@@ -79,7 +79,7 @@ Flow Runtime::dispatch() {
         std::string pe;
         while (!got && (disk.enabled() || parking)) {
             const int r = next_line_within(line, 1000);
-            if (r < 0) { basalt::log::info("granite serve", "input pipe closed"); return Flow::quit; }
+            if (r < 0) { granite::log::info("granite serve", "input pipe closed"); return Flow::quit; }
             got = r == 1;
             while (!got && !(got = try_next_line(line)) && disk.enabled() && spill_to_disk(false, 1) > 0) {}
             if (got) break;
@@ -87,7 +87,7 @@ Flow Runtime::dispatch() {
             if (!pe.empty()) { std::printf("ERR %s\n", pe.c_str()); return Flow::error; }
             if (!parking) break;
         }
-        if (!got && !next_line(line)) { basalt::log::info("granite serve", "input pipe closed"); return Flow::quit; }
+        if (!got && !next_line(line)) { granite::log::info("granite serve", "input pipe closed"); return Flow::quit; }
     }
     // --batch: BSTOP <slot> ends that slot at its next batch window; BGEN <slot> <max_new> ... reads the
     // request's prompt and first token as a GEN 1, then continues it in that slot
@@ -135,8 +135,8 @@ Flow Runtime::dispatch() {
         }
         // asleep, the driver holds the engine's GPU state in RAM until the wake: the RAM guard judges no reading
         // then (no shed, no admission wait from it), and judges a fresh one at the wake
-        if (down && verr.empty()) basalt::platform::ram_guard_pause(true);
-        if (!down) basalt::platform::ram_guard_pause(false);
+        if (down && verr.empty()) granite::platform::ram_guard_pause(true);
+        if (!down) granite::platform::ram_guard_pause(false);
         if (!verr.empty()) std::printf("ERR %s\n", verr.c_str());
         std::fflush(stdout);
         stats_tick(true);
@@ -156,7 +156,7 @@ Flow Runtime::dispatch() {
         std::fflush(stdout);
         return Flow::next;
     }
-    basalt::platform::ram_guard_pause(false);   // a request without a WAKE first: the guard judges again
+    granite::platform::ram_guard_pause(false);   // a request without a WAKE first: the guard judges again
     admit_slot = -1;
     solo_slot = -1;
     if (line.rfind("SGEN ", 0) == 0 || line.rfind("SGENI ", 0) == 0) {   // SGEN <slot> <max_new> ...: a GEN in that slot
@@ -190,11 +190,11 @@ Flow Runtime::dispatch() {
     if (line == "QUIT") return Flow::quit;
     // the watchdog watches a request from here until this iteration ends, whichever way it ends
     struct BusyScope {
-        BusyScope() { basalt::core::progress().busy.store(true); basalt::core::progress_at("request"); }
-        ~BusyScope() { basalt::core::progress().busy.store(false); basalt::core::progress_at("idle"); }
+        BusyScope() { granite::core::progress().busy.store(true); granite::core::progress_at("request"); }
+        ~BusyScope() { granite::core::progress().busy.store(false); granite::core::progress_at("idle"); }
     } busy_scope;
     const BusyClock busy(busy_s, busy_on, busy_from);
     return run_request();
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

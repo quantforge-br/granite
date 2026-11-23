@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 struct ExpertLayout {
     bool native = false;
@@ -66,4 +66,4 @@ bool expert_layout_load_text(const std::string& text, int64_t n_layers, int64_t 
 /// The newest layout version this engine reads.
 inline constexpr int kExpertLayoutVersion = 7;   // v6: NVFP4 blobs end in a 16-byte scale tail; v7: up_type column
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-namespace basalt::core {
+namespace granite::core {
 namespace {
 
 bool lock_block(void* p, size_t bytes) {
@@ -189,4 +189,4 @@ bool CheckpointDeferral::finish(std::string& error) {
     return false;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

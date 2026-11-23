@@ -20,10 +20,10 @@
 #include <thread>
 #include <vector>
 
-namespace basalt::program {
+namespace granite::program {
 namespace {
 
-namespace C = basalt::kernels::cpu;
+namespace C = granite::kernels::cpu;
 double median(std::vector<double> v) {
     if (v.empty()) return 0.0;
     std::sort(v.begin(), v.end());
@@ -472,4 +472,4 @@ bool probe_rates(const ProbeEnv& env, std::FILE* out, std::string& err) {
     return true;
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

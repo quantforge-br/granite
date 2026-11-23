@@ -9,7 +9,7 @@
 #include <cstring>
 #include <vector>
 
-using namespace basalt::vision;
+using namespace granite::vision;
 
 int main() {
     int failures = 0;

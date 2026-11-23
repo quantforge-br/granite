@@ -15,7 +15,7 @@ static void expect(const std::string& got, const std::string& want, int line) {
 #define EXPECT(got, want) expect((got), (want), __LINE__)
 
 int main() {
-    using namespace basalt::protocol;
+    using namespace granite::protocol;
 
     // a park reports the RAM tier's figures
     EXPECT(conversation_line(6, 13314398618ull, 3), "CONV parked=6 bytes=13314398618 evictions=3\n");

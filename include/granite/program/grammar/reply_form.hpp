@@ -3,7 +3,7 @@
 
 #include <string>
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 /// The tokens of a reply's thinking, by text. The default is a <think> ... </think> block before the answer (added
 /// tokens). A reply made of blocks names `header` too: every block opens with it, then `think_open` (a thinking block)
@@ -20,4 +20,4 @@ struct ReplyForm {
 void set_reply_form(const ReplyForm& form);
 const ReplyForm& reply_form();
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

@@ -6,7 +6,7 @@
 
 #include "schema_internal.hpp"
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 namespace {
 
@@ -350,4 +350,4 @@ SchemaDocument build_schema_document(const JsonValue& schema, const JsonValue* r
     return doc;
 }
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

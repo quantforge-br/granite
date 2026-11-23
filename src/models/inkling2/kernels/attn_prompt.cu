@@ -19,7 +19,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 
 constexpr int kPos = 64;                  // positions a block
@@ -366,4 +366,4 @@ void attention_prompt(const AttnPromptArgs& a, int rows, float* out, void* strea
     check("attention_prompt");
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 enum PhiloxPurpose : uint32_t {
     kPhiloxPick = 0,         // the sampler's draw of a row's token
@@ -40,4 +40,4 @@ __device__ __forceinline__ float philox_uniform(uint64_t seed, uint64_t counter,
     return (float) (c0 >> 8) * (1.0f / 16777216.0f);
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

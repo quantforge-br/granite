@@ -7,7 +7,7 @@
 
 #include "granite/kernels/cpu/swiglu.hpp"
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 /// Whether a layer's geometry fits these kernels (rows a multiple of 64 values, at most 16384).
 bool nvfp4_512_fits(int n_embd, int n_ff) noexcept;
@@ -19,4 +19,4 @@ void nvfp4_512_gu_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n,
 void nvfp4_512_down_rows(const uint8_t* w, size_t row_bytes, int n, float sd, const void* const* act, int nt,
                          float* const* out, int r0, int r1);
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

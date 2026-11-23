@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 // Native GGUF Q2_0, Q4_0, Q5_0, Q8_0, Q3_K, Q4_K, Q5_K, Q6_K, IQ4_NL
 // and IQ4_XS / CUDA Q8_1 adapters, pinned to llama.cpp
@@ -125,4 +125,4 @@ std::size_t native_mmvq_weight_bytes(int ggml_type, int n_in, int n_out);
 void native_mmvq(int ggml_type, const void* weights, const void* x_q8_1, float* y,
                  int n_in, int n_out, int ncols, void* stream);
 
-} // namespace basalt::kernels
+} // namespace granite::kernels

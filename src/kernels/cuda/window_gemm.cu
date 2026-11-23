@@ -14,7 +14,7 @@
 
 #include "granite/log.hpp"
 
-namespace basalt::kernels::wgemm {
+namespace granite::kernels::wgemm {
 namespace {
 
 using detail::Args;
@@ -23,12 +23,12 @@ using detail::Kernel;
 void check(const char* what) {
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        basalt::log::error("granite", "%s: %s", what, cudaGetErrorString(e));
+        granite::log::error("granite", "%s: %s", what, cudaGetErrorString(e));
         std::exit(1);
     }
 }
 [[noreturn]] void refuse(const char* what, const Call& c) {
-    basalt::log::error("granite", "window gemm: %s (%lld x %lld)", what, (long long) c.m[0].rows, (long long) c.K);
+    granite::log::error("granite", "window gemm: %s (%lld x %lld)", what, (long long) c.m[0].rows, (long long) c.K);
     std::exit(1);
 }
 
@@ -259,4 +259,4 @@ void gemm(const Call& c, const void* act, int T, const Workspace& ws, void* stre
     check("window gemm");
 }
 
-}  // namespace basalt::kernels::wgemm
+}  // namespace granite::kernels::wgemm

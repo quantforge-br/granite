@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 /// One application of a layer: the layer, its loop pass (0 outside the loop), and its own cache slot.
 struct Visit {
@@ -80,4 +80,4 @@ std::vector<Visit> loop_visits(int layers, int start, int end, int passes);
 /// engine does not run.
 bool open_pack(const std::string& path, Pack& p, std::string& err);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

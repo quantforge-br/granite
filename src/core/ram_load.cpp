@@ -14,7 +14,7 @@
 #include <thread>
 #include <utility>
 
-namespace basalt::core {
+namespace granite::core {
 
 bool host_pin_budget(uint64_t& limit, std::string& why) {
     if constexpr (!platform::kBoundHostRegistration) return platform::pin_budget(limit, why);
@@ -309,4 +309,4 @@ std::vector<RamPin> pin_ram_spans(const std::vector<uint8_t*>& spans, const std:
     return pins;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

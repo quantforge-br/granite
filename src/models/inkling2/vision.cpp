@@ -1,7 +1,7 @@
 // src/models/inkling2/vision.cpp - see vision.hpp.
 #include "models/inkling2/vision.hpp"
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 bool plan_image(int w, int h, ImagePlan& p, std::string& err) {
     if (w <= 0 || h <= 0) {
@@ -48,4 +48,4 @@ vision::Image encoder_input(const vision::Image& src, const std::vector<uint8_t>
     return img;
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

@@ -1,7 +1,7 @@
 // src/program/serve/request_finish.cpp - request complete operations.
 #include "request.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 // the VRAM share of the experts looked up while decoding; experts a bus copy or another GPU served are in neither
 // count, so that share is said beside it
@@ -13,7 +13,7 @@ void Request::report_expert_counts(const DoneCounts& dc) const {
                       "all %lld routed)", (long long) dc.offloaded,
                       100.0 * (double) dc.offloaded / (double) (dc.lookups + dc.offloaded),
                       (long long) (dc.lookups + dc.offloaded));
-    basalt::log::info("granite serve", "decode expert cache hit rate: %.1f%% (%lld hits / %lld lookups)%s",
+    granite::log::info("granite serve", "decode expert cache hit rate: %.1f%% (%lld hits / %lld lookups)%s",
                       100.0 * (double) dc.hits / (double) dc.lookups, (long long) dc.hits, (long long) dc.lookups, off);
 }
 
@@ -41,21 +41,21 @@ Flow Request::complete() {
     //      [windows]   (the decode windows of this run; a window's tokens are the server's tokens per window)
     ram_out = runtime_.ram_stop.load() || !kv_stop.empty();
     if (!kv_stop.empty()) {
-        basalt::log::warn("granite serve", "request stopped after %lld tokens: %s", (long long) produced_n,
+        granite::log::warn("granite serve", "request stopped after %lld tokens: %s", (long long) produced_n,
                           kv_stop.c_str());
         std::printf("ERR %s\n", kv_stop.c_str());
     } else if (ram_out) {
         // the client gets the reason as the request's error; the engine stays up for the next request
         uint64_t avail = 0, floor = 0;
-        basalt::platform::MemoryStalls stalls;
-        (void) basalt::platform::ram_guard_level(&avail, &floor, &stalls);
+        granite::platform::MemoryStalls stalls;
+        (void) granite::platform::ram_guard_level(&avail, &floor, &stalls);
         // what the engine grew by since it was ready, and what the rest of the drop in free RAM went to
-        const uint64_t rss = (uint64_t) basalt::platform::process_memory().rss_mib << 20;
+        const uint64_t rss = (uint64_t) granite::platform::process_memory().rss_mib << 20;
         const uint64_t own = rss > runtime_.ready_rss ? rss - runtime_.ready_rss : 0;
         const uint64_t drop = runtime_.ready_avail > avail ? runtime_.ready_avail - avail : 0;
-        const std::string msg = basalt::platform::ram_stop_message(avail, floor, basalt::platform::kRamHardFloor,
+        const std::string msg = granite::platform::ram_stop_message(avail, floor, granite::platform::kRamHardFloor,
                                                                    stalls, drop > own ? drop - own : 0, own);
-        basalt::log::error("granite", "%s", msg.c_str());
+        granite::log::error("granite", "%s", msg.c_str());
         std::printf("ERR %s\n", msg.c_str());
     }
     runtime_.stats_tick(true);   // the request's last counts, ahead of its end
@@ -79,17 +79,17 @@ Flow Request::complete() {
         const auto tc0 = Clock::now();
         // the draft layer's cell for the prompt's last token (it pairs with the first generated one), then its K/V
         if (cont && !in_slot && !admit_draft()) {
-            basalt::log::error("granite serve", "batch admission failed: %s", runtime_.err.c_str());
+            granite::log::error("granite serve", "batch admission failed: %s", runtime_.err.c_str());
             cont = false;
         }
         if (cont && in_slot) {   // the slot holds the prompt already; only its draft K/V is staged
             slot_state_back(runtime_.admit_slot);
             if (!slot_draft_keep(runtime_.admit_slot)) {
-                basalt::log::error("granite serve", "batch admission failed: %s", runtime_.err.c_str());
+                granite::log::error("granite serve", "batch admission failed: %s", runtime_.err.c_str());
                 cont = false;
             }
         } else if (cont && !runtime_.copy_to_slot(runtime_.admit_slot, runtime_.live, runtime_.err)) {
-            basalt::log::error("granite serve", "batch admission failed: %s", runtime_.err.c_str());
+            granite::log::error("granite serve", "batch admission failed: %s", runtime_.err.c_str());
             runtime_.bs[(size_t) runtime_.admit_slot].cached = false;   // its sessions may be half written
             cont = false;
         }
@@ -116,13 +116,13 @@ Flow Request::complete() {
             const ConvCheckpoint *best = nullptr, *root = nullptr;
             for (const ConvCheckpoint& c : runtime_.checks)
                 if (c.ids.size() < runtime_.live.size() &&
-                    basalt::core::conversation_ids_equal(c.ids.data(), c.ids.size(), runtime_.live.data())) {
+                    granite::core::conversation_ids_equal(c.ids.data(), c.ids.size(), runtime_.live.data())) {
                     if (best == nullptr || c.ids.size() > best->ids.size()) best = &c;
                     if (root == nullptr || c.ids.size() < root->ids.size()) root = &c;
                 }
             if (root != nullptr && root != best) sl.checks.push_back(*root);
             if (best != nullptr) sl.checks.push_back(*best);
-            basalt::log::info("granite batch", "slot %d takes %lld tokens (copied in %.1f ms)", runtime_.admit_slot,
+            granite::log::info("granite batch", "slot %d takes %lld tokens (copied in %.1f ms)", runtime_.admit_slot,
                          (long long) runtime_.live.size(), std::chrono::duration<double, std::milli>(Clock::now() - tc0).count());
         }
         if (!ram_out)   // (after ERR the server reads no BADM)
@@ -172,7 +172,7 @@ Flow Request::complete() {
         std::snprintf(read_txt, sizeof(read_txt), "%lld of %lld", (long long) read_n, (long long) fresh);
     else
         std::snprintf(read_txt, sizeof(read_txt), "%lld", (long long) fresh);
-    basalt::log::info("granite serve", "prompt %lld tokens = %lld reused + %s read in %.0f ms (%.1f tok/s), "
+    granite::log::info("granite serve", "prompt %lld tokens = %lld reused + %s read in %.0f ms (%.1f tok/s), "
                          "%lld generated in %.0f ms (%.1f tok/s), drafts accepted %lld of %lld, %zu checkpoints%s",
                  (long long) n, (long long) resume, read_txt, prompt_ms,
                  prompt_ms > 0 ? 1000.0 * read_n / prompt_ms : 0.0, (long long) produced_n, decode_ms,
@@ -183,4 +183,4 @@ Flow Request::complete() {
     return Flow::next;
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

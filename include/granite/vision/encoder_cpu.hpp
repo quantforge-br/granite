@@ -12,7 +12,7 @@
 #include "granite/vision/mmproj.hpp"
 #include "granite/vision/preprocess.hpp"
 
-namespace basalt::vision {
+namespace granite::vision {
 
 /// Receives named intermediate tensors: "embed" (patch + position embedding), "layer_out.N", "post_ln", "out"; the
 /// class-token tower gives "pre_ln" (its sequence after the pre-norm) instead of "post_ln", its rows the class token first.
@@ -62,4 +62,4 @@ private:
     const uint16_t *wm0_ = nullptr, *wm2_ = nullptr;
 };
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

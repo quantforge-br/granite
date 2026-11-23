@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-using namespace basalt::program::grammar;
+using namespace granite::program::grammar;
 
 static int g_fail = 0;
 #define CHECK(c)                                                              \

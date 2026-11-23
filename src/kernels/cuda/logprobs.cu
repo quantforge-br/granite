@@ -6,7 +6,7 @@
 #include <cfloat>
 #include <cmath>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 namespace {
 
 constexpr int kThreads = 256;
@@ -156,4 +156,4 @@ void row_logprobs(const float* logits, int n_rows, int n_vocab, const int32_t* p
     merge_kernel<<<n_rows, kThreads, 0, st>>>(logits, n_vocab, picks, top, out, scratch);
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

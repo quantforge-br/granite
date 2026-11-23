@@ -20,7 +20,7 @@ void check(bool ok, const std::string& what) {
 }  // namespace
 
 int main() {
-    using namespace basalt::platform;
+    using namespace granite::platform;
     unsigned r[4] = {};
     cpuid(0, 0, r);
     char vendor[13] = {};

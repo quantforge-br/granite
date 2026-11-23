@@ -9,7 +9,7 @@
 #include <map>
 #include <sstream>
 
-namespace basalt::program {
+namespace granite::program {
 
 const char* const kProbeDisclaimer = "Measured on this machine. Hand-tuned settings can still beat these.";
 
@@ -151,4 +151,4 @@ std::string format_config(const std::vector<std::string>& args, const std::strin
     return out;
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

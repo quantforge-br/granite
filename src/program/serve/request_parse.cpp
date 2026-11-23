@@ -3,7 +3,7 @@
 #include "../cli/tokens.hpp"
 #include "logprobs.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 Flow Request::parse() {
     runtime_.stop_req.store(false);   // a STOP that arrived between requests is stale
@@ -99,7 +99,7 @@ Flow Request::parse() {
     if (req_bias_present) {
         std::string bias_error;
         if (runtime_.o.batch > 0) bias_error = "continuous batching is not supported";
-        const bool ok = runtime_.o.batch <= 0 && basalt::core::parse_logit_bias(req_bias_text, (int) runtime_.n_vocab, req_bias, bias_error);
+        const bool ok = runtime_.o.batch <= 0 && granite::core::parse_logit_bias(req_bias_text, (int) runtime_.n_vocab, req_bias, bias_error);
         if (!ok) { std::printf("ERR logit_bias: %s\n", bias_error.c_str()); return Flow::next; }
     }
 
@@ -149,7 +149,7 @@ Flow Request::parse() {
         std::string gerr;
         if (runtime_.o.batch > 0 && runtime_.pipelined()) gerr = "pipelined batch groups are not supported";
         else {
-            gguard = std::make_unique<basalt::program::grammar::Guard>(*runtime_.grammar_vocab);
+            gguard = std::make_unique<granite::program::grammar::Guard>(*runtime_.grammar_vocab);
             const size_t gp = req_gprompt > 0 && (size_t) req_gprompt < ids.size() ? (size_t) req_gprompt : ids.size();
             if (!gguard->begin(req_grammar_text, ids.data(), gp, gerr)) gguard.reset();
             else if (gp < ids.size() && gguard->on()) {
@@ -163,7 +163,7 @@ Flow Request::parse() {
         }
         if (!gerr.empty()) { std::printf("ERR grammar: %s\n", gerr.c_str()); return Flow::next; }
     } else if (!req_grammar_text.empty()) {
-        basalt::log::warn("granite grammar", "the request has a grammar but this engine runs with --grammar off; ignored");
+        granite::log::warn("granite grammar", "the request has a grammar but this engine runs with --grammar off; ignored");
     }
 
     grammar_resamples = 0;
@@ -174,4 +174,4 @@ Flow Request::parse() {
     return Flow::proceed;
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

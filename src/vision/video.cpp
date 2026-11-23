@@ -15,7 +15,7 @@
 
 #include "granite/vision/ffmpeg_api.hpp"
 
-namespace basalt::vision {
+namespace granite::vision {
 
 namespace {
 // What NVDEC takes for frames of `px` pixels: its surfaces (the reference frames and the output pool, about 40 frames
@@ -598,4 +598,4 @@ bool read_video_once(const std::string& path, const VideoOptions& o, Video& out,
 
 }  // namespace
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

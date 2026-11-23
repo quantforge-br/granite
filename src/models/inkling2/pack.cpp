@@ -3,7 +3,7 @@
 
 #include <sstream>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 
 using core::Json;
@@ -162,4 +162,4 @@ bool open_pack(const std::string& path, Pack& p, std::string& err) {
     return true;
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

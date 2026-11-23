@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::platform {
+namespace granite::platform {
 
 #if defined(_WIN32)
 /// UTF-8 to UTF-16, the conversion every path open here goes through. An empty string converts to an empty one.
@@ -162,4 +162,4 @@ int64_t file_time_now();
 /// Bytes this process may still write on the volume that holds `path`; 0 when the OS does not say.
 uint64_t disk_free_bytes(const std::string& path);
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

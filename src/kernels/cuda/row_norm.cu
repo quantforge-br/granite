@@ -9,7 +9,7 @@
 
 #include <stdexcept>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 namespace {
 
 constexpr int kThreads = 256;
@@ -121,4 +121,4 @@ void hc_pre_rms_norm(const float* x, const float* pre, int pre_stride, const flo
     if (!stream) cudaStreamSynchronize(nullptr);
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

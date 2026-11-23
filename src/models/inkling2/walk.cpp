@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 bool walk(const Geometry& g, Walk& w, std::string& err) {
     if (g.block <= 0 || g.loop_start != g.block || g.loop_end - g.loop_start != 2 * g.block ||
@@ -54,4 +54,4 @@ bool walk(const Geometry& g, Walk& w, std::string& err) {
     return true;
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

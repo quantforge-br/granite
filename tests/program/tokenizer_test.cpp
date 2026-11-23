@@ -13,13 +13,13 @@
 #include "unicode_flags.hpp"
 
 // The Qwen pre-tokenizer is shared (the tokenizer library).
-namespace basalt::program::tokenizer { void pretok_qwen35(const char* text, size_t size, std::vector<size_t>& ends); }
+namespace granite::program::tokenizer { void pretok_qwen35(const char* text, size_t size, std::vector<size_t>& ends); }
 
-using basalt::program::Tokenizer;
+using granite::program::Tokenizer;
 
 namespace {
 using PreTok = void (*)(const char*, size_t, std::vector<size_t>&);
-constexpr PreTok kQwen35 = basalt::program::tokenizer::pretok_qwen35;
+constexpr PreTok kQwen35 = granite::program::tokenizer::pretok_qwen35;
 }  // namespace
 
 namespace {

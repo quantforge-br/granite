@@ -20,8 +20,8 @@ void is(const std::string& got, const std::string& want, const char* what) {
 }  // namespace
 
 int main() {
-    using basalt::log::Level;
-    using basalt::log::render;
+    using granite::log::Level;
+    using granite::log::render;
     is(render(Level::info, "granite generate", "session is up (engine %s)", "1.2"),
        "granite generate: session is up (engine 1.2)\n", "info keeps the tag and has no marker");
     is(render(Level::warning, "granite serve", "RAM %d MiB low", 512), "granite serve: warning: RAM 512 MiB low\n",
@@ -39,12 +39,12 @@ int main() {
     is(render(Level::error, "granite generate", "%s", longer.c_str()), "granite generate: error: " + longer + "\n",
        "a message longer than the first buffer");
     is(render(Level::info, "granite serve", "two\nlines"), "granite serve: two\nlines\n", "an inner newline is kept");
-    is(basalt::log::line(Level::warning, "granite mtp", "text"), "granite mtp: warning: text", "line() has no newline");
+    is(granite::log::line(Level::warning, "granite mtp", "text"), "granite mtp: warning: text", "line() has no newline");
 
     // parse() reads back what render() wrote, and the older forms
     const auto parsed = [](const std::string& l) {
-        basalt::log::Parsed p;
-        if (!basalt::log::parse(l, p)) return std::string("not a log line");
+        granite::log::Parsed p;
+        if (!granite::log::parse(l, p)) return std::string("not a log line");
         return std::string(p.level == Level::error ? "error" : p.level == Level::warning ? "warning" : "info") + "|" +
                p.tag + "|" + p.text;
     };

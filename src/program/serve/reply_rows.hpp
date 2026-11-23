@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 struct ReplyRows {
     int emit = 0;        ///< picks the window sends
@@ -36,4 +36,4 @@ inline ReplyRows reply_rows(const int32_t* picks, int e0, int a, int64_t produce
     return r;
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

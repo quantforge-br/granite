@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// One piece of running state in device memory.
 struct DeviceRegion {
@@ -52,4 +52,4 @@ struct RunningState {
     size_t bytes() const { return head.size() + regions_bytes() + sum(peer_regions); }
 };
 
-}  // namespace basalt::core
+}  // namespace granite::core

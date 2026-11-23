@@ -18,7 +18,7 @@
 #define BASALT_NVFP4_EXPORT(name) name##_base
 #include "nvfp4_avx2_rows.inc"
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 bool nvfp4_256_fits(int n_embd, int n_ff) noexcept {
     return n_embd % QK_NVFP4 == 0 && n_ff % QK_NVFP4 == 0 && n_embd <= kMaxN && n_ff <= kMaxN;
@@ -38,4 +38,4 @@ void nvfp4_256_down_rows(const uint8_t* w, size_t row_bytes, int n, float sd, co
     else nvfp4_256_down_rows_base(w, row_bytes, n, sd, act, nt, out, r0, r1);
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

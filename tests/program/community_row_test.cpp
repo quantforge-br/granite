@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-using namespace basalt::program;
+using namespace granite::program;
 
 namespace {
 int failures = 0;

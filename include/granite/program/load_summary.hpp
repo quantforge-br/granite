@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace basalt::program {
+namespace granite::program {
 
 /// Fed the engine's log lines with a clock in seconds; each call returns the text to write to stderr (maybe empty).
 /// Off a terminal: a header line, a line when the weights are placed and one about every `period` seconds.
@@ -37,4 +37,4 @@ private:
     double start_ = -1;
 };
 
-}  // namespace basalt::program
+}  // namespace granite::program

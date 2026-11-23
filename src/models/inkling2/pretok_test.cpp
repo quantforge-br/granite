@@ -35,7 +35,7 @@ int main() {
     for (const Case& c : cases) {
         std::vector<size_t> ends;
         const std::string s(c.text);
-        basalt::models::inkling2::pretok_inkling2(s.data(), s.size(), ends);
+        granite::models::inkling2::pretok_inkling2(s.data(), s.size(), ends);
         if (ends != c.ends) {
             ++failures;
             std::printf("FAIL %s:", c.text);

@@ -10,7 +10,7 @@
 // and row the arithmetic is the ggml dot's: the same int32 sums per sub-block, the same fp32 products d_y * scale, the
 // same two accumulators and the same final reduction, so results are bitwise equal.
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 namespace {
 
 // UE4M3 scale as ggml's dot decodes it (nvfp4_scale in ggml_cpu_dots.c), one entry per 7-bit code.  Built at compile
@@ -226,5 +226,5 @@ void BASALT_NVFP4_EXPORT(nvfp4_256_down_rows)(const uint8_t* w, size_t row_bytes
     }
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu
 

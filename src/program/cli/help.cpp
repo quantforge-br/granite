@@ -3,10 +3,10 @@
 #include "granite/log.hpp"
 #include "granite/program/options.hpp"
 
-namespace basalt::program::cli {
+namespace granite::program::cli {
 
 void usage() {
-    basalt::log::raw("granite serve --config FILE [--python PY] [server args...]\n"
+    granite::log::raw("granite serve --config FILE [--python PY] [server args...]\n"
                  "granite serve MODEL.basalt [--python PY] [server args...]\n"
                  "    runs the Python server (serve/) over this binary: the server reads its options and the engine flags\n"
                  "    from the config file and the command line (the model is the config's or MODEL.basalt, which stands\n"
@@ -77,7 +77,7 @@ void usage() {
                  "  --pool-affinity MODE Which cores size the worker pool (workers are not pinned): all (one\n"
                  "                       worker per physical core), auto (hybrid CPUs: the P-cores minus the\n"
                  "                       host's, plus half the E-cores) or p-cores (the P-cores minus the host's).\n"
-                 "                       Auto when not set.\n", (long long) basalt::program::kDefaultContext);
+                 "                       Auto when not set.\n", (long long) granite::program::kDefaultContext);
 }
 
-}  // namespace basalt::program::cli
+}  // namespace granite::program::cli

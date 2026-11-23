@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// What the loader does to a range between the file and its destination.  The elements are little-endian.
 enum class Conv : uint8_t {
@@ -137,4 +137,4 @@ private:
 /// staging).
 bool place_start(Loader& loader, const LoadPlan& plan, std::string& err);
 
-}  // namespace basalt::core
+}  // namespace granite::core

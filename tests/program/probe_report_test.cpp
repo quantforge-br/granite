@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-using namespace basalt::program;
+using namespace granite::program;
 
 static int failures = 0;
 #define CHECK(c)                                                                  \

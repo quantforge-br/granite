@@ -13,7 +13,7 @@
 #include "granite/log.hpp"
 #include "granite/platform/format_check.hpp"
 
-namespace basalt::protocol {
+namespace granite::protocol {
 
 /// Writes `line` (its newline included) to stdout in one call and flushes.
 inline void emit_text(const std::string& line) {
@@ -25,7 +25,7 @@ inline void emit(const char* fmt, ...) BASALT_PRINTF_FORMAT(1, 2);
 inline void emit(const char* fmt, ...) {
     std::va_list ap;
     va_start(ap, fmt);
-    emit_text(basalt::log::detail::format(fmt, ap));
+    emit_text(granite::log::detail::format(fmt, ap));
     va_end(ap);
 }
 
@@ -61,4 +61,4 @@ inline std::string conversation_line(size_t parked, size_t bytes, size_t evictio
     return l + "\n";
 }
 
-}  // namespace basalt::protocol
+}  // namespace granite::protocol

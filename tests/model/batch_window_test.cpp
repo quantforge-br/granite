@@ -15,9 +15,9 @@ void check(bool ok, const char* what) {
 }  // namespace
 
 int main() {
-    using basalt::model::BatchWindow;
-    using basalt::model::DecodeRequest;
-    namespace bk = basalt::kernels;
+    using granite::model::BatchWindow;
+    using granite::model::DecodeRequest;
+    namespace bk = granite::kernels;
     const int32_t a[3] = {11, 12, 13}, b[1] = {21}, c[4] = {31, 32, 33, 34};
     DecodeRequest r[3];
     r[0].tokens = a, r[0].n_tokens = 3, r[0].pos = 100;
@@ -43,7 +43,7 @@ int main() {
     r[1].n_tokens = 0;
     check(!w.build(r, 3, 8, 4096, err), "an empty window refused");
 
-    basalt::model::GraphLru<std::unique_ptr<int>> lru(2);
+    granite::model::GraphLru<std::unique_ptr<int>> lru(2);
     lru.insert({1}, std::make_unique<int>(1));
     lru.insert({2}, std::make_unique<int>(2));
     check(lru.find({1}) && **lru.find({1}) == 1, "a composition found");

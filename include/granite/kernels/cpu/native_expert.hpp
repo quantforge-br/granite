@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <string>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 /// Bytes of the largest quantized activation any native layer uses (5120 values as Q8_K: 20 x 292).
 inline constexpr size_t kNativeActBytes = 6144;
@@ -58,4 +58,4 @@ void native_gu_rows(const NativeFmt& f, const uint8_t* blob, const void* const* 
 void native_down_rows(const NativeFmt& f, const uint8_t* blob, const void* const* hq, int nt, float* const* out,
                       int r0, int r1);
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

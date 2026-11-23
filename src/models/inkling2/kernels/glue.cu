@@ -21,10 +21,10 @@
 #include <stdexcept>
 #include <string>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 
-namespace bk = basalt::kernels;
+namespace bk = granite::kernels;
 
 static_assert(kDecodeRows + kConv - 1 <= kConvRing, "a window's rows and the positions they read fit the ring");
 
@@ -848,4 +848,4 @@ void moe_finish(const MoeFinish& a, int rows, void* stream) {
     check("moe_finish");
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

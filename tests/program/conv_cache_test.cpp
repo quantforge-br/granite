@@ -19,7 +19,7 @@
 #include <cstdio>
 #include <vector>
 
-using basalt::program::conv_cache::eviction_victim;
+using granite::program::conv_cache::eviction_victim;
 
 namespace {
 int g_fail = 0;

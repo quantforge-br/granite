@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-namespace basalt::vision {
+namespace granite::vision {
 
 namespace {
 
@@ -512,4 +512,4 @@ void launch_to_bf16(const float* x, __nv_bfloat16* y, size_t count, cudaStream_t
     if (count > 0) to_bf16_k<<<blocks(count, 256), 256, 0, s>>>(x, y, count);
 }
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

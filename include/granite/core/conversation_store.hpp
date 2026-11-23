@@ -27,7 +27,7 @@
 #include <thread>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// The stored-conversation format, written in every file header; a file of another format is dropped.  Change it
 /// whenever the stored bytes of a conversation change: the file layouts, the snapshot layout, the K/V or GDN state
@@ -121,4 +121,4 @@ uint64_t conversation_store_hash(const void* data, size_t n, uint64_t seed);
 /// `seed` hashed on with a file's size and samples of its bytes: what names the model file in a store's identity.
 uint64_t conversation_store_hash_file(const std::string& path, uint64_t seed);
 
-}  // namespace basalt::core
+}  // namespace granite::core

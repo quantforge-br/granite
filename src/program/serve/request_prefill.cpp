@@ -2,7 +2,7 @@
 #include "prompt_parts.hpp"
 #include "request.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 Flow Request::read_prompt() {
     yielded_at = -1;   // BYIELD: the read stopped here and its slot holds it
@@ -87,4 +87,4 @@ Flow Request::read_prompt() {
     return Flow::proceed;
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

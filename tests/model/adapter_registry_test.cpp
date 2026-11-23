@@ -16,7 +16,7 @@ void check(bool ok, const char* what) {
 }  // namespace
 
 int main() {
-    using namespace basalt;
+    using namespace granite;
     test::register_meta_adapters();
     check(model::find_adapter("inkling2") != nullptr, "the adapter is registered");
     check(model::find_adapter("llama") == nullptr, "an unknown architecture has no adapter");

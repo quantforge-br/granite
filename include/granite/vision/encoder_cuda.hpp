@@ -11,7 +11,7 @@
 
 #include "granite/vision/encoder_cpu.hpp"
 
-namespace basalt::vision {
+namespace granite::vision {
 
 class CudaEncoder {
 public:
@@ -59,4 +59,4 @@ bool probe_device(std::string& err);
 /// not yet), for a library that works on the same device in this process (FFmpeg's NVDEC); null when there is none.
 void* current_context();
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-namespace basalt::program::json {
+namespace granite::program::json {
 
 inline void put_utf8(std::string& s, uint32_t c) {
     if (c < 0x80) s += (char) c;
@@ -85,4 +85,4 @@ struct Scan {
     }
 };
 
-}  // namespace basalt::program::json
+}  // namespace granite::program::json

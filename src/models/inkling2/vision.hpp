@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 /// The projector's name in the pack's `vision/mmproj` section.
 inline constexpr const char* kProjector = "inkling2v";
@@ -41,4 +41,4 @@ bool plan_image(int w, int h, ImagePlan& p, std::string& err);
 /// (Pillow-style bicubic).
 vision::Image encoder_input(const vision::Image& src, const std::vector<uint8_t>& alpha, const ImagePlan& p);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

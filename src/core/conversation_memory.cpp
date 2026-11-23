@@ -10,7 +10,7 @@
 #include <string>
 
 
-namespace basalt::core {
+namespace granite::core {
 
 std::optional<uint64_t> conversation_mem_available(std::istream& meminfo) {
     std::optional<uint64_t> result;
@@ -31,11 +31,11 @@ std::optional<uint64_t> conversation_mem_available(std::istream& meminfo) {
 }
 
 std::optional<uint64_t> conversation_available_memory() {
-    const std::string path = basalt::platform::meminfo_path();
+    const std::string path = granite::platform::meminfo_path();
     if (path.empty()) {
         // No memory accounting file here: take the platform probe's available-RAM reading, in bytes. It reports 0
         // when the query gives no reading, which stays unknown so admission fails closed.
-        const uint64_t avail = basalt::platform::available_memory();
+        const uint64_t avail = granite::platform::available_memory();
         if (avail == 0) return {};
         return avail;
     }
@@ -44,4 +44,4 @@ std::optional<uint64_t> conversation_available_memory() {
     return conversation_mem_available(meminfo);
 }
 
-} // namespace basalt::core
+} // namespace granite::core

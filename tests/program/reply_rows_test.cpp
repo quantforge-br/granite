@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <vector>
 
-using namespace basalt::program::serve;
+using namespace granite::program::serve;
 
 static int g_fail = 0;
 #define CHECK(c)                                                                         \

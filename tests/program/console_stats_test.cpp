@@ -8,7 +8,7 @@
 #include <set>
 #include <string>
 
-using namespace basalt::program::serve;
+using namespace granite::program::serve;
 
 static int g_fail = 0;
 #define CHECK(c)                                                                         \
@@ -72,18 +72,18 @@ void map_line() {
 }
 
 void sample() {
-    const std::vector<int32_t> p = basalt::core::expert_map_pairs(20480, 640);
+    const std::vector<int32_t> p = granite::core::expert_map_pairs(20480, 640);
     CHECK(p.size() == 640);
-    CHECK(p == basalt::core::expert_map_pairs(20480, 640));   // the same on every start
+    CHECK(p == granite::core::expert_map_pairs(20480, 640));   // the same on every start
     CHECK(p.front() == 16 && p.back() == 20480 - 16);         // the middle of each equal stretch
     std::set<int32_t> layers;
     for (const int32_t x : p) layers.insert(x / 512);
     CHECK(layers.size() == 40);                               // every layer of 40 x 512 is in it
     for (size_t i = 1; i < p.size(); ++i) CHECK(p[i] > p[i - 1]);
-    CHECK(basalt::core::expert_map_pairs(100, 640).size() == 100);   // fewer pairs than cells: all of them
-    CHECK(basalt::core::expert_map_pairs(0, 640).empty());
+    CHECK(granite::core::expert_map_pairs(100, 640).size() == 100);   // fewer pairs than cells: all of them
+    CHECK(granite::core::expert_map_pairs(0, 640).empty());
 
-    basalt::core::ExpertMapTally t;
+    granite::core::ExpertMapTally t;
     t.note(0, 16);   // before open: nothing
     CHECK(!t.is_open());
     t.open(40, 512);

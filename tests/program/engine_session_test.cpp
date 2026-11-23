@@ -53,16 +53,16 @@ std::string read_all(const std::string& path) {
 
 int main(int argc, char** argv) {
     if (argc >= 3 && std::strcmp(argv[1], "--serve") == 0) return stand_in(argv[2]);
-    check(basalt::program::fixture_vocab_refusal(120831, 120832, "d").empty(), "fixtures inside the vocabulary run");
-    check(basalt::program::fixture_vocab_refusal(248069, 0, "d").empty(), "an unknown vocabulary refuses nothing");
-    check(basalt::program::fixture_vocab_refusal(248069, 120832, "d").find("token id 248069, past this model's vocabulary of 120832") != std::string::npos,
+    check(granite::program::fixture_vocab_refusal(120831, 120832, "d").empty(), "fixtures inside the vocabulary run");
+    check(granite::program::fixture_vocab_refusal(248069, 0, "d").empty(), "an unknown vocabulary refuses nothing");
+    check(granite::program::fixture_vocab_refusal(248069, 120832, "d").find("token id 248069, past this model's vocabulary of 120832") != std::string::npos,
           "fixtures of another tokenizer are refused by id and vocabulary");
 
     const std::string self = std::filesystem::absolute(argv[0]).string();
     const std::string dir = std::filesystem::temp_directory_path().string();
     {
         const std::string log = dir + "/engine_session_test_ok.log";
-        basalt::program::Engine e;
+        granite::program::Engine e;
         std::string err;
         const bool up = e.start(self, {"ok"}, log, err);
         check(up, "an error line in a healthy start does not fail it", err);
@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
     }
     {
         const std::string log = dir + "/engine_session_test_die.log";
-        basalt::program::Engine e;
+        granite::program::Engine e;
         std::string err;
         const bool up = e.start(self, {"die"}, log, err);
         check(!up, "an engine that exits before READY fails the start");
@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
     }
     {
         const std::string log = dir + "/engine_session_test_lossy.log";
-        basalt::program::Engine e;
+        granite::program::Engine e;
         std::string err;
         const bool up = e.start(self, {"lossy"}, log, err);
         check(up, "a start with lossy flags is a start", err);
@@ -99,21 +99,21 @@ int main(int argc, char** argv) {
         fs::remove_all(top);
         fs::create_directories(top / "bin");
         const std::string bench = (top / "bin" / "granite-bench.exe").string(), built = "/build/bin/granite";
-        check(basalt::program::default_engine(bench, built) == built, "no engine beside the program: the build's");
+        check(granite::program::default_engine(bench, built) == built, "no engine beside the program: the build's");
         std::ofstream((top / "bin" / "granite.exe").string()) << "x";
         fs::permissions(top / "bin" / "granite.exe", fs::perms::owner_all);
-        const std::string got = basalt::program::default_engine(bench, built);
+        const std::string got = granite::program::default_engine(bench, built);
         check(got == (top / "bin" / "granite.exe").string(), "the engine beside the program, with its suffix", got);
-        check(basalt::program::default_engine("", built) == built, "a program that cannot name itself: the build's");
-        check(basalt::program::default_fixtures(top.string(), "/build/data/bench") == "/build/data/bench",
+        check(granite::program::default_engine("", built) == built, "a program that cannot name itself: the build's");
+        check(granite::program::default_fixtures(top.string(), "/build/data/bench") == "/build/data/bench",
               "no data/bench in the install: the build's fixtures");
         fs::create_directories(top / "data" / "bench");
-        check(basalt::program::default_fixtures(top.string(), "/build/data/bench") == (top / "data" / "bench").string(),
+        check(granite::program::default_fixtures(top.string(), "/build/data/bench") == (top / "data" / "bench").string(),
               "the install's data/bench");
         fs::remove_all(top);
     }
     {   // --community and engine flags: the engine's plan names the lossy ones
-        using basalt::program::community_refusal;
+        using granite::program::community_refusal;
         const std::string plan = "{\"arch\":\"qwen4exp\",\"lossy\":\"--route-tail-skip\",\"spec\":8}";
         std::string got = community_refusal({"--route-tail-skip", "7"}, plan);
         check(got == "--community runs the model as it is: --route-tail-skip is a lossy flag", "a lossy flag is named as one", got);

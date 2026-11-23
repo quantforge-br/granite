@@ -4,10 +4,10 @@
 #include "request.hpp"
 #include "granite/model/adapter.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 /// Serves until QUIT or stdin closes; returns the process exit code.
-int run_session(CommonOptions& o, basalt::core::ModelFile& file, const basalt::model::ModelAdapter& adapter,
-                basalt::model::Started& started);
+int run_session(CommonOptions& o, granite::core::ModelFile& file, const granite::model::ModelAdapter& adapter,
+                granite::model::Started& started);
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

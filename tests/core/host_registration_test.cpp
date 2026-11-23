@@ -41,8 +41,8 @@ void roundtrip(uint8_t* host, size_t bytes, int cards) {
 }
 
 int main() {
-    using namespace basalt::core;
-    using namespace basalt::platform;
+    using namespace granite::core;
+    using namespace granite::platform;
     require(ram_pin_slices({80, 0, 32, 16, 48, 64, 32}, 80, 16, 32) ==
             std::vector<uint64_t>({0, 32, 64, 80}), "slice cuts must be sorted and page aligned");
     require(ram_pin_slices({0, 12, 24, 36, 48, 60, 72}, 72, 16, 32) ==
@@ -109,7 +109,7 @@ int main() {
     RamPin none = pin_ram(host, 0, chunk, {}, false);
     require(none.registered_bytes == 0 && none.slices == 0, "zero-byte registration was attempted");
     unpin_ram(host, none);
-    basalt::platform::free_aligned(host);
+    granite::platform::free_aligned(host);
 
     // Both tier layouts use the same owner, including ordinary registration and move/cleanup of a loaded span.
     std::vector<RamAllocation> allocations(2);
@@ -132,7 +132,7 @@ int main() {
     require(alias && mapped_pin.registered_bytes >= moved.bytes(), "shared mapped alias");
     int32_t* gpu_values = nullptr;
     ck(cudaMalloc(&gpu_values, 128));
-    basalt::kernels::copy_i32_from_mapped(gpu_values, (const int32_t*) alias, 32, nullptr);
+    granite::kernels::copy_i32_from_mapped(gpu_values, (const int32_t*) alias, 32, nullptr);
     ck(cudaGetLastError());
     int32_t values[32]{};
     ck(cudaMemcpy(values, gpu_values, sizeof values, cudaMemcpyDeviceToHost));
@@ -158,7 +158,7 @@ int main() {
             int32_t* gpu = nullptr;
             ck(cudaMalloc(&gpu, 128));
             const auto* src = spanning.data() + boundary - 64;
-            basalt::kernels::copy_i32_from_mapped(gpu, (const int32_t*) src, 32, nullptr);
+            granite::kernels::copy_i32_from_mapped(gpu, (const int32_t*) src, 32, nullptr);
             int32_t back[32]{};
             ck(cudaMemcpy(back, gpu, sizeof back, cudaMemcpyDeviceToHost));
             require(std::memcmp(back, src, sizeof back) == 0, "GPU read across physical backing boundary");

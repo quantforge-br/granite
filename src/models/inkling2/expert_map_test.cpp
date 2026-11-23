@@ -4,7 +4,7 @@
 
 #include <cstdio>
 
-using namespace basalt::models::inkling2;
+using namespace granite::models::inkling2;
 
 namespace {
 int failures = 0;
@@ -19,7 +19,7 @@ void expect(bool ok, const char* what) {
 int main() {
     const int n_layers = 24, n_expert = 128;
     std::vector<uint32_t> counts((size_t) n_layers * n_expert, 0u);
-    const std::vector<int32_t> pairs = basalt::core::expert_map_pairs((int64_t) counts.size(), basalt::core::ExpertMapTally::kCells);
+    const std::vector<int32_t> pairs = granite::core::expert_map_pairs((int64_t) counts.size(), granite::core::ExpertMapTally::kCells);
     ResidentExpertMap map;
     int64_t total = 0;
     std::vector<uint8_t> homes;
@@ -30,7 +30,7 @@ int main() {
     expect(homes.size() == pairs.size() && routed.size() == pairs.size() && pairs.size() == 640, "the sample's size");
     bool vram = true, zero = true;
     for (size_t i = 0; i < homes.size(); ++i) {
-        vram = vram && homes[i] == (uint8_t) basalt::core::ExpertHome::Vram;
+        vram = vram && homes[i] == (uint8_t) granite::core::ExpertHome::Vram;
         zero = zero && routed[i] == 0;
     }
     expect(vram, "every sampled expert lives in VRAM");

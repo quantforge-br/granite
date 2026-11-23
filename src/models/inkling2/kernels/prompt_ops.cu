@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 
 constexpr int kSortPairs = 1024;   // pairs a counting block takes
@@ -518,4 +518,4 @@ void moe_combine_f16(const uint16_t* out, const float* w, int rows, int k, float
     check("moe_combine_f16");
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

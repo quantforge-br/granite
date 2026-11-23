@@ -49,7 +49,7 @@ int main() {
         const uint32_t u = (uint32_t) k;
         float f;
         std::memcpy(&f, &u, 4);
-        const uint16_t got = basalt::kernels::bf16_from_f32(f);
+        const uint16_t got = granite::kernels::bf16_from_f32(f);
         if (got != ggml_bf16(u)) {
             ++vs_ggml;
             if (!have_bad) { first_bad = u; have_bad = true; }
@@ -73,8 +73,8 @@ int main() {
 
     unsigned long long trip_bad = 0;
     for (uint32_t h = 0; h <= 0xFFFFu; ++h) {
-        const float f = basalt::kernels::f32_from_bf16((uint16_t) h);
-        const uint16_t back = basalt::kernels::bf16_from_f32(f);
+        const float f = granite::kernels::f32_from_bf16((uint16_t) h);
+        const uint16_t back = granite::kernels::bf16_from_f32(f);
         const bool nan = is_nan_bits(h << 16);
         if (back != (nan ? (uint16_t) (h | 64u) : (uint16_t) h)) ++trip_bad;
     }
@@ -102,14 +102,14 @@ int main() {
     };
     int fp16_bad = 0;
     for (const F16Case& c : cases) {
-        const uint16_t got = basalt::kernels::f16_from_f32(c.in);
+        const uint16_t got = granite::kernels::f16_from_f32(c.in);
         if (got != c.want) {
             std::printf("    *** %s: want 0x%04X got 0x%04X\n", c.what, c.want, got);
             ++fp16_bad;
         }
     }
     // and the reverse direction on the pattern that was flushed
-    const float sub = basalt::kernels::f32_from_f16(0x0001u);
+    const float sub = granite::kernels::f32_from_f16(0x0001u);
     const bool sub_ok = sub == 5.9604645e-8f;
     std::printf("  f32 -> f16 overflow saturates, not NaN: %d of %d wrong\n", fp16_bad,
                 (int) (sizeof cases / sizeof cases[0]));

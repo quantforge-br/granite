@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-using namespace basalt::program::serve;
-using basalt::kernels::kLogprobStride;
+using namespace granite::program::serve;
+using granite::kernels::kLogprobStride;
 
 static int g_fail = 0;
 #define CHECK(c)                                                                         \
@@ -22,7 +22,7 @@ namespace {
 std::vector<float> row(float pick, const std::vector<std::pair<int32_t, float>>& alts) {
     std::vector<float> r((size_t) kLogprobStride, 0.0f);
     r[0] = pick;
-    for (size_t k = 0; k < (size_t) basalt::kernels::kLogprobMaxTop; ++k) {
+    for (size_t k = 0; k < (size_t) granite::kernels::kLogprobMaxTop; ++k) {
         const int32_t id = k < alts.size() ? alts[k].first : -1;
         std::memcpy(&r[2 + 2 * k], &id, sizeof id);
         r[3 + 2 * k] = k < alts.size() ? alts[k].second : -INFINITY;

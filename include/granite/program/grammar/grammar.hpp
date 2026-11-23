@@ -20,7 +20,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 /// One element of a flattened rule: alternatives are separated by Alt and each rule ends in End. A character class is
 /// Char/CharNot followed by CharAlt and CharRngUpper elements.
@@ -171,4 +171,4 @@ private:
     size_t tail_keep_ = 0;
 };
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

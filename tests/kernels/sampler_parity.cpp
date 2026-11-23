@@ -33,7 +33,7 @@ void check(cudaError_t e, const char* what) {
 
 // The host reference for the specified order: top_k -> top_p -> temperature -> argmax.
 // `temp_first` swaps the first and last stages, which is the intuitive-but-wrong order.
-int reference_pick(const std::vector<float>& l, const basalt::kernels::SamplerParams& p, bool temp_first) {
+int reference_pick(const std::vector<float>& l, const granite::kernels::SamplerParams& p, bool temp_first) {
     const int nv = (int) l.size();
     const float inv_t = p.temperature > 0.0f ? 1.0f / p.temperature : 0.0f;
     auto val = [&](int v) { return temp_first ? l[(size_t) v] * inv_t : l[(size_t) v]; };
@@ -69,7 +69,7 @@ int reference_pick(const std::vector<float>& l, const basalt::kernels::SamplerPa
 }
 
 // The number of survivors AFTER top_p, in the given order - the quantity the order actually changes.
-int reference_cut(const std::vector<float>& l, const basalt::kernels::SamplerParams& p, bool temp_first) {
+int reference_cut(const std::vector<float>& l, const granite::kernels::SamplerParams& p, bool temp_first) {
     const int nv = (int) l.size();
     const float inv_t = p.temperature > 0.0f ? 1.0f / p.temperature : 0.0f;
     auto val = [&](int v) { return temp_first ? l[(size_t) v] * inv_t : l[(size_t) v]; };
@@ -101,7 +101,7 @@ int reference_cut(const std::vector<float>& l, const basalt::kernels::SamplerPar
     return (int) ids.size();
 }
 
-int run(const char* name, const std::vector<float>& logits, int n_tokens, const basalt::kernels::SamplerParams& p,
+int run(const char* name, const std::vector<float>& logits, int n_tokens, const granite::kernels::SamplerParams& p,
         const std::vector<int>& want, const std::vector<int>& hist = {}, int hist_len = 0) {
     float* d_l = nullptr;
     int* d_o = nullptr;
@@ -116,7 +116,7 @@ int run(const char* name, const std::vector<float>& logits, int n_tokens, const 
         check(cudaMalloc(&d_h, hist.size() * sizeof(int)), "malloc hist");
         check(cudaMemcpy(d_h, hist.data(), hist.size() * sizeof(int), cudaMemcpyHostToDevice), "copy hist");
     }
-    basalt::kernels::sample_tokens(d_l, n_tokens, (int) (logits.size() / n_tokens), d_h, hist_len, p, d_o,
+    granite::kernels::sample_tokens(d_l, n_tokens, (int) (logits.size() / n_tokens), d_h, hist_len, p, d_o,
                                    nullptr);
     std::vector<int> got((size_t) n_tokens);
     check(cudaMemcpy(got.data(), d_o, got.size() * sizeof(int), cudaMemcpyDeviceToHost), "back");
@@ -157,14 +157,14 @@ float host_philox_uniform(uint64_t seed, uint64_t counter) {
     return (float) (c0 >> 8) * (1.0f / 16777216.0f);
 }
 
-int wide_reference(const std::vector<float>& l, const std::vector<int>& hist, const basalt::kernels::SamplerParams& p,
+int wide_reference(const std::vector<float>& l, const std::vector<int>& hist, const granite::kernels::SamplerParams& p,
                    int row);
 
 // The full SAMPLED chain, host side, in llama.cpp's order: penalties on the raw logits during the top_k selection
 // (ties to the lowest index), top_p's cut in double over the top_k list, the min_p prefix cut on its survivors, the
 // temperature, and one Philox draw at (seed, counter + row).  One penalties stage.
 int sampled_reference(const std::vector<float>& l, const std::vector<int>& hist,
-                      const basalt::kernels::SamplerParams& p, int row) {
+                      const granite::kernels::SamplerParams& p, int row) {
     auto penal = [&](float logit, int count) {
         if (count <= 0) return logit;
         if (logit <= 0.0f) logit *= p.penalty_repeat; else logit /= p.penalty_repeat;
@@ -227,7 +227,7 @@ int sampled_reference(const std::vector<float>& l, const std::vector<int>& hist,
 // The sampled chain's kept list, host side, as `sampled_reference` builds it: the top_k list in selection order cut
 // by top_p, then by min_p.
 std::vector<int> kept_reference(const std::vector<float>& l, const std::vector<int>& hist,
-                                const basalt::kernels::SamplerParams& p) {
+                                const granite::kernels::SamplerParams& p) {
     auto penal = [&](float logit, int count) {
         if (count <= 0) return logit;
         if (logit <= 0.0f) logit *= p.penalty_repeat; else logit /= p.penalty_repeat;
@@ -281,7 +281,7 @@ std::vector<int> kept_reference(const std::vector<float>& l, const std::vector<i
 
 // Survivors after the min_p + top_p cuts, in the sampled chain - the quantity an order or a threshold
 // actually changes, used to assert a fixture can SEE the feature before asserting the kernel matches.
-int sampled_cut(const std::vector<float>& l, const std::vector<int>& hist, const basalt::kernels::SamplerParams& p) {
+int sampled_cut(const std::vector<float>& l, const std::vector<int>& hist, const granite::kernels::SamplerParams& p) {
     auto penal = [&](float logit, int count) {
         if (count <= 0) return logit;
         if (logit <= 0.0f) logit *= p.penalty_repeat; else logit /= p.penalty_repeat;
@@ -333,7 +333,7 @@ struct SelList {
 };
 
 // The top_k list for one row: `window` is the counted history (the row's last penalty_last_n).
-SelList mirror_select(const float* l, int nv, const std::vector<int>& window, const basalt::kernels::SamplerParams& p,
+SelList mirror_select(const float* l, int nv, const std::vector<int>& window, const granite::kernels::SamplerParams& p,
                       int k) {
     std::vector<float> s((size_t) nv);
     for (int v = 0; v < nv; ++v) {
@@ -362,7 +362,7 @@ SelList mirror_select(const float* l, int nv, const std::vector<int>& window, co
 }
 
 // The tail over a list (its first `k` entries): top_p, min_p, temperature, the Philox draw.
-int mirror_pick(const SelList& sel, int k, const basalt::kernels::SamplerParams& p, int row) {
+int mirror_pick(const SelList& sel, int k, const granite::kernels::SamplerParams& p, int row) {
     int n_keep = k;
     float mx = sel.logit[0];
     for (int i = 1; i < k; ++i) mx = std::fmax(mx, sel.logit[(size_t) i]);
@@ -404,7 +404,7 @@ int sampled_k(int top_k, int nv) { return (top_k > 0 && top_k < nv) ? top_k : nv
 // The whole row in the selection order, as `mirror_select` would list it with k = nv: the selectable pairs (not NaN,
 // not -inf) by value, a tie to the lower id (-0 and +0 compare equal), then the sentinels (-inf, id 0).  A sort, so a
 // row of the engine's vocabulary is listed in full.
-SelList mirror_sorted(const float* l, int nv, const std::vector<int>& window, const basalt::kernels::SamplerParams& p) {
+SelList mirror_sorted(const float* l, int nv, const std::vector<int>& window, const granite::kernels::SamplerParams& p) {
     std::vector<float> s((size_t) nv);
     std::vector<int> cnt((size_t) nv, 0);
     for (int h : window)
@@ -436,7 +436,7 @@ SelList mirror_sorted(const float* l, int nv, const std::vector<int>& window, co
 
 // The final probability of `q` under the tail over a list (its first `k` entries), in double: top_p, min_p,
 // temperature as mirror_pick runs them; 0 outside the survivors.
-double mirror_prob(const SelList& sel, int k, const basalt::kernels::SamplerParams& p, int q) {
+double mirror_prob(const SelList& sel, int k, const granite::kernels::SamplerParams& p, int q) {
     int n_keep = k;
     float mx = sel.logit[0];
     for (int i = 1; i < k; ++i) mx = std::fmax(mx, sel.logit[(size_t) i]);
@@ -526,7 +526,7 @@ int wide_first(const std::vector<double>& e, int n, const WideSums& ws, double t
 }
 
 // the kept prefix, the temperature pass's terms (e) and their sums, as the wide path leaves them
-int wide_tail(const SelList& sel, int k, const basalt::kernels::SamplerParams& p, std::vector<double>& e, WideSums& s2) {
+int wide_tail(const SelList& sel, int k, const granite::kernels::SamplerParams& p, std::vector<double>& e, WideSums& s2) {
     const float x0 = sel.logit[0];
     e.assign((size_t) k, 0.0);
     int cut = k, below = k;
@@ -550,7 +550,7 @@ int wide_tail(const SelList& sel, int k, const basalt::kernels::SamplerParams& p
     return n_keep;
 }
 
-int mirror_pick_wide(const SelList& sel, int k, const basalt::kernels::SamplerParams& p, int row) {
+int mirror_pick_wide(const SelList& sel, int k, const granite::kernels::SamplerParams& p, int row) {
     if (!(sel.logit[0] > -std::numeric_limits<float>::infinity())) return 0;
     std::vector<double> e;
     WideSums s2;
@@ -561,7 +561,7 @@ int mirror_pick_wide(const SelList& sel, int k, const basalt::kernels::SamplerPa
     return sel.logit[(size_t) pi] > -std::numeric_limits<float>::infinity() ? sel.ids[(size_t) pi] : 0;
 }
 
-double mirror_prob_wide(const SelList& sel, int k, const basalt::kernels::SamplerParams& p, int q) {
+double mirror_prob_wide(const SelList& sel, int k, const granite::kernels::SamplerParams& p, int q) {
     std::vector<double> e;
     WideSums s2;
     const int n_keep = wide_tail(sel, k, p, e, s2);
@@ -570,7 +570,7 @@ double mirror_prob_wide(const SelList& sel, int k, const basalt::kernels::Sample
     return 0.0;
 }
 
-int wide_reference(const std::vector<float>& l, const std::vector<int>& hist, const basalt::kernels::SamplerParams& p,
+int wide_reference(const std::vector<float>& l, const std::vector<int>& hist, const granite::kernels::SamplerParams& p,
                    int row) {
     const int nv = (int) l.size();
     const int k = (p.top_k > 0 && p.top_k < nv) ? p.top_k : nv;
@@ -578,10 +578,10 @@ int wide_reference(const std::vector<float>& l, const std::vector<int>& hist, co
 }
 
 // the path the engine takes for a list of k: the top_k kernels up to 64, the wide path past it
-int mirror_pick_any(const SelList& sel, int k, const basalt::kernels::SamplerParams& p, int row) {
+int mirror_pick_any(const SelList& sel, int k, const granite::kernels::SamplerParams& p, int row) {
     return k > 64 ? mirror_pick_wide(sel, k, p, row) : mirror_pick(sel, k, p, row);
 }
-double mirror_prob_any(const SelList& sel, int k, const basalt::kernels::SamplerParams& p, int q) {
+double mirror_prob_any(const SelList& sel, int k, const granite::kernels::SamplerParams& p, int q) {
     return k > 64 ? mirror_prob_wide(sel, k, p, q) : mirror_prob(sel, k, p, q);
 }
 
@@ -613,7 +613,7 @@ int probe_parity() {
         check(cudaMalloc(&d_p, (size_t) T * sizeof(float)), "probe probs");
         check(cudaMemcpy(d_l, l.data(), l.size() * sizeof(float), cudaMemcpyHostToDevice), "probe copy");
         for (const Case& c : cases) {
-            basalt::kernels::SamplerParams p;
+            granite::kernels::SamplerParams p;
             p.top_k = c.top_k; p.top_p = c.top_p; p.min_p = c.min_p; p.temperature = c.temp; p.seed = 77; p.counter = 1000;
             const int k = sampled_k(p.top_k, NV);
             std::vector<SelList> lists;
@@ -630,8 +630,8 @@ int probe_parity() {
             const int nq = T - 1;   // as the verifier asks: the last row has no draft
             check(cudaMemcpy(d_q, q.data(), (size_t) T * sizeof(int), cudaMemcpyHostToDevice), "probe query copy");
             check(cudaMemset(d_p, 0xFF, (size_t) T * sizeof(float)), "probe fill");
-            basalt::kernels::sample_tokens(d_l, T, NV, nullptr, 0, p, d_r, nullptr);
-            basalt::kernels::sample_tokens_probe(d_l, T, NV, nullptr, 0, p, d_o, d_q, nq, d_p, nullptr);
+            granite::kernels::sample_tokens(d_l, T, NV, nullptr, 0, p, d_r, nullptr);
+            granite::kernels::sample_tokens_probe(d_l, T, NV, nullptr, 0, p, d_o, d_q, nq, d_p, nullptr);
             check(cudaDeviceSynchronize(), "probe sync");
             std::vector<int> ref((size_t) T), got((size_t) T);
             std::vector<float> pr((size_t) T);
@@ -657,9 +657,9 @@ int probe_parity() {
             // width: each row alone gives the same probability, bit for bit
             int width_diff = 0;
             for (int t = 0; t < std::min(nq, 8); ++t) {
-                basalt::kernels::SamplerParams p1 = p;
+                granite::kernels::SamplerParams p1 = p;
                 p1.counter = p.counter + (uint64_t) t;
-                basalt::kernels::sample_tokens_probe(d_l + (size_t) t * NV, 1, NV, nullptr, 0, p1, d_o, d_q + t, 1, d_p, nullptr);
+                granite::kernels::sample_tokens_probe(d_l + (size_t) t * NV, 1, NV, nullptr, 0, p1, d_o, d_q + t, 1, d_p, nullptr);
                 float one = 0.0f;
                 int pick1 = 0;
                 check(cudaMemcpy(&one, d_p, 4, cudaMemcpyDeviceToHost), "probe width back");
@@ -701,9 +701,9 @@ struct DeviceRows {
         cudaFree(o);
         if (h) cudaFree(h);
     }
-    std::vector<int> sample(const basalt::kernels::SamplerParams& p, cudaStream_t stream) {
+    std::vector<int> sample(const granite::kernels::SamplerParams& p, cudaStream_t stream) {
         check(cudaMemset(o, 0xFF, (size_t) n_tokens * sizeof(int)), "fill out");
-        basalt::kernels::sample_tokens(l, n_tokens, nv, h, hist_len, p, o, stream);
+        granite::kernels::sample_tokens(l, n_tokens, nv, h, hist_len, p, o, stream);
         if (stream != nullptr) check(cudaStreamSynchronize(stream), "stream sync");
         std::vector<int> got((size_t) n_tokens);
         check(cudaMemcpy(got.data(), o, got.size() * sizeof(int), cudaMemcpyDeviceToHost), "back");
@@ -735,9 +735,9 @@ void bench_sampled() {
         check(cudaMalloc(&d_o, (size_t) T * sizeof(int)), "bench out");
         check(cudaMemcpy(d_l, l.data(), l.size() * sizeof(float), cudaMemcpyHostToDevice), "bench copy");
         for (int k : {20, 64, 1000, 0}) {   // 1000 and 0 (the whole vocabulary): the wide path
-            basalt::kernels::SamplerParams p;
+            granite::kernels::SamplerParams p;
             p.top_k = k; p.top_p = 0.95f; p.temperature = 0.7f; p.seed = 1;
-            for (int w = 0; w < 3; ++w) basalt::kernels::sample_tokens(d_l, T, NV, nullptr, 0, p, d_o, s);
+            for (int w = 0; w < 3; ++w) granite::kernels::sample_tokens(d_l, T, NV, nullptr, 0, p, d_o, s);
             check(cudaStreamSynchronize(s), "bench warmup");
             cudaEvent_t e0, e1;
             check(cudaEventCreate(&e0), "event");
@@ -746,7 +746,7 @@ void bench_sampled() {
             check(cudaEventRecord(e0, s), "record");
             for (int it = 0; it < iters; ++it) {
                 p.counter = (uint64_t) it;
-                basalt::kernels::sample_tokens(d_l, T, NV, nullptr, 0, p, d_o, s);
+                granite::kernels::sample_tokens(d_l, T, NV, nullptr, 0, p, d_o, s);
             }
             check(cudaEventRecord(e1, s), "record");
             check(cudaEventSynchronize(e1), "bench sync");
@@ -762,7 +762,7 @@ void bench_sampled() {
             check(cudaEventRecord(e0, s), "record");
             for (int it = 0; it < iters; ++it) {
                 p.counter = (uint64_t) it;
-                basalt::kernels::sample_tokens_probe(d_l, T, NV, nullptr, 0, p, d_o, d_q, T, d_p, s);
+                granite::kernels::sample_tokens_probe(d_l, T, NV, nullptr, 0, p, d_o, d_q, T, d_p, s);
             }
             check(cudaEventRecord(e1, s), "record");
             check(cudaEventSynchronize(e1), "bench sync");
@@ -787,7 +787,7 @@ void bench_sampled() {
 // `bench`: then the per-call time of each at the engine's vocabulary and the default chain (top_k 20, top_p 0.95,
 // temperature 0.6), rows 1..8, and the engine's split with its kept lists out.
 int split_parity(bool bench) {
-    using namespace basalt::kernels;
+    using namespace granite::kernels;
     int bad = 0;
     std::mt19937 rng(91);
     cudaStream_t s = nullptr;
@@ -1030,12 +1030,12 @@ int drawn_parity() {
     int* dtop = nullptr;
     check(cudaMalloc(&dtop, (size_t) rows * 32 * sizeof(int)), "kept lists");
     for (const int top_k : {20, 32}) for (const int split : {0, 1, 2}) {
-        basalt::kernels::SamplerParams p;
+        granite::kernels::SamplerParams p;
         p.top_k = top_k; p.top_p = 0.95f; p.temperature = 0.9f; p.seed = 99;
         // the ids that can come out: the kept list (top_ids) and q's; p of each queried through qprob (rows ask for
         // different ids)
         p.top_ids = dtop; p.n_top = 32;
-        basalt::kernels::sample_tokens_split(split, dl, rows, vocab, nullptr, 0, p, dout, nullptr, 0, nullptr, nullptr);
+        granite::kernels::sample_tokens_split(split, dl, rows, vocab, nullptr, 0, p, dout, nullptr, 0, nullptr, nullptr);
         std::vector<int> kept_list(32);
         check(cudaMemcpy(kept_list.data(), dtop, 32 * sizeof(int), cudaMemcpyDeviceToHost), "kept list read");
         p.top_ids = nullptr; p.n_top = 0;
@@ -1048,7 +1048,7 @@ int drawn_parity() {
             for (int t = 0; t < rows && i0 + t < ids.size(); ++t) qq[(size_t) t] = ids[i0 + t];
             std::vector<float> pr((size_t) rows);
             check(cudaMemcpy(dquery, qq.data(), rows * sizeof(int), cudaMemcpyHostToDevice), "query upload");
-            basalt::kernels::sample_tokens_split(split, dl, rows, vocab, nullptr, 0, p, dout, dquery, rows, dprob, nullptr);
+            granite::kernels::sample_tokens_split(split, dl, rows, vocab, nullptr, 0, p, dout, dquery, rows, dprob, nullptr);
             check(cudaMemcpy(pr.data(), dprob, rows * sizeof(float), cudaMemcpyDeviceToHost), "prob read");
             for (int t = 0; t < rows && i0 + t < ids.size(); ++t) pw[i0 + t] = pr[(size_t) t];
         }
@@ -1068,7 +1068,7 @@ int drawn_parity() {
             for (int t = 0; t < rows; ++t) dr[(size_t) t] = qid[(size_t) qdraw(rng)];
             check(cudaMemcpy(dd, dr.data(), rows * sizeof(int), cudaMemcpyHostToDevice), "drafts upload");
             p.counter = (uint64_t) c * rows;
-            basalt::kernels::sample_tokens_split(split, dl, rows, vocab, nullptr, 0, p, dout, nullptr, 0, nullptr, nullptr);
+            granite::kernels::sample_tokens_split(split, dl, rows, vocab, nullptr, 0, p, dout, nullptr, 0, nullptr, nullptr);
             check(cudaMemcpy(out.data(), dout, rows * sizeof(int), cudaMemcpyDeviceToHost), "out read");
             for (int t = 0; t < rows; ++t) {
                 n += 1;
@@ -1093,12 +1093,12 @@ int drawn_parity() {
 }
 
 // `reps` of sample_tokens' greedy pick on `s` captured into a graph: a stream under capture takes the one-block argmax
-cudaGraphExec_t greedy_graph(const float* l, int T, int nv, const int* h, int H, const basalt::kernels::SamplerParams& p,
+cudaGraphExec_t greedy_graph(const float* l, int T, int nv, const int* h, int H, const granite::kernels::SamplerParams& p,
                              int* o, cudaStream_t s, int reps) {
     cudaGraph_t g = nullptr;
     cudaGraphExec_t ge = nullptr;
     check(cudaStreamBeginCapture(s, cudaStreamCaptureModeThreadLocal), "begin capture");
-    for (int r = 0; r < reps; ++r) basalt::kernels::sample_tokens(l, T, nv, h, H, p, o, s);
+    for (int r = 0; r < reps; ++r) granite::kernels::sample_tokens(l, T, nv, h, H, p, o, s);
     check(cudaStreamEndCapture(s, &g), "end capture");
     check(cudaGraphInstantiate(&ge, g, 0), "instantiate");
     cudaGraphDestroy(g);
@@ -1111,7 +1111,7 @@ cudaGraphExec_t greedy_graph(const float* l, int T, int nv, const int* h, int H,
 // block partway, exactly and one past the widest split - the same picks, and the host argmax on rows without penalties.
 // `bench`: then the per-call time of each at a 200,058-logit vocabulary, rows 1..8.
 int greedy_parity(bool bench) {
-    using namespace basalt::kernels;
+    using namespace granite::kernels;
     const float inf = std::numeric_limits<float>::infinity();
     const float qnan = std::numeric_limits<float>::quiet_NaN();
     cudaStream_t s = nullptr;
@@ -1328,7 +1328,7 @@ int main(int argc, char** argv) {
         std::vector<int> hist((size_t) NT * 4, 7);
         DeviceRows raw(l, NT, hist, 4), expected(adjusted, NT, hist, 4);
         for (bool greedy : {true, false}) for (bool penalty : {false, true}) {
-            basalt::kernels::SamplerParams p;
+            granite::kernels::SamplerParams p;
             p.greedy = greedy; p.temperature = greedy ? 0.0f : 0.8f; p.seed = 71; p.top_k = 16;
             if (penalty) { p.penalty_last_n = 4; p.penalty_freq = 3; p.penalty_repeat = 1.1f; }
             const auto want = expected.sample(p, nullptr);
@@ -1343,7 +1343,7 @@ int main(int argc, char** argv) {
             if (raw.sample(p, nullptr) != plain.sample(p, nullptr)) { std::printf("logit_bias: absent bias changed the pick\n"); ++bad; }
         }
         {   // the host argmax of the biased rows (lowest index on a tie)
-            basalt::kernels::SamplerParams p; p.greedy = true; p.temperature = 0.0f; p.logit_bias = db;
+            granite::kernels::SamplerParams p; p.greedy = true; p.temperature = 0.0f; p.logit_bias = db;
             DeviceRows no_hist(l, NT, {}, 0);
             const auto got = no_hist.sample(p, nullptr);
             for (int t = 0; t < NT; ++t) {
@@ -1373,7 +1373,7 @@ int main(int argc, char** argv) {
         for (auto& x : zeros) x = zg(zr);
         DeviceRows many(large, 1, {}, 0), spread(zeros, 1, {}, 0);
         for (int k : {0, 1, 20, 64}) for (bool greedy : {true, false}) for (float top_p : {1.0f, 0.5f}) for (float min_p : {0.0f, 0.3f}) {
-            basalt::kernels::SamplerParams p;
+            granite::kernels::SamplerParams p;
             p.greedy = greedy; p.temperature = greedy ? 0.0f : 1.0f; p.top_k = k; p.top_p = top_p; p.min_p = min_p;
             for (uint64_t seed = 1; seed <= 3; ++seed) {
                 p.seed = seed;
@@ -1389,7 +1389,7 @@ int main(int argc, char** argv) {
 
     // ---- fixture 1: plain greedy.  top_k = 0 (disabled), top_p = 1 (disabled), T = 1 -> argmax.
     {
-        basalt::kernels::SamplerParams p; p.top_k = 0; p.top_p = 1.0f; p.temperature = 1.0f; p.greedy = true;
+        granite::kernels::SamplerParams p; p.top_k = 0; p.top_p = 1.0f; p.temperature = 1.0f; p.greedy = true;
         std::mt19937 rng(3); std::normal_distribution<float> g(0.0f, 1.0f);
         std::vector<float> l((size_t) NV * NT);
         for (auto& v : l) v = g(rng);
@@ -1401,7 +1401,7 @@ int main(int argc, char** argv) {
     // ---- fixture 2: THE ORDER FIXTURE.  T = 0.5 sharpens the distribution enough that top_p = 0.5 cuts
     // differently before and after the scaling, and the two orders then pick DIFFERENT tokens.
     {
-        basalt::kernels::SamplerParams p; p.top_k = 0; p.top_p = 0.5f; p.temperature = 0.5f;
+        granite::kernels::SamplerParams p; p.top_k = 0; p.top_p = 0.5f; p.temperature = 0.5f;
         p.min_keep = 1; p.greedy = true;
         std::vector<float> l((size_t) NV * NT, -1000.0f);
         for (int t = 0; t < NT; ++t) {
@@ -1439,8 +1439,8 @@ int main(int argc, char** argv) {
     // ---- fixture 3: greedy consumes NO random number.  Two runs with different seeds must agree, or the
     // seeded streams diverge between greedy and sampled runs - which the sampling contract calls out.
     {
-        basalt::kernels::SamplerParams a; a.top_k = 20; a.top_p = 0.95f; a.temperature = 1.0f; a.greedy = true; a.seed = 1;
-        basalt::kernels::SamplerParams b = a; b.seed = 999999;
+        granite::kernels::SamplerParams a; a.top_k = 20; a.top_p = 0.95f; a.temperature = 1.0f; a.greedy = true; a.seed = 1;
+        granite::kernels::SamplerParams b = a; b.seed = 999999;
         std::mt19937 rng(5); std::normal_distribution<float> g(0.0f, 1.0f);
         std::vector<float> l((size_t) NV * NT);
         for (auto& v : l) v = g(rng);
@@ -1451,8 +1451,8 @@ int main(int argc, char** argv) {
         check(cudaMalloc(&d_a, (size_t) NT * sizeof(int)), "m2");
         check(cudaMalloc(&d_b, (size_t) NT * sizeof(int)), "m3");
         check(cudaMemcpy(d_l, l.data(), l.size() * sizeof(float), cudaMemcpyHostToDevice), "c1");
-        basalt::kernels::sample_tokens(d_l, NT, NV, nullptr, 0, a, d_a, nullptr);
-        basalt::kernels::sample_tokens(d_l, NT, NV, nullptr, 0, b, d_b, nullptr);
+        granite::kernels::sample_tokens(d_l, NT, NV, nullptr, 0, a, d_a, nullptr);
+        granite::kernels::sample_tokens(d_l, NT, NV, nullptr, 0, b, d_b, nullptr);
         std::vector<int> ga((size_t) NT), gb((size_t) NT);
         check(cudaMemcpy(ga.data(), d_a, ga.size() * sizeof(int), cudaMemcpyDeviceToHost), "g1");
         check(cudaMemcpy(gb.data(), d_b, gb.size() * sizeof(int), cudaMemcpyDeviceToHost), "g2");
@@ -1472,14 +1472,14 @@ int main(int argc, char** argv) {
     // ---- fixture 4: PENALTIES.  Two sub-cases, each built so the rule it tests decides the answer.
     {
         // host reference for the penalty stage, transcribed from llama_sampler_penalties_apply
-        auto penal = [](float logit, int count, const basalt::kernels::SamplerParams& p) {
+        auto penal = [](float logit, int count, const granite::kernels::SamplerParams& p) {
             if (count <= 0) return logit;
             if (logit <= 0.0f) logit *= p.penalty_repeat; else logit /= p.penalty_repeat;
             logit -= (float) count * p.penalty_freq + (count > 0 ? 1.0f : 0.0f) * p.penalty_present;
             return logit;
         };
         auto pick = [&](const std::vector<float>& l, const std::vector<int>& hist,
-                        const basalt::kernels::SamplerParams& p, bool divide_unconditionally) {
+                        const granite::kernels::SamplerParams& p, bool divide_unconditionally) {
             int best = 0; float bv = 0; bool first = true;
             for (int v = 0; v < (int) l.size(); ++v) {
                 int c = 0; for (int h : hist) if (h == v) ++c;
@@ -1496,7 +1496,7 @@ int main(int argc, char** argv) {
         };
 
         const int NV2 = 8, NT2 = 2;
-        basalt::kernels::SamplerParams p; p.top_k = 0; p.top_p = 1.0f; p.temperature = 1.0f;
+        granite::kernels::SamplerParams p; p.top_k = 0; p.top_p = 1.0f; p.temperature = 1.0f;
         p.greedy = true; p.penalty_last_n = 4; p.penalty_repeat = 2.0f;
 
         // A: ALL logits negative, so the multiply-or-divide rule decides the argmax
@@ -1533,7 +1533,7 @@ int main(int argc, char** argv) {
             hist_b[(size_t) t * 4 + 0] = 0;
             hist_b[(size_t) t * 4 + 1] = 0;        // twice
         }
-        basalt::kernels::SamplerParams q = p; q.penalty_present = 1.5f; q.penalty_freq = 0.0f;
+        granite::kernels::SamplerParams q = p; q.penalty_present = 1.5f; q.penalty_freq = 0.0f;
         std::vector<int> want_b((size_t) NT2);
         for (int t = 0; t < NT2; ++t) {
             const std::vector<float> row(lb.begin() + (size_t) t * NV2, lb.begin() + (size_t) (t + 1) * NV2);
@@ -1563,14 +1563,14 @@ int main(int argc, char** argv) {
             l[(size_t) t * NV3 + 0] = -9.0f;             // token 0 is the worst in the row
             want[(size_t) t] = best;
         }
-        basalt::kernels::SamplerParams p0;
+        granite::kernels::SamplerParams p0;
         p0.top_k = 0; p0.top_p = 1.0f; p0.temperature = 0.0f; p0.greedy = false;
         bad += run("T=0 greedy=false is the argmax", l, NT3, p0, want);
 
-        basalt::kernels::SamplerParams p1 = p0; p1.greedy = true;
+        granite::kernels::SamplerParams p1 = p0; p1.greedy = true;
         bad += run("T=0 greedy=true  is the argmax", l, NT3, p1, want);
 
-        basalt::kernels::SamplerParams p2 = p0; p2.greedy = true; p2.temperature = 1.0f;
+        granite::kernels::SamplerParams p2 = p0; p2.greedy = true; p2.temperature = 1.0f;
         bad += run("T=1 greedy=true  is the argmax", l, NT3, p2, want);
     }
 
@@ -1579,7 +1579,7 @@ int main(int argc, char** argv) {
     // the penalties on, the history row's favourite must LOSE a pick it would win penalty-free.
     {
         const int NV2 = 8, NT2 = 2;
-        basalt::kernels::SamplerParams p;
+        granite::kernels::SamplerParams p;
         p.top_k = 5; p.top_p = 0.9f; p.temperature = 0.8f; p.seed = 9; p.counter = 0;
         p.penalty_last_n = 4; p.penalty_repeat = 3.0f; p.penalty_freq = 0.2f; p.penalty_present = 0.6f;
 
@@ -1592,7 +1592,7 @@ int main(int argc, char** argv) {
             hist[(size_t) t * 4 + 1] = t == 1 ? 0 : -1;                    // (repeat 3, freq, presence)
         }
         std::vector<int> want((size_t) NT2), clean((size_t) NT2);
-        basalt::kernels::SamplerParams clean_p = p;
+        granite::kernels::SamplerParams clean_p = p;
         clean_p.penalty_last_n = 0; clean_p.penalty_repeat = 1.0f;
         clean_p.penalty_freq = 0.0f; clean_p.penalty_present = 0.0f;
         for (int t = 0; t < NT2; ++t) {
@@ -1620,13 +1620,13 @@ int main(int argc, char** argv) {
             row[0] = 4.0f; row[1] = 3.5f; row[2] = 3.2f; row[3] = 3.1f;   // gaps keep the cut off the
             row[4] = 2.0f;                                                // logf/rounding knife edge
         }
-        basalt::kernels::SamplerParams base;
+        granite::kernels::SamplerParams base;
         base.top_k = 6; base.top_p = 1.0f; base.temperature = 0.9f; base.seed = 77;
 
         int c0 = 0, c05 = 0, c09 = 0;
         for (int t = 0; t < NT3; ++t) {
             const std::vector<float> row(l.begin() + (size_t) t * NV3, l.begin() + (size_t) (t + 1) * NV3);
-            basalt::kernels::SamplerParams q = base; q.min_p = 0.0f;
+            granite::kernels::SamplerParams q = base; q.min_p = 0.0f;
             c0 += sampled_cut(row, {}, q);
             q.min_p = 0.5f; c05 += sampled_cut(row, {}, q);
             q.min_p = 0.9f; c09 += sampled_cut(row, {}, q);
@@ -1637,7 +1637,7 @@ int main(int argc, char** argv) {
         if (!visible) ++bad;
 
         for (float mp : {0.0f, 0.5f, 0.9f}) {
-            basalt::kernels::SamplerParams q = base; q.min_p = mp;
+            granite::kernels::SamplerParams q = base; q.min_p = mp;
             std::vector<int> want((size_t) NT3);
             for (int t = 0; t < NT3; ++t) {
                 const std::vector<float> row(l.begin() + (size_t) t * NV3, l.begin() + (size_t) (t + 1) * NV3);
@@ -1655,7 +1655,7 @@ int main(int argc, char** argv) {
     // the reference once more WITHOUT the clamp (counting all 8) and requires the picks to differ.
     {
         const int NV4 = 8;
-        basalt::kernels::SamplerParams p;
+        granite::kernels::SamplerParams p;
         p.top_k = 0; p.top_p = 1.0f; p.temperature = 1.0f; p.greedy = true;
         p.penalty_last_n = 4; p.penalty_repeat = 3.0f; p.penalty_freq = 0.3f; p.penalty_present = 0.5f;
 
@@ -1690,7 +1690,7 @@ int main(int argc, char** argv) {
     // 0.014), and its picks must equal the reference's draw for draw.
     {
         const int NT9 = 8000;
-        basalt::kernels::SamplerParams p;
+        granite::kernels::SamplerParams p;
         p.top_k = 2; p.top_p = 1.0f; p.min_p = 0.0f; p.temperature = 0.7f; p.seed = 53; p.counter = 0;
         p.penalty_last_n = 1; p.penalty_repeat = 1.0f; p.penalty_freq = 0.0f; p.penalty_present = 1.5f;
         std::vector<float> l((size_t) 2 * NT9, 0.0f);
@@ -1715,7 +1715,7 @@ int main(int argc, char** argv) {
     // 2 must be drawn sometimes - never in the old order - and every pick must equal the reference's.
     {
         const int NT10 = 256;
-        basalt::kernels::SamplerParams p;
+        granite::kernels::SamplerParams p;
         p.top_k = 4; p.top_p = 0.75f; p.min_p = 0.3f; p.temperature = 1.0f; p.seed = 10; p.counter = 0;
         const float lp[4] = {std::log(0.4f), std::log(0.3f), std::log(0.2f), std::log(0.1f)};
         std::vector<float> row = {lp[0], lp[1], lp[2], lp[3], -30.0f, -30.0f, -30.0f, -30.0f};
@@ -1743,7 +1743,7 @@ int main(int argc, char** argv) {
         std::vector<int> hist((size_t) NT * 8, -1);
         for (int t = 0; t < NT; ++t) hist[(size_t) t * 8] = 3;
 
-        basalt::kernels::SamplerParams p;
+        granite::kernels::SamplerParams p;
         p.top_k = 20; p.top_p = 0.95f; p.temperature = 0.8f; p.seed = 5;
         std::vector<int> want((size_t) NT);
         for (int t = 0; t < NT; ++t)
@@ -1751,7 +1751,7 @@ int main(int argc, char** argv) {
                                                   l.begin() + (size_t) (t + 1) * NV}, {}, p, t);
         bad += run("stale history, last_n=0 (sampled)", l, NT, p, want, hist, 8);
 
-        basalt::kernels::SamplerParams gp = p; gp.greedy = true; gp.top_k = 0; gp.top_p = 1.0f;
+        granite::kernels::SamplerParams gp = p; gp.greedy = true; gp.top_k = 0; gp.top_p = 1.0f;
         std::vector<int> gwant((size_t) NT);
         for (int t = 0; t < NT; ++t)
             gwant[(size_t) t] = reference_pick({l.begin() + (size_t) t * NV,
@@ -1766,7 +1766,7 @@ int main(int argc, char** argv) {
     // penalty overturns.
     {
         auto greedy_pen = [](const std::vector<float>& l, const std::vector<int>& hist,
-                             const basalt::kernels::SamplerParams& p) {
+                             const granite::kernels::SamplerParams& p) {
             int best = 0; float bv = 0; bool first = true;
             for (int v = 0; v < (int) l.size(); ++v) {
                 int c = 0; for (int h : hist) if (h == v) ++c;
@@ -1789,14 +1789,14 @@ int main(int argc, char** argv) {
                 std::vector<int32_t> window((size_t) T);
                 for (int t = 0; t < T; ++t) window[(size_t) t] = (int32_t) (100 + 37 * t);   // distinct, in range
                 std::vector<int32_t> rows((size_t) T * H);
-                basalt::kernels::penalty_rows(tail.data(), TAIL, window.data(), T, H, rows.data());
+                granite::kernels::penalty_rows(tail.data(), TAIL, window.data(), T, H, rows.data());
                 std::vector<float> l((size_t) T * NV);
                 for (auto& v : l) v = g(rng);
                 for (int t = 0; t < T; ++t) l[(size_t) t * NV + window[(size_t) t]] = 5.0f;
-                basalt::kernels::SamplerParams gp;
+                granite::kernels::SamplerParams gp;
                 gp.greedy = true; gp.temperature = 0.0f; gp.top_k = 0; gp.top_p = 1.0f;
                 gp.penalty_last_n = H; gp.penalty_present = 4.0f;
-                basalt::kernels::SamplerParams sp2;
+                granite::kernels::SamplerParams sp2;
                 sp2.top_k = 20; sp2.top_p = 0.9f; sp2.temperature = 0.7f; sp2.seed = 1000 + (uint64_t) H;
                 sp2.counter = 77; sp2.penalty_last_n = H; sp2.penalty_present = 4.0f; sp2.penalty_repeat = 1.1f;
                 std::vector<int> gwant((size_t) T), swant((size_t) T), rows_int(rows.begin(), rows.end());
@@ -1841,10 +1841,10 @@ int main(int argc, char** argv) {
             }
             l[(size_t) t * NV + hist[(size_t) t * H + 1]] = 4.0f;     // a penalised favourite, so penalties matter
         }
-        basalt::kernels::SamplerParams gp;
+        granite::kernels::SamplerParams gp;
         gp.greedy = true; gp.temperature = 0.0f; gp.top_k = 0; gp.top_p = 1.0f;
         gp.penalty_last_n = H; gp.penalty_present = 3.0f;
-        basalt::kernels::SamplerParams sp2 = gp;
+        granite::kernels::SamplerParams sp2 = gp;
         sp2.greedy = false; sp2.temperature = 0.8f; sp2.top_k = 20; sp2.top_p = 0.95f; sp2.seed = 13;
         std::vector<int> gwant((size_t) NT), swant((size_t) NT);
         for (int t = 0; t < NT; ++t) {
@@ -1874,10 +1874,10 @@ int main(int argc, char** argv) {
         std::mt19937 rng(14); std::normal_distribution<float> g(0.0f, 1.0f);
         std::vector<float> l((size_t) NV * NT);
         for (auto& v : l) v = g(rng) * 0.3f;
-        basalt::kernels::SamplerParams base;
+        granite::kernels::SamplerParams base;
         base.top_p = 1.0f; base.temperature = 1.5f; base.seed = 14;
         auto want_of = [&](int top_k) {
-            basalt::kernels::SamplerParams p = base; p.top_k = top_k;
+            granite::kernels::SamplerParams p = base; p.top_k = top_k;
             std::vector<int> want((size_t) NT);
             for (int t = 0; t < NT; ++t)
                 want[(size_t) t] = sampled_reference({l.begin() + (size_t) t * NV, l.begin() + (size_t) (t + 1) * NV},
@@ -1894,7 +1894,7 @@ int main(int argc, char** argv) {
                         {"sampled top_k=-3 is the whole row", -3, &wall},
                         {"sampled top_k > n_vocab is the whole row", NV + 5, &wall}};
         for (const K& k : ks) {
-            basalt::kernels::SamplerParams p = base; p.top_k = k.top_k;
+            granite::kernels::SamplerParams p = base; p.top_k = k.top_k;
             bad += run(k.name, l, NT, p, k.want ? *k.want : want_of(k.top_k));
         }
     }
@@ -1910,7 +1910,7 @@ int main(int argc, char** argv) {
                     for (int i = 0; i < n_tail; ++i) tail[(size_t) i] = 1000 + i;
                     for (int i = 0; i < T; ++i) window[(size_t) i] = 5000 + i;
                     std::vector<int32_t> rows((size_t) T * h, 12345);
-                    basalt::kernels::penalty_rows(tail.data(), n_tail, window.data(), T, h, rows.data());
+                    granite::kernels::penalty_rows(tail.data(), n_tail, window.data(), T, h, rows.data());
                     for (int t = 0; t < T; ++t) {
                         std::vector<int32_t> seq(tail);
                         seq.insert(seq.end(), window.begin(), window.begin() + t + 1);
@@ -1944,17 +1944,17 @@ int main(int argc, char** argv) {
         check(cudaMalloc(&input, uniform.size() * sizeof(float)), "counter logits");
         check(cudaMalloc(&output, count * sizeof(int)), "counter output");
         check(cudaMemcpy(input, uniform.data(), uniform.size() * sizeof(float), cudaMemcpyHostToDevice), "counter upload");
-        basalt::kernels::SamplerParams p;
+        granite::kernels::SamplerParams p;
         p.top_k = vocab; p.top_p = 1.0f; p.seed = 123; p.counter = (uint64_t(1) << 32) + 7;
-        basalt::kernels::sample_tokens(input, count, vocab, nullptr, 0, p, output, nullptr);
+        granite::kernels::sample_tokens(input, count, vocab, nullptr, 0, p, output, nullptr);
         std::vector<int> batch(count), singles(count), repeated(count);
         check(cudaMemcpy(batch.data(), output, count * sizeof(int), cudaMemcpyDeviceToHost), "counter batch");
         for (int i = 0; i < count; ++i) {
             auto one = p; one.counter += i;
-            basalt::kernels::sample_tokens(input, 1, vocab, nullptr, 0, one, output + i, nullptr);
+            granite::kernels::sample_tokens(input, 1, vocab, nullptr, 0, one, output + i, nullptr);
         }
         check(cudaMemcpy(singles.data(), output, count * sizeof(int), cudaMemcpyDeviceToHost), "counter singles");
-        basalt::kernels::sample_tokens(input, count, vocab, nullptr, 0, p, output, nullptr);
+        granite::kernels::sample_tokens(input, count, vocab, nullptr, 0, p, output, nullptr);
         check(cudaMemcpy(repeated.data(), output, count * sizeof(int), cudaMemcpyDeviceToHost), "counter repeated");
         bool varies = false;
         for (int i = 1; i < count; ++i) varies |= batch[i] != batch[0];
@@ -2024,7 +2024,7 @@ int main(int argc, char** argv) {
             for (int j = 0; j < 30; ++j) r3[spread(j + 600)] = j < 15 ? 3.75f : 3.5f;
             r3[nv / 2] = inf;                                                   // not in the window
 
-            basalt::kernels::SamplerParams base;
+            granite::kernels::SamplerParams base;
             base.top_p = 1.0f; base.min_p = 0.0f; base.temperature = 0.8f; base.seed = 16;
             base.penalty_last_n = H; base.penalty_repeat = 2.0f; base.penalty_freq = 0.25f;
             base.penalty_present = 0.5f;
@@ -2036,7 +2036,7 @@ int main(int argc, char** argv) {
             for (int k = 1; k <= 64; ++k) top_ks.push_back(k);
             for (int k : {65, 100, 1000, 0, -3}) top_ks.push_back(k);
             for (int top_k : top_ks) {
-                basalt::kernels::SamplerParams p = base;
+                granite::kernels::SamplerParams p = base;
                 p.top_k = top_k;
                 p.top_p = (top_k & 1) ? 0.5f : 1.0f;                            // both tail branches (NaN: no cut)
                 p.counter = (uint64_t) (top_k + 3);
@@ -2094,7 +2094,7 @@ int main(int argc, char** argv) {
             DeviceRows rows(l, T, hist, H);
             int config = 0;
             for (int pen = 0; pen < 2; ++pen) {
-                basalt::kernels::SamplerParams base;
+                granite::kernels::SamplerParams base;
                 base.temperature = 2.5f; base.seed = 17;
                 base.penalty_last_n = pen ? H : 0;
                 base.penalty_repeat = 1.25f; base.penalty_freq = 0.25f; base.penalty_present = 0.5f;
@@ -2106,7 +2106,7 @@ int main(int argc, char** argv) {
                     for (float top_p : {0.9f, 1.0f})
                         for (float min_p : {0.0f, 0.05f})
                             for (cudaStream_t st : {(cudaStream_t) nullptr, cs}) {
-                                basalt::kernels::SamplerParams p = base;
+                                granite::kernels::SamplerParams p = base;
                                 p.top_k = top_k; p.top_p = top_p; p.min_p = min_p;
                                 p.counter = (uint64_t) (1000 * ++config);
                                 const int k = sampled_k(top_k, nv);
@@ -2148,7 +2148,7 @@ int main(int argc, char** argv) {
         int wrong = 0, draws = 0;
         const int H = 64;
         auto compare = [&](const char* what, const std::vector<int>& got, const std::vector<SelList>& lists, int k,
-                           const basalt::kernels::SamplerParams& p) {
+                           const granite::kernels::SamplerParams& p) {
             for (size_t t = 0; t < got.size(); ++t) {
                 const int want = mirror_pick(lists[t], k, p, (int) t);
                 ++draws;
@@ -2171,7 +2171,7 @@ int main(int argc, char** argv) {
             std::vector<float> l;
             std::vector<int> hist;
             make(nv, T, 1800u, l, hist);
-            basalt::kernels::SamplerParams p;
+            granite::kernels::SamplerParams p;
             p.top_k = 20; p.top_p = 0.9f; p.temperature = 2.5f; p.seed = 18; p.counter = 77;
             p.penalty_last_n = H; p.penalty_repeat = 1.25f; p.penalty_freq = 0.25f; p.penalty_present = 0.5f;
             const int k = sampled_k(p.top_k, nv);
@@ -2185,7 +2185,7 @@ int main(int argc, char** argv) {
             cudaGraph_t graph = nullptr;
             cudaGraphExec_t exec = nullptr;
             check(cudaStreamBeginCapture(cs, cudaStreamCaptureModeThreadLocal), "begin capture");
-            basalt::kernels::sample_tokens(rows.l, T, nv, rows.h, H, p, rows.o, cs);
+            granite::kernels::sample_tokens(rows.l, T, nv, rows.h, H, p, rows.o, cs);
             check(cudaStreamEndCapture(cs, &graph), "end capture");
             check(cudaGraphInstantiate(&exec, graph, 0), "instantiate");
             for (int replay = 0; replay < 2; ++replay) {
@@ -2206,7 +2206,7 @@ int main(int argc, char** argv) {
             std::vector<float> l;
             std::vector<int> hist;
             make(nv, T, 1810u + (unsigned) T, l, hist);
-            basalt::kernels::SamplerParams p;
+            granite::kernels::SamplerParams p;
             p.top_k = 64; p.top_p = 1.0f; p.temperature = 2.5f; p.seed = 18; p.counter = (uint64_t) T;
             const int k = sampled_k(p.top_k, nv);
             std::vector<SelList> lists;

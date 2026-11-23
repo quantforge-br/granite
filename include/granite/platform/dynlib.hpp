@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace basalt::platform {
+namespace granite::platform {
 
 class DynLib {
 public:
@@ -49,4 +49,4 @@ private:
     void* h_ = nullptr;
 };
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 // `id:value,id:value` -> one bias per vocabulary entry, added to the logits before the sampler chain.  Values are
 // -100..100; -100 bans the token (-inf), the others are added as given.  False with `err` set (and `out` empty) for
@@ -44,4 +44,4 @@ inline bool parse_logit_bias(const std::string& text, int vocab, std::vector<flo
     return true;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

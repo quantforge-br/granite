@@ -18,20 +18,20 @@
 #include <string>
 #include <vector>
 
-namespace basalt {
+namespace granite {
 class GgufFile;
 }
-namespace basalt::core {
+namespace granite::core {
 struct ConversationKv;
 class LoadPlan;
 }
-namespace basalt::program {
+namespace granite::program {
 struct CommonOptions;
 struct GpuCard;
 struct ProbeEnv;
 }
 
-namespace basalt::model {
+namespace granite::model {
 
 /// Geometry of the model as shared code needs it. A model fills what it has; the rest stays zero.
 struct ModelDesc {
@@ -379,4 +379,4 @@ const ModelAdapter* adapter_for(const GgufFile& meta, std::string& err);
 /// Replaces the old architecture guard: empty when the file belongs to a registered model and validates.
 std::string check_architecture(const GgufFile& meta);
 
-}  // namespace basalt::model
+}  // namespace granite::model

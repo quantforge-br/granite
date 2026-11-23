@@ -8,7 +8,7 @@
 #include <memory>
 #include <string>
 
-namespace basalt::test {
+namespace granite::test {
 
 class MetaAdapter final : public model::ModelAdapter {
 public:
@@ -35,4 +35,4 @@ inline void register_meta_adapters() {
         model::register_adapter(std::make_unique<MetaAdapter>("inkling2", models::inkling2::validate_meta, models::inkling2::describe_meta));
 }
 
-}  // namespace basalt::test
+}  // namespace granite::test

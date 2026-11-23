@@ -10,7 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 // The sampled list: top_k as given, 0 (off) or more than the vocabulary the whole vocabulary.  The top_k kernels keep
 // lists up to kSamplerNarrowMax; a longer one takes the wide path (sorted rows), which needs sampler_wide_reserve.
@@ -100,4 +100,4 @@ inline void penalty_rows(const int32_t* tail, int64_t n_tail, const int32_t* win
     }
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

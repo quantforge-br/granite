@@ -9,7 +9,7 @@
 #include <functional>
 #include <string>
 
-namespace basalt::platform {
+namespace granite::platform {
 
 struct LockResult {
     bool ok = false;
@@ -274,4 +274,4 @@ void advise_willneed(const void* const* addrs, const uint64_t* sizes, size_t n);
 /// through a descriptor are therefore warmed as they are read, not ahead of it.
 void advise_willneed(int fd, uint64_t offset, uint64_t bytes);
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

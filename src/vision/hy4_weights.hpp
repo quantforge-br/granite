@@ -8,7 +8,7 @@
 
 #include "granite/vision/mmproj.hpp"
 
-namespace basalt::vision::hy4 {
+namespace granite::vision::hy4 {
 
 inline uint16_t bf16_of(float v) {
     uint32_t u;
@@ -45,4 +45,4 @@ inline bool out_matrix(const Mmproj& m, int E, int proj, uint16_t* dst, std::str
     return true;
 }
 
-}  // namespace basalt::vision::hy4
+}  // namespace granite::vision::hy4

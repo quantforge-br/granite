@@ -33,7 +33,7 @@
 
 namespace {
 
-namespace kc = basalt::kernels::cpu;
+namespace kc = granite::kernels::cpu;
 #ifdef BASALT_IQ1S_GPU
 #endif
 
@@ -332,7 +332,7 @@ void cpu_dot() {
 }
 
 #ifdef BASALT_IQ1S_GPU
-namespace kg = basalt::kernels;
+namespace kg = granite::kernels;
 
 void ck(cudaError_t e, const char* what) {
     if (e != cudaSuccess) {

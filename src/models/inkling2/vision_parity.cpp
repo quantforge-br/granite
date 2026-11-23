@@ -26,8 +26,8 @@
 #include <string>
 #include <vector>
 
-using namespace basalt;
-using namespace basalt::models::inkling2;
+using namespace granite;
+using namespace granite::models::inkling2;
 
 namespace {
 

@@ -49,11 +49,11 @@
 #include <string>
 #include <vector>
 
-namespace basalt::prefill::mmq {
+namespace granite::prefill::mmq {
 class Context;
 }
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 constexpr int kDsMaxLayers = 4;
 
@@ -144,7 +144,7 @@ public:
     /// The context of `rows` rows from the tap's rows row0.. (a batch window's segment starts past row 0).
     void commit(const int32_t* pos_d, int rows, void* stream, int row0 = 0);
     /// Batched commit for prompt chunks: runs dspark_mix once and projects k_ctx / v_ctx through MMQ.
-    void commit_prompt(const int32_t* pos_d, int rows, basalt::prefill::mmq::Context& mmq, const PromptScratch& s, void* stream);
+    void commit_prompt(const int32_t* pos_d, int rows, granite::prefill::mmq::Context& mmq, const PromptScratch& s, void* stream);
     /// The host's record of the same rows (outside a captured forward).
     void note(int64_t pos0, int rows);
     model::Result draft_begin(int32_t anchor, int64_t pos, int n, void* stream);
@@ -183,7 +183,7 @@ private:
     // block
     float *x_ = nullptr, *q_ = nullptr, *qr_ = nullptr, *attn_ = nullptr, *h_ = nullptr, *att_scr_ = nullptr;
     void *act_a_ = nullptr, *act_h_ = nullptr;   ///< the window gemm's bf16 rows: a product's input, SwiGLU's output
-    basalt::kernels::wgemm::Workspace ws_;
+    granite::kernels::wgemm::Workspace ws_;
     int32_t* pos3b_ = nullptr;
     int64_t att_cells_ = 0;
     // head
@@ -218,4 +218,4 @@ bool dspark_parse_flag(const std::string& a, model::FlagArgs& args, program::Com
 /// is dropped with a warning.
 void dspark_finish_flags(program::CommonOptions& o);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

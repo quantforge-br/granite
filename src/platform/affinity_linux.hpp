@@ -8,7 +8,7 @@
 #include <cstring>
 #include <vector>
 
-namespace basalt::platform::detail {
+namespace granite::platform::detail {
 
 // CPU_ALLOC and the sized macros also handle kernels whose CPU mask exceeds CPU_SETSIZE.
 // Keep the native mask opaque: copy its bytes for storage and use CPU_*_S to inspect it.
@@ -47,4 +47,4 @@ inline int get_thread_affinity(std::vector<unsigned long>& mask, std::vector<int
     }
 }
 
-}  // namespace basalt::platform::detail
+}  // namespace granite::platform::detail

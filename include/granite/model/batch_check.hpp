@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::model {
+namespace granite::model {
 
 struct BatchCheck {
     int compared = 0;     ///< windows compared, row by row and their last logits
@@ -25,4 +25,4 @@ struct BatchCheck {
 /// other rows of its call nor on its place among them. Each session then keeps its first pick. Error: a session failed.
 Result check_batch(ModelSession* const* ss, int n, const std::vector<int32_t>& prompt, int steps, int64_t n_vocab, BatchCheck& out);
 
-}  // namespace basalt::model
+}  // namespace granite::model

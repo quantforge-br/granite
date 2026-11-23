@@ -35,7 +35,7 @@
 #include <string>
 #include <vector>
 
-namespace k = basalt::kernels;
+namespace k = granite::kernels;
 
 namespace {
 

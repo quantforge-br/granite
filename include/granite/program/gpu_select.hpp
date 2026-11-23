@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::program {
+namespace granite::program {
 
 /// One card this process can see.
 struct GpuCard {
@@ -111,4 +111,4 @@ std::string gpu_plan_json(const std::vector<GpuCard>& visible, const GpuChoice& 
 bool select_gpus(const std::string& text, const char* label, std::string& engine_value, std::vector<GpuCard>& used,
                  std::string& err);
 
-}  // namespace basalt::program
+}  // namespace granite::program

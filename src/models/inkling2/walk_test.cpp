@@ -6,7 +6,7 @@
 #include <cstdio>
 #include <vector>
 
-using namespace basalt::models::inkling2;
+using namespace granite::models::inkling2;
 
 namespace {
 

@@ -16,7 +16,7 @@
 #include <stdexcept>
 #include <string>
 
-using namespace basalt::program::grammar;
+using namespace granite::program::grammar;
 
 static int g_cases = 0;
 

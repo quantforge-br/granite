@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 struct JsonValue {
     enum class Type { Null, Bool, Number, String, Array, Object };
@@ -276,4 +276,4 @@ private:
     }
 };
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

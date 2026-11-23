@@ -1,7 +1,7 @@
 // src/program/serve/request.cpp - ordered execution of one request.
 #include "request.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 Flow Request::execute() {
     struct Scope {   // what tells the idle conversations' parking where this request works, until it ends
@@ -16,4 +16,4 @@ Flow Request::execute() {
     return complete();
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

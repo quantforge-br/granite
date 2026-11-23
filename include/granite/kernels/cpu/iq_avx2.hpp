@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 /// ggml's quantize_row_q8_K for k floats (a multiple of 256), bit for bit.
 void quantize_q8_K_avx2(const float* x, void* dst, int64_t k);
@@ -57,4 +57,4 @@ void iq4nl256_down_rows_base(const uint8_t* w, size_t row_bytes, int n, const vo
 void iq4nl256_down_rows_vnni(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt,
                              float* const* out, int r0, int r1);
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

@@ -64,15 +64,15 @@
 
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
-using namespace basalt::program;
+using namespace granite::program;
 
 namespace {
 
 // ---------------------------------------------------------------------------------------------- small helpers
 
 // Without --engine / --fixtures: the install's own (an unpacked release has them beside this program), else the build's.
-std::string engine_default() { return default_engine(basalt::platform::module_path(), BASALT_BENCH_ENGINE); }
-std::string fixtures_default() { return default_fixtures(basalt::platform::install_root(), BASALT_BENCH_FIXTURES); }
+std::string engine_default() { return default_engine(granite::platform::module_path(), BASALT_BENCH_ENGINE); }
+std::string fixtures_default() { return default_fixtures(granite::platform::install_root(), BASALT_BENCH_FIXTURES); }
 
 std::string fmt(const char* f, ...) {
     va_list ap;
@@ -89,7 +89,7 @@ std::string fmt(const char* f, ...) {
 
 double secs(Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double>(b - a).count(); }
 
-using basalt::program::json_quote;
+using granite::program::json_quote;
 
 // Streaming JSON writer: commas and key/value pairing are tracked here.
 class JW {
@@ -136,7 +136,7 @@ public:
     };
 
     bool open() {
-        lib_ = basalt::platform::DynLib::open_nvml();
+        lib_ = granite::platform::DynLib::open_nvml();
         if (!lib_) return false;
         init_ = lib_.sym<int (*)()>("nvmlInit_v2");
         shut_ = lib_.sym<int (*)()>("nvmlShutdown");
@@ -210,7 +210,7 @@ private:
         if (maxwid_ && maxwid_(h, &c) == 0) s.pcie_width = (int) c;
         return s;
     }
-    basalt::platform::DynLib lib_;
+    granite::platform::DynLib lib_;
     bool ok_ = false;
     std::vector<void*> dev_;
     int (*enf_)(void*, unsigned*) = nullptr;
@@ -339,7 +339,7 @@ void usage(const std::string& engine) {
     if (!bin.empty() && fs::exists(bin)) {
         std::printf("\nEngine flags (passed to granite):\n");
         std::fflush(stdout);
-        if (const auto help = basalt::platform::capture_output({bin, "--help"}, true)) std::fputs(help->c_str(), stdout);
+        if (const auto help = granite::platform::capture_output({bin, "--help"}, true)) std::fputs(help->c_str(), stdout);
     }
 }
 
@@ -641,19 +641,19 @@ struct Hardware {
 
 Hardware measure_hardware() {
     Hardware h;
-    const basalt::platform::CpuInfo c = basalt::platform::cpu_info();
-    h.cpu = basalt::program::cpu_label(c.name, c.physical_cores);
-    h.ram_gbps = basalt::program::measure_ram_read_gbps();
+    const granite::platform::CpuInfo c = granite::platform::cpu_info();
+    h.cpu = granite::program::cpu_label(c.name, c.physical_cores);
+    h.ram_gbps = granite::program::measure_ram_read_gbps();
     const std::string dev = BASALT_BENCH_DEVICE;
     if (!dev.empty() && fs::exists(dev))
-        if (const auto out = basalt::platform::capture_output({dev, "--link-rates"}, false)) h.h2d = basalt::program::parse_link_rates(*out);
+        if (const auto out = granite::platform::capture_output({dev, "--link-rates"}, false)) h.h2d = granite::program::parse_link_rates(*out);
     return h;
 }
 
 double h2d_of(const Hardware& h, const std::string& bus_id) {
-    const std::string k = basalt::program::normalize_bus_id(bus_id);
+    const std::string k = granite::program::normalize_bus_id(bus_id);
     for (const auto& x : h.h2d)
-        if (basalt::program::normalize_bus_id(x.first) == k) return x.second;
+        if (granite::program::normalize_bus_id(x.first) == k) return x.second;
     return 0;
 }
 
@@ -700,15 +700,15 @@ int main(int argc, char** argv) {
     Options o;
     std::string err;
     if (!parse_args(argc, argv, o, err)) {
-        basalt::log::error("granite-bench", "%s", err.c_str());
+        granite::log::error("granite-bench", "%s", err.c_str());
         return 2;
     }
-    basalt::platform::ignore_broken_pipe();   // a closed pipe surfaces as a failed write
-    basalt::platform::install_child_stop_signals();
+    granite::platform::ignore_broken_pipe();   // a closed pipe surfaces as a failed write
+    granite::platform::install_child_stop_signals();
 
     if (o.hardware) {
         Nvml nvml;
-        if (!nvml.open()) basalt::log::warn("granite-bench", "NVML is unavailable: PCIe links are NOT recorded");
+        if (!nvml.open()) granite::log::warn("granite-bench", "NVML is unavailable: PCIe links are NOT recorded");
         const Hardware hw = measure_hardware();
         std::vector<std::pair<std::string, Nvml::Snap>> cards;
         for (const auto& x : hw.h2d) {
@@ -735,7 +735,7 @@ int main(int argc, char** argv) {
     const bool do_prefill = !o.depths.empty();
     const bool do_perf = do_decode || do_prefill;
     if (do_quality && o.kld_base.empty()) {
-        basalt::log::error("granite-bench", "the quality gate needs --kld-base FILE");
+        granite::log::error("granite-bench", "the quality gate needs --kld-base FILE");
         return 2;
     }
 
@@ -746,7 +746,7 @@ int main(int argc, char** argv) {
         args = {"--model", fs::absolute(o.model).string()};
     }
     if (engine_bin.empty() || !fs::exists(engine_bin)) {
-        basalt::log::error("granite-bench", "the engine binary %s does not exist (--engine BIN)", engine_bin.c_str());
+        granite::log::error("granite-bench", "the engine binary %s does not exist (--engine BIN)", engine_bin.c_str());
         return 2;
     }
     for (const auto& kv : o.sets) set_arg(args, kv.first, kv.second);
@@ -757,11 +757,11 @@ int main(int argc, char** argv) {
     std::string gpu_value;
     if (!o.model.empty()) {
         std::string gerr;
-        std::vector<basalt::program::GpuCard> used;
+        std::vector<granite::program::GpuCard> used;
         // a community run uses every visible card; CUDA_VISIBLE_DEVICES picks them
         const std::string want = o.community ? "auto" : has_arg(args, "--gpu") ? arg_value(args, "--gpu") : o.gpu;
-        if (!basalt::program::select_gpus(want, "granite-bench", gpu_value, used, gerr)) {
-            basalt::log::error("granite-bench", "%s", gerr.c_str());
+        if (!granite::program::select_gpus(want, "granite-bench", gpu_value, used, gerr)) {
+            granite::log::error("granite-bench", "%s", gerr.c_str());
             return 2;
         }
         set_arg(args, "--gpu", gpu_value);
@@ -781,17 +781,17 @@ int main(int argc, char** argv) {
         std::vector<std::string> plan_args = {"--model", fs::absolute(o.model).string(), "--gpu", probe_gpu};
         merge_args(plan_args, extra);
         std::string answer;
-        const std::string plan_log = basalt::platform::temp_dir() + "/basalt-bench-plan-" + std::to_string((long long) basalt::platform::process_id());
+        const std::string plan_log = granite::platform::temp_dir() + "/basalt-bench-plan-" + std::to_string((long long) granite::platform::process_id());
         (void) engine_plan(engine_bin, plan_args, plan_log, answer);
         std::error_code rm_ec;
         fs::remove(plan_log, rm_ec);
-        basalt::log::error("granite-bench", "%s", basalt::program::community_refusal(extra, answer).c_str());
+        granite::log::error("granite-bench", "%s", granite::program::community_refusal(extra, answer).c_str());
         return 2;
     }
     if (o.community) {
         std::string serr;
         if (!community_submitter_error(o, serr).empty()) {
-            basalt::log::error("granite-bench", "%s", serr.c_str());
+            granite::log::error("granite-bench", "%s", serr.c_str());
             return 2;
         }
     }
@@ -799,13 +799,13 @@ int main(int argc, char** argv) {
     std::string community_kv;   // the cache format a community run passes; empty when the model takes neither
     if (o.fixtures.empty() || o.community) {   // the model's own fixtures, when it has them; the community row's model name
         std::string answer;
-        const std::string plan_log = basalt::platform::temp_dir() + "/basalt-bench-plan-" + std::to_string((long long) basalt::platform::process_id());
+        const std::string plan_log = granite::platform::temp_dir() + "/basalt-bench-plan-" + std::to_string((long long) granite::platform::process_id());
         const std::string abs_model = fs::absolute(o.model).string();
         const int asked = o.model.empty() ? 0 : engine_plan(engine_bin, {"--model", abs_model, "--gpu", probe_gpu}, plan_log, answer);
         if (o.community) {
-            community_model = asked == 0 ? basalt::program::plan_field(answer, "model") : std::string();
-            community_arch = basalt::program::plan_field(answer, "arch");
-            const std::string adapter_kv = basalt::program::plan_field(answer, "community_kv");
+            community_model = asked == 0 ? granite::program::plan_field(answer, "model") : std::string();
+            community_arch = granite::program::plan_field(answer, "arch");
+            const std::string adapter_kv = granite::program::plan_field(answer, "community_kv");
             if (asked != 0) community_plan_err = plan_complaint(plan_log);   // read it before the probes below reuse the log
             // the cache format users run, when the engine accepts one of the flags for this model
             std::string unused;
@@ -821,16 +821,16 @@ int main(int argc, char** argv) {
     std::vector<std::string> quality_flags;
     if (do_quality && !o.model.empty()) {   // what the gate starts this model with, and the window it scores
         std::string answer;
-        const std::string plan_log = basalt::platform::temp_dir() + "/basalt-bench-plan-" + std::to_string((long long) basalt::platform::process_id()) + ".log";
+        const std::string plan_log = granite::platform::temp_dir() + "/basalt-bench-plan-" + std::to_string((long long) granite::platform::process_id()) + ".log";
         const int asked = engine_plan(engine_bin, {"--model", fs::absolute(o.model).string(), "--gpu", probe_gpu, "--ppl-base", o.kld_base}, plan_log, answer);
         std::error_code rm_ec;
         fs::remove(plan_log, rm_ec);
         if (asked != 0) {
-            basalt::log::error("granite-bench", "--quality: the engine cannot plan this model");
+            granite::log::error("granite-bench", "--quality: the engine cannot plan this model");
             return 1;
         }
-        quality_flags = split(basalt::program::plan_field(answer, "quality_flags"), ' ');
-        const int window = std::atoi(basalt::program::plan_field(answer, "quality_window").c_str());
+        quality_flags = split(granite::program::plan_field(answer, "quality_flags"), ' ');
+        const int window = std::atoi(granite::program::plan_field(answer, "quality_window").c_str());
         if (window > 0) o.quality_t = std::min(o.quality_t, window);
     }
     // fixtures, read before anything is started
@@ -841,21 +841,21 @@ int main(int argc, char** argv) {
             if (!wants(kDecode[i].name)) continue;
             std::vector<std::vector<int64_t>> lines;
             if (!read_id_lines((fs::path(o.fixtures) / kDecode[i].file).string(), lines, err) || lines.empty()) {
-                basalt::log::error("granite-bench", "%s", err.empty() ? (std::string(kDecode[i].file) + " is empty").c_str() : err.c_str());
+                granite::log::error("granite-bench", "%s", err.empty() ? (std::string(kDecode[i].file) + " is empty").c_str() : err.c_str());
                 return 2;
             }
             for (auto& l : lines) decode_ids[i].insert(decode_ids[i].end(), l.begin(), l.end());
         }
     if (do_prefill) {
         if (!read_id_lines((fs::path(o.fixtures) / "prefill.ids").string(), prefill_parts, err) || prefill_parts.size() != 3) {
-            basalt::log::error("granite-bench", "%s", err.empty() ? "prefill.ids needs three lines (before, body, after)" : err.c_str());
+            granite::log::error("granite-bench", "%s", err.empty() ? "prefill.ids needs three lines (before, body, after)" : err.c_str());
             return 2;
         }
     }
 
     // the context the fixtures need, unless the command line gives one
     if (!has_arg(args, "--max-context")) {
-        long long need = basalt::program::kDefaultContext;
+        long long need = granite::program::kDefaultContext;
         for (size_t i = 0; i < 3; ++i)
             if (!decode_ids[i].empty()) need = std::max(need, (long long) decode_ids[i].size() + kDecode[i].max_new + 16);
         if (do_prefill)
@@ -877,7 +877,7 @@ int main(int argc, char** argv) {
         const std::string why = fmt("--community: the engine reports no community model name for %s (architecture '%s'); "
                                     "no row was written", o.model.c_str(), community_arch.c_str()) +
                                 (community_plan_err.empty() ? std::string() : "\n  the engine's plan said: " + community_plan_err);
-        basalt::log::error("granite-bench", "%s", why.c_str());
+        granite::log::error("granite-bench", "%s", why.c_str());
         return 1;
     }
 
@@ -885,12 +885,12 @@ int main(int argc, char** argv) {
     std::string work = o.logs;
     bool temp_work = false;
     if (work.empty()) {
-        work = basalt::platform::temp_dir() + "/basalt-bench-" + std::to_string((long long) basalt::platform::process_id());
+        work = granite::platform::temp_dir() + "/basalt-bench-" + std::to_string((long long) granite::platform::process_id());
         temp_work = true;
     }
     std::error_code ec;
     fs::create_directories(work, ec);
-    if (ec) { basalt::log::error("granite-bench", "cannot create %s", work.c_str()); return 2; }
+    if (ec) { granite::log::error("granite-bench", "cannot create %s", work.c_str()); return 2; }
     struct Cleanup {
         std::string dir;
         bool on;
@@ -904,24 +904,24 @@ int main(int argc, char** argv) {
 
     Nvml nvml;
     const bool have_nvml = nvml.open();
-    if (!have_nvml) basalt::log::warn("granite-bench", "NVML is unavailable: power limits and clocks are NOT recorded");
+    if (!have_nvml) granite::log::warn("granite-bench", "NVML is unavailable: power limits and clocks are NOT recorded");
     if (o.community && (!have_nvml || nvml.count() == 0)) {
-        basalt::log::error("granite-bench", "--community needs NVML (the NVIDIA driver's management library) to read the GPU names, "
+        granite::log::error("granite-bench", "--community needs NVML (the NVIDIA driver's management library) to read the GPU names, "
                              "VRAM and enforced power limits for the row; it could not be loaded");
         return 1;
     }
     if (o.community && std::string(BASALT_BENCH_GIT).find_first_not_of("0123456789abcdef") != std::string::npos) {
-        basalt::log::error("granite-bench", "--community needs a build from a git checkout: the row records the commit");
+        granite::log::error("granite-bench", "--community needs a build from a git checkout: the row records the commit");
         return 1;
     }
     if (o.community && BASALT_BENCH_DIRTY)
-        basalt::log::warn("granite-bench", "tracked files differ from commit %s; the row names that commit", BASALT_BENCH_GIT);
+        granite::log::warn("granite-bench", "tracked files differ from commit %s; the row names that commit", BASALT_BENCH_GIT);
     Hardware hw;
     if (o.community) {
         hw = measure_hardware();
-        if (hw.cpu.empty()) basalt::log::warn("granite-bench", "the CPU could not be read; the row has no cpu");
-        if (hw.ram_gbps <= 0) basalt::log::warn("granite-bench", "the RAM read speed could not be measured (needs 3 GiB free); the row has no ram_gbps");
-        if (hw.h2d.empty()) basalt::log::warn("granite-bench", "the host-to-device copy speed could not be measured; the rows' gpus have no h2d_gbps");
+        if (hw.cpu.empty()) granite::log::warn("granite-bench", "the CPU could not be read; the row has no cpu");
+        if (hw.ram_gbps <= 0) granite::log::warn("granite-bench", "the RAM read speed could not be measured (needs 3 GiB free); the row has no ram_gbps");
+        if (hw.h2d.empty()) granite::log::warn("granite-bench", "the host-to-device copy speed could not be measured; the rows' gpus have no h2d_gbps");
     }
     std::vector<Nvml::Snap> gpus_start;
     for (size_t i = 0; i < nvml.count(); ++i) gpus_start.push_back(nvml.snap(i));
@@ -956,17 +956,17 @@ int main(int argc, char** argv) {
         } else {
             sessions.push_back({o.decode, o.depths});
         }
-        std::mt19937_64 rng((uint64_t) std::chrono::steady_clock::now().time_since_epoch().count() ^ ((uint64_t) basalt::platform::process_id() << 32));
+        std::mt19937_64 rng((uint64_t) std::chrono::steady_clock::now().time_since_epoch().count() ^ ((uint64_t) granite::platform::process_id() << 32));
         int n_requests = 0, n_decode_requests = 0;
         bool failed = false;
         for (size_t si = 0; si < sessions.size() && !failed; ++si) {
         const Session& sess = sessions[si];
         const std::string log_path = (fs::path(work) / (si == 0 ? "engine.log" : fmt("engine-%zu.log", si))).string();
         Engine eng;
-        basalt::log::info("granite-bench", "starting %s (log: %s)", engine_bin.c_str(), log_path.c_str());
+        granite::log::info("granite-bench", "starting %s (log: %s)", engine_bin.c_str(), log_path.c_str());
         if (!eng.start(engine_bin, perf_args, log_path, err)) {
             cleanup.on = false;   // the line above names this log: keep the directory it sits in
-            basalt::log::error("granite-bench", "%s (engine log: %s)", err.c_str(), log_path.c_str());
+            granite::log::error("granite-bench", "%s (engine log: %s)", err.c_str(), log_path.c_str());
             return 1;
         }
         {   // fixtures of another tokenizer would fail at the first request with ids past the vocabulary
@@ -976,9 +976,9 @@ int main(int argc, char** argv) {
             for (const auto& v : prefill_parts)
                 for (int64_t t : v) max_id = std::max(max_id, t);
             const int64_t n_vocab = eng.info.count("logit_bias") ? std::atoll(eng.info["logit_bias"].c_str()) : 0;
-            if (const std::string why = basalt::program::fixture_vocab_refusal(max_id, n_vocab, o.fixtures); !why.empty()) {
+            if (const std::string why = granite::program::fixture_vocab_refusal(max_id, n_vocab, o.fixtures); !why.empty()) {
                 eng.stop();
-                basalt::log::error("granite-bench", "%s", why.c_str());
+                granite::log::error("granite-bench", "%s", why.c_str());
                 return 2;
             }
         }
@@ -986,7 +986,7 @@ int main(int argc, char** argv) {
             lossy = eng.info["lossy"];
             if (o.community) {
                 eng.stop();
-                basalt::log::error("granite-bench", "the engine runs with flags that change the model's output (%s). No row was written.",
+                granite::log::error("granite-bench", "the engine runs with flags that change the model's output (%s). No row was written.",
                                    lossy.c_str());
                 return 1;
             }
@@ -998,9 +998,9 @@ int main(int argc, char** argv) {
             if (spill != 0.0) {
                 eng.stop();
                 if (spill < 0)
-                    basalt::log::warn("granite-bench", "the engine did not report where the experts live; cannot check for SSD spill");
+                    granite::log::warn("granite-bench", "the engine did not report where the experts live; cannot check for SSD spill");
                 else
-                    basalt::log::error("granite-bench", "this run would read %.1f GiB of experts from the SSD. Community runs need every "
+                    granite::log::error("granite-bench", "this run would read %.1f GiB of experts from the SSD. Community runs need every "
                                  "expert in VRAM, the peer GPU or RAM: free roughly %.0f GiB more RAM (close other programs) "
                                  "and run again. No row was written.", spill, std::ceil(spill));
                 return 1;
@@ -1013,15 +1013,15 @@ int main(int argc, char** argv) {
             const double host = std::atof(eng.info["host_weight_bytes"].c_str()) / 1073741824.0;
             if (host > 0.0) {
                 eng.stop();
-                basalt::log::error("granite-bench", "this run keeps %.2f GiB of weights in host RAM. Community runs need every weight "
+                granite::log::error("granite-bench", "this run keeps %.2f GiB of weights in host RAM. Community runs need every weight "
                                    "on the card. No row was written.", host);
                 return 1;
             }
             if (eng.info.count("host_embedding_bytes") && std::atof(eng.info["host_embedding_bytes"].c_str()) > 0.0)
-                basalt::log::info("granite-bench", "note: the token embedding (%.2f GiB) stays in page-locked host RAM by design; not counted as spill",
+                granite::log::info("granite-bench", "note: the token embedding (%.2f GiB) stays in page-locked host RAM by design; not counted as spill",
                                   std::atof(eng.info["host_embedding_bytes"].c_str()) / 1073741824.0);
             if (eng.info.count("host_vision_bytes") && std::atof(eng.info["host_vision_bytes"].c_str()) > 0.0)
-                basalt::log::info("granite-bench", "note: the vision encoder (%.2f GiB) waits in host RAM and loads per request; not counted as spill",
+                granite::log::info("granite-bench", "note: the vision encoder (%.2f GiB) waits in host RAM and loads per request; not counted as spill",
                                   std::atof(eng.info["host_vision_bytes"].c_str()) / 1073741824.0);
         }
         if (si == 0) {
@@ -1038,7 +1038,7 @@ int main(int argc, char** argv) {
                 r.name = kDecode[i].name;
                 r.run = run;
                 if (!eng.request(sampling_keys(kDecode[i].temperature, o.seed), kDecode[i].max_new, decode_ids[i], r.d)) {
-                    basalt::log::error("granite-bench", "%s (run %d): %s", r.name.c_str(), run, r.d.err.c_str());
+                    granite::log::error("granite-bench", "%s (run %d): %s", r.name.c_str(), run, r.d.err.c_str());
                     failed = true;
                     break;
                 }
@@ -1047,7 +1047,7 @@ int main(int argc, char** argv) {
                 r.mem_mhz = s.mem_mhz;
                 ++n_requests;
                 ++n_decode_requests;
-                basalt::log::raw("  run %d %-7s %.1f tok/s, %lld tokens\n", run, r.name.c_str(), tok_s(r.d), r.d.generated);
+                granite::log::raw("  run %d %-7s %.1f tok/s, %lld tokens\n", run, r.name.c_str(), tok_s(r.d), r.d.generated);
                 results.push_back(std::move(r));
             }
             for (size_t pi = 0; pi < sess.depths.size() && !failed; ++pi) {
@@ -1069,7 +1069,7 @@ int main(int argc, char** argv) {
                 r.run = run;
                 r.depth = depth;
                 if (!eng.request(" top_p=0.95 top_k=20", depth == kPrefillBase ? kPrefillBaseDecode : 1, ids, r.d)) {
-                    basalt::log::error("granite-bench", "pp%lld (run %d): %s", depth, run, r.d.err.c_str());
+                    granite::log::error("granite-bench", "pp%lld (run %d): %s", depth, run, r.d.err.c_str());
                     failed = true;
                     break;
                 }
@@ -1077,7 +1077,7 @@ int main(int argc, char** argv) {
                 r.sm_mhz = s.sm_mhz;
                 r.mem_mhz = s.mem_mhz;
                 ++n_requests;
-                basalt::log::raw("  run %d pp%lld %lld tokens, %.0f t/s engine, %.0f t/s wall\n", run, depth, r.d.prompt,
+                granite::log::raw("  run %d pp%lld %lld tokens, %.0f t/s engine, %.0f t/s wall\n", run, depth, r.d.prompt,
                              prefill_engine_ts(r.d), prefill_wall_ts(r.d));
                 results.push_back(std::move(r));
             }
@@ -1087,7 +1087,7 @@ int main(int argc, char** argv) {
         eng.stop();
         for (size_t i = 0; i < gpus_end.size() && i < gpus_start.size(); ++i)
             if (gpus_end[i].power_limit_w != gpus_start[i].power_limit_w)
-                basalt::log::warn("granite-bench", "the power limit of GPU %zu changed during the run (%.0f W -> %.0f W)", i,
+                granite::log::warn("granite-bench", "the power limit of GPU %zu changed during the run (%.0f W -> %.0f W)", i,
                              gpus_start[i].power_limit_w, gpus_end[i].power_limit_w);
         }
         if (failed) return 1;
@@ -1102,7 +1102,7 @@ int main(int argc, char** argv) {
                 for (size_t i = 0; i < results.size(); ++i)
                     if (results[i].name != "prefill") order.push_back(i);
             } else {
-                basalt::log::warn("granite-bench", "the draft log has %zu request blocks for %d requests: window statistics skipped",
+                granite::log::warn("granite-bench", "the draft log has %zu request blocks for %d requests: window statistics skipped",
                              blocks.size(), n_requests);
             }
             for (size_t k = 0; k < order.size(); ++k) results[order[k]].win = window_stats(blocks[k]);
@@ -1117,7 +1117,7 @@ int main(int argc, char** argv) {
         quality.t = o.quality_t;
         quality.n_chunks_asked = o.quality_chunks;
         if (!read_kld_base(o.kld_base, n_ctx, n_vocab, n_chunk, chunks, o.quality_chunks, quality.err)) {
-            basalt::log::error("granite-bench", "%s", quality.err.c_str());
+            granite::log::error("granite-bench", "%s", quality.err.c_str());
         } else {
             std::vector<std::string> qa = args;
             for (size_t f = 0; f < quality_flags.size(); ++f) {
@@ -1136,9 +1136,9 @@ int main(int argc, char** argv) {
             for (const auto& a : qa) quality.args += (quality.args.empty() ? "" : " ") + a;
             Engine eng;
             const auto t0 = Clock::now();
-            basalt::log::info("granite-bench", "starting the engine for the quality gate");
+            granite::log::info("granite-bench", "starting the engine for the quality gate");
             if (!eng.start(engine_bin, qa, (fs::path(work) / "engine-quality.log").string(), quality.err)) {
-                basalt::log::error("granite-bench", "%s", quality.err.c_str());
+                granite::log::error("granite-bench", "%s", quality.err.c_str());
             } else {
                 if (eng.info.count("lossy")) lossy = eng.info["lossy"];
                 quality.load_s = secs(t0, Clock::now());
@@ -1157,7 +1157,7 @@ int main(int argc, char** argv) {
                     }
                     pp_ms += d.prompt_ms;
                     dec_ms += d.decode_ms;
-                    if ((k + 1) % 10 == 0) basalt::log::raw("  quality %zu/%zu chunks, %.0f s\n", k + 1, chunks.size(), secs(t1, Clock::now()));
+                    if ((k + 1) % 10 == 0) granite::log::raw("  quality %zu/%zu chunks, %.0f s\n", k + 1, chunks.size(), secs(t1, Clock::now()));
                 }
                 quality.run_s = secs(t1, Clock::now());
                 eng.stop();
@@ -1187,12 +1187,12 @@ int main(int argc, char** argv) {
         power = fmt("%.0f W", primary.power_limit_w);
     } else if (primary_bus.empty() && !gpus_start.empty() && gpus_start[0].power_limit_w > 0) {
         power = fmt("%.0f W", gpus_start[0].power_limit_w);
-    } else if (const auto smi = basalt::platform::capture_output(
+    } else if (const auto smi = granite::platform::capture_output(
                    {"nvidia-smi", "-i", primary_bus.empty() ? "0" : primary_bus, "--query-gpu=power.limit", "--format=csv,noheader,nounits"}, false);
                smi && std::atof(smi->c_str()) > 0) {
         power = fmt("%.0f W", std::atof(smi->c_str()));
     }
-    if (power == "unknown") basalt::log::warn("granite-bench", "the power limit could not be read; pass --power-label W");
+    if (power == "unknown") granite::log::warn("granite-bench", "the power limit could not be read; pass --power-label W");
 
     // one table row per test: values over the repetitions
     struct Row {
@@ -1270,7 +1270,7 @@ int main(int argc, char** argv) {
         }
     }
     std::string community_row;
-    basalt::program::CommunityRow crow;
+    granite::program::CommunityRow crow;
     if (o.community) {
         // one aggregate per direction over the single cold pass: tokens over time summed across requests
         double pre_tps[2] = {0, 0}, pre_s[2] = {0, 0}, dec_tok = 0, dec_ms = 0;
@@ -1284,7 +1284,7 @@ int main(int argc, char** argv) {
                 dec_tok += (double) x.d.generated;
                 dec_ms += x.d.decode_ms;
                 for (int k = 0; k < 3; ++k)
-                    if (x.name == basalt::program::kCommunityTestNames[k]) {
+                    if (x.name == granite::program::kCommunityTestNames[k]) {
                         t_tok[k] += (double) x.d.generated;
                         t_ms[k] += x.d.decode_ms;
                         t_acc[k] += (double) x.d.accepted;
@@ -1295,7 +1295,7 @@ int main(int argc, char** argv) {
         }
         std::string gpu_err;
         std::vector<std::pair<std::string, Nvml::Snap>> cards;
-        for (const std::string& id : basalt::program::split_gpu_ids(info.count("gpus") ? info["gpus"] : "")) {
+        for (const std::string& id : granite::program::split_gpu_ids(info.count("gpus") ? info["gpus"] : "")) {
             Nvml::Snap g;
             if (!nvml.snap_bus(id, g) || g.name.empty() || g.vram_gib <= 0 || g.power_enforced_w <= 0) {
                 gpu_err = "NVML could not read the GPU at " + id;
@@ -1305,12 +1305,12 @@ int main(int argc, char** argv) {
             crow.gpus.push_back({g.name, g.vram_gib, g.power_enforced_w, pcie_text(g), h2d_of(hw, id)});
             cards.emplace_back(id, g);
         }
-        const uint64_t ram_b = basalt::platform::total_physical_memory();
+        const uint64_t ram_b = granite::platform::total_physical_memory();
         if (gpu_err.empty() && crow.gpus.empty()) gpu_err = "the engine did not report which GPUs it used";
         if (gpu_err.empty() && (pre_tps[0] <= 0 || pre_tps[1] <= 0 || dec_ms <= 0)) gpu_err = "a request reported no time";
         if (gpu_err.empty() && ram_b == 0) gpu_err = "the system RAM size could not be read";
         if (!gpu_err.empty()) {
-            basalt::log::error("granite-bench", "cannot write the community row: %s", gpu_err.c_str());
+            granite::log::error("granite-bench", "cannot write the community row: %s", gpu_err.c_str());
             std::fputs(rep.c_str(), stdout);
             return 1;
         }
@@ -1323,14 +1323,14 @@ int main(int argc, char** argv) {
         crow.preset = "community-1";
         crow.model = community_model;
         if (!info.count("kv") || info["kv"].empty()) {
-            basalt::log::error("granite-bench", "cannot write the community row: the engine did not report its KV cache format");
+            granite::log::error("granite-bench", "cannot write the community row: the engine did not report its KV cache format");
             return 1;
         }
         crow.kv = info["kv"];
         crow.ram_gib = (double) ram_b / (double) (1ull << 30);
         crow.cpu = hw.cpu;
         crow.ram_gbps = hw.ram_gbps;
-        crow.os = basalt::platform::host_os_name();
+        crow.os = granite::platform::host_os_name();
         crow.quant = info.count("quant") ? info["quant"] : "unknown";
         crow.prefill_16k_tps = pre_tps[0];
         crow.prefill_64k_tps = pre_tps[1];
@@ -1347,7 +1347,7 @@ int main(int argc, char** argv) {
             if (perf_args[k] == "--model") { ++k; continue; }
             crow.engine_args += (crow.engine_args.empty() ? "" : " ") + perf_args[k];
         }
-        community_row = basalt::program::community_row_text(crow);
+        community_row = granite::program::community_row_text(crow);
         rep += "\n" + hardware_text(hw, cards);
         rep += fmt("\ncommunity-1: prefill 16K %.1f t/s (%.1f s), prefill 64K %.1f t/s (%.1f s), decode %.1f t/s (%.0f tokens in %.1f s), "
                    "each measured cold\n",
@@ -1495,21 +1495,21 @@ int main(int argc, char** argv) {
         const std::string path = o.community_file.empty() ? std::string(BASALT_BENCH_SOURCE_DIR) + "/docs/community/benchmarks.json"
                                                           : o.community_file;
         std::string why;
-        basalt::program::CommunityEdit edit;
-        const bool added = basalt::program::community_add_row_file(path, crow, why, &edit);
+        granite::program::CommunityEdit edit;
+        const bool added = granite::program::community_add_row_file(path, crow, why, &edit);
         std::printf("\nCOMMUNITY ROW:\n%s\n", (added ? edit.row_text : community_row).c_str());
         std::fflush(stdout);
         if (added && edit.replaced) {
-            basalt::log::info("granite-bench", "runs[%zu] of %s has this run's setup (submitter, model, quant, GPUs, CPU, RAM, system): it was updated in "
+            granite::log::info("granite-bench", "runs[%zu] of %s has this run's setup (submitter, model, quant, GPUs, CPU, RAM, system): it was updated in "
                               "place, not added", edit.index, path.c_str());
             if (!edit.notes.empty())
-                basalt::log::info("granite-bench", "its notes were kept: \"%s\". Check they still apply to this run", edit.notes.c_str());
-            basalt::log::info("granite-bench", "review the row, commit it and open a pull request (docs/community.md)");
+                granite::log::info("granite-bench", "its notes were kept: \"%s\". Check they still apply to this run", edit.notes.c_str());
+            granite::log::info("granite-bench", "review the row, commit it and open a pull request (docs/community.md)");
         } else if (added) {
-            basalt::log::info("granite-bench", "the row was added to %s; review it, commit it and open a pull request (docs/community.md)",
+            granite::log::info("granite-bench", "the row was added to %s; review it, commit it and open a pull request (docs/community.md)",
                               path.c_str());
         } else {
-            basalt::log::warn("granite-bench", "the row was not added to %s (%s); paste it at the end of the runs list of docs/community/benchmarks.json, "
+            granite::log::warn("granite-bench", "the row was not added to %s (%s); paste it at the end of the runs list of docs/community/benchmarks.json, "
                               "run python3 tools/check_benchmarks.py --fix on it and open a pull request (docs/community.md)",
                               path.c_str(), why.c_str());
         }

@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-namespace basalt::core {
+namespace granite::core {
 
 ElasticArray::~ElasticArray() {
     if (!base_) return;
@@ -87,4 +87,4 @@ void ElasticArray::trim(uint64_t bytes) {
     backed_ = extents_.empty() ? 0 : extents_.back().off + extents_.back().bytes;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

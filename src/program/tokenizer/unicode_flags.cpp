@@ -9,7 +9,7 @@
 #include <mutex>
 #include <utility>
 
-namespace basalt::program::tokenizer {
+namespace granite::program::tokenizer {
 
 namespace {
 
@@ -419,4 +419,4 @@ const uint16_t* cpt_flag_table() {
     return table.data();
 }
 
-}  // namespace basalt::program::tokenizer
+}  // namespace granite::program::tokenizer

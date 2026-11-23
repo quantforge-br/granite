@@ -14,7 +14,7 @@
 #include <cstring>
 #include <string>
 
-namespace basalt::core {
+namespace granite::core {
 
 // ================================ byte ranges ================================
 
@@ -38,7 +38,7 @@ bool pread_direct(const std::string& path, void* dst, uint64_t n, uint64_t off) 
     constexpr uint64_t kAlign = 4096, kChunk = 16ull << 20;
     const int fd = platform::open_unbuffered(path);
     if (fd < 0) return false;
-    void* bounce = basalt::platform::alloc_aligned((size_t) (std::min<uint64_t>(n, kChunk) + 2 * kAlign), kAlign);
+    void* bounce = granite::platform::alloc_aligned((size_t) (std::min<uint64_t>(n, kChunk) + 2 * kAlign), kAlign);
     if (bounce == nullptr) { platform::close_fd(fd); return false; }
     bool ok = true;
     for (uint64_t done = 0; ok && done < n;) {
@@ -55,7 +55,7 @@ bool pread_direct(const std::string& path, void* dst, uint64_t n, uint64_t off) 
         if (ok) std::memcpy((uint8_t*) dst + done, (uint8_t*) bounce + (pos - a0), (size_t) len);
         done += len;
     }
-    basalt::platform::free_aligned(bounce);
+    granite::platform::free_aligned(bounce);
     platform::close_fd(fd);
     return ok;
 }
@@ -481,4 +481,4 @@ bool hc8_read(const FileRange& r, std::map<std::string, Hc8Copy>& out, std::stri
     return true;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

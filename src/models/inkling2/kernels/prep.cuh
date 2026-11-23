@@ -8,7 +8,7 @@
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
 
-namespace basalt::models::inkling2::prep {
+namespace granite::models::inkling2::prep {
 
 __device__ __forceinline__ float warp_sum(float v) {
 #pragma unroll
@@ -147,4 +147,4 @@ __device__ __forceinline__ void q_heads(const AttnPrep& a, int r, int p, int g, 
     }
 }
 
-}  // namespace basalt::models::inkling2::prep
+}  // namespace granite::models::inkling2::prep

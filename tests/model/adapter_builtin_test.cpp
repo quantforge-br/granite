@@ -7,7 +7,7 @@
 #include <string>
 
 int main() {
-    using namespace basalt;
+    using namespace granite;
     int failures = 0;
     const auto check = [&](bool ok, const char* what) {
         std::printf("%s %s\n", ok ? "ok  " : "FAIL", what);

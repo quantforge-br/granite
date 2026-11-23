@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <sstream>
 
-namespace basalt::program {
+namespace granite::program {
 
 namespace {
 const char* const kClear = "\r\x1b[2K";
@@ -46,12 +46,12 @@ std::string LoadSummary::redraw(double now) {
 
 std::string LoadSummary::feed(const std::string& raw, double now) {
     static const std::string tag = "granite load: ";
-    basalt::log::Parsed p;
-    if (basalt::log::parse(raw, p) && p.level != basalt::log::Level::info) {   // shown at once; a warning keeps its marker
+    granite::log::Parsed p;
+    if (granite::log::parse(raw, p) && p.level != granite::log::Level::info) {   // shown at once; a warning keeps its marker
         const std::string pre = drawn_ ? kClear : "";
         drawn_ = false;
         last_out_ = now;
-        return pre + line(std::string(p.level == basalt::log::Level::warning ? "engine: warning: " : "engine: ") + p.text);
+        return pre + line(std::string(p.level == granite::log::Level::warning ? "engine: warning: " : "engine: ") + p.text);
     }
     if (raw.rfind(tag, 0) != 0) return "";
     std::istringstream is(raw.substr(tag.size()));
@@ -109,4 +109,4 @@ std::string LoadSummary::finish(double now, bool ready) {
     return out;
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

@@ -22,7 +22,7 @@
 #define BASALT_TARGET_AVX2_FMA_F16C __attribute__((target("avx2,fma,f16c")))
 #endif
 
-namespace basalt::platform {
+namespace granite::platform {
 
 // MSVC can retain temporary stack copies for vector aggregate assignments even after inlining.
 // Field-wise assignment exposes the values to register allocation.
@@ -100,4 +100,4 @@ inline bool cpu_has_avx512_bf16() {
 #endif
 }
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

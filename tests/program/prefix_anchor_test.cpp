@@ -7,12 +7,12 @@
 #include <string>
 #include <vector>
 
-using basalt::program::serve::HeldMeet;
-using basalt::program::serve::meet_held;
-using basalt::program::serve::respell_fits;
-using basalt::program::serve::shared_start;
-using basalt::program::serve::slot_cover;
-using basalt::program::serve::splice_held;
+using granite::program::serve::HeldMeet;
+using granite::program::serve::meet_held;
+using granite::program::serve::respell_fits;
+using granite::program::serve::shared_start;
+using granite::program::serve::slot_cover;
+using granite::program::serve::splice_held;
 using Ids = std::vector<int32_t>;
 
 namespace {

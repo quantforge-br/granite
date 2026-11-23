@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 /// The bytes [p, p + n) into L2 from the calling thread: one prefetch a 128-byte line (sm_86 has no bulk prefetch, which
 /// takes a whole run in one instruction).  Spread a long run over the threads of a block, a line or a few each.
@@ -12,4 +12,4 @@ __device__ __forceinline__ void prefetch_l2(const void* p, uint64_t n) {
     for (uintptr_t a = (uintptr_t) p & ~(uintptr_t) 127; a < end; a += 128) asm volatile("prefetch.global.L2 [%0];" ::"l"(a));
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

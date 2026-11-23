@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 /// The model's expert counts so far (ModelSession::ExpertCounts' fields).
 struct LookupCounts {
@@ -136,4 +136,4 @@ private:
     Clock::time_point last_{};
 };
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

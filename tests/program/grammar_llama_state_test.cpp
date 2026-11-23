@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-using namespace basalt::program::grammar;
+using namespace granite::program::grammar;
 
 enum llama_gretype {
     LLAMA_GRETYPE_END = 0,

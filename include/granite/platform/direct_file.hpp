@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <string>
 
-namespace basalt::platform {
+namespace granite::platform {
 
 struct Completion {
     uint64_t tag = 0;      ///< the caller's tag from `submit`
@@ -66,4 +66,4 @@ private:
 /// Monotonic time in microseconds, for latency accounting.
 double now_us();
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

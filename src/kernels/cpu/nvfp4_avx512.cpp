@@ -19,7 +19,7 @@
 #include <bit>
 #include <cstring>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 namespace {
 
 // UE4M3 scale as ggml's dot decodes it (nvfp4_scale in ggml_cpu_dots.c), one entry per 7-bit code.  Built at compile
@@ -212,4 +212,4 @@ void nvfp4_512_down_rows(const uint8_t* w, size_t row_bytes, int n, float sd, co
     }
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

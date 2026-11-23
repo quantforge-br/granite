@@ -11,7 +11,7 @@
 #include <unistd.h>
 #endif
 
-namespace basalt::platform {
+namespace granite::platform {
 
 #if defined(_WIN32)
 // --------------------------------------------------------------------------------------------- Windows
@@ -139,4 +139,4 @@ LockResult lock_view(void* p, uint64_t bytes, const LockProgress& progress) {
 
 #endif
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

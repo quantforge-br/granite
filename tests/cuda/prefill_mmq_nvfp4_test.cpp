@@ -35,7 +35,7 @@
 #include <vector>
 
 namespace {
-namespace mmq = basalt::prefill::mmq;
+namespace mmq = granite::prefill::mmq;
 
 constexpr int N = 2560, FF = 640, K = 10, GROUP = 16;
 constexpr size_t GU_ROW = (size_t) N / 64 * 36, D_ROW = (size_t) FF / 64 * 36;

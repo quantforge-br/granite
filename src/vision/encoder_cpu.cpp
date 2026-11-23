@@ -11,7 +11,7 @@
 #include "gemm_cpu.hpp"
 #include "hy4_weights.hpp"
 
-namespace basalt::vision {
+namespace granite::vision {
 
 namespace {
 
@@ -518,4 +518,4 @@ bool CpuEncoder::encode_padded(const Image& img, std::vector<float>& out, const 
     return true;
 }
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

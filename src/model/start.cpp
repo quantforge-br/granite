@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-namespace basalt::model {
+namespace granite::model {
 
 Result ModelAdapter::start(const LoadRequest& req, Started& out) const {
     std::unique_ptr<LoadedModel> m = make_model();
@@ -30,4 +30,4 @@ Result ModelAdapter::start(const LoadRequest& req, Started& out) const {
     return {};
 }
 
-}  // namespace basalt::model
+}  // namespace granite::model

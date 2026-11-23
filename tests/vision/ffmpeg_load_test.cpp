@@ -9,7 +9,7 @@
 #include <cstdio>
 #include <string>
 
-using namespace basalt::vision;
+using namespace granite::vision;
 
 namespace {
 int failures = 0;
@@ -24,7 +24,7 @@ int main() {
     Ffmpeg f;
     std::string why;
     check(!load_ffmpeg({none}, f, why), "a release nobody ships does not load");
-    const std::string name = basalt::platform::DynLib::versioned_name("avformat", 99);
+    const std::string name = granite::platform::DynLib::versioned_name("avformat", 99);
     check(why.find(name) != std::string::npos, "and the reason names " + name);
 
     std::string off;

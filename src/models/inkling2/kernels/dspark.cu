@@ -12,12 +12,12 @@
 #include <stdexcept>
 #include <string>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 
-namespace px = basalt::kernels::px;
-using basalt::kernels::launch_pdl;
-using basalt::kernels::pdl_wait;
+namespace px = granite::kernels::px;
+using granite::kernels::launch_pdl;
+using granite::kernels::pdl_wait;
 
 constexpr int kThreads = 256;
 constexpr int kPer = kWidth / kThreads;   // 9
@@ -722,4 +722,4 @@ void dspark_split_rnn(const uint16_t* w, uint16_t* w_sp, uint16_t* w_h, uint16_t
     check("split");
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

@@ -11,7 +11,7 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
-namespace basalt::vision {
+namespace granite::vision {
 
 /// x[t] += patch bias + bilinear position embedding (48x48 table) for the patch at merge-order row t.
 void launch_embed_finish(float* x, const float* bias, const float* pos_table, int n, int gx, int gy, cudaStream_t s);
@@ -80,4 +80,4 @@ void launch_bias_scale_residual(float* x, const float* g, const float* bias, con
 /// y[i] = bf16(x[i]) for i < count
 void launch_to_bf16(const float* x, __nv_bfloat16* y, size_t count, cudaStream_t s);
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

@@ -11,7 +11,7 @@
 #include "granite/program/json_scan.hpp"
 #include "unicode_flags.hpp"
 
-namespace basalt::program {
+namespace granite::program {
 
 namespace {
 
@@ -398,4 +398,4 @@ bool Tokenizer::encode(std::string_view text, bool parse_special, const std::vec
     return true;
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

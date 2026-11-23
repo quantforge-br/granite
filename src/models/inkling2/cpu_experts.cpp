@@ -12,7 +12,7 @@
 #include <cstdlib>
 #include <vector>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace cpu = kernels::cpu;
 
 static_assert(kDecodeRows <= cpu::MAXT, "a RAM expert takes every row of a window in one job");
@@ -122,7 +122,7 @@ std::unique_ptr<CpuExperts> CpuExperts::make(const InklingModel& m, std::string&
     const model::LoadRequest& fl = m.flags();
     const cpu::PoolAffinity affinity = fl.pool_affinity_given ? fl.pool_affinity : cpu::PoolAffinity::All;
     p.pool = std::make_unique<cpu::ExpertPool>(cpu::start_pool_workers(fl.pool_workers, fl.pool_affinity_given, affinity), affinity);
-    basalt::log::info("granite inkling2", "experts in RAM run on the CPU: %d pool workers", p.pool->workers());
+    granite::log::info("granite inkling2", "experts in RAM run on the CPU: %d pool workers", p.pool->workers());
     return out;
 }
 
@@ -141,4 +141,4 @@ void CpuExperts::finish(int l, int rows, const int32_t* ids, float* out, uint32_
     moe_cpu_merge(ids, rows, impl_->k, impl_->model->layer(l).blob_table, impl_->out_dev, out, tally, stream);
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

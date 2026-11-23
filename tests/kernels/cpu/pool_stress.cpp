@@ -31,7 +31,7 @@
 #include <thread>
 #include <vector>
 
-namespace cpu = basalt::kernels::cpu;
+namespace cpu = granite::kernels::cpu;
 
 constexpr int kWidth = 2560, kFF = 640;
 

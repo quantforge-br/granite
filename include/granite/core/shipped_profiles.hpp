@@ -11,14 +11,14 @@
 #include <string>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// The error for the first of `names` (file names under `profile_dir`) that is missing or empty; empty when all are there.
 inline std::string missing_shipped_profile(const std::string& profile_dir, const std::vector<std::string>& names) {
     for (const std::string& name : names) {
         const std::string path = profile_dir + "/" + name;
         uint64_t bytes = 0;
-        if (!basalt::platform::file_size(path, bytes) || bytes == 0) {
+        if (!granite::platform::file_size(path, bytes) || bytes == 0) {
             return "expert profile " + (profile_dir.empty() ? name : path) + " is missing: data/ must sit next to bin/ "
                    "(the engine reads data/profiles from the directory above its own executable), so run the binary "
                    "from its install folder, or pass --expert-profile";
@@ -27,4 +27,4 @@ inline std::string missing_shipped_profile(const std::string& profile_dir, const
     return {};
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::program {
+namespace granite::program {
 
 struct ProbeEnv;
 
@@ -120,4 +120,4 @@ struct Stream {
     }
 };
 
-}  // namespace basalt::program
+}  // namespace granite::program

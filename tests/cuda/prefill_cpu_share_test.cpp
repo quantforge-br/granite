@@ -31,7 +31,7 @@
 #include <vector>
 
 namespace {
-namespace mmq = basalt::prefill::mmq;
+namespace mmq = granite::prefill::mmq;
 
 constexpr int N = 2560, FF = 640, K = 10, GROUP = 16;
 
@@ -243,8 +243,8 @@ std::vector<float> download(const Dev& d, size_t n) {
 
 
 // part 1: the CPU pool and MMQ against the reference
-void run_pair(const Pair& p, bool outliers, basalt::kernels::cpu::ExpertPool& pool, cudaStream_t s) {
-    namespace cpu = basalt::kernels::cpu;
+void run_pair(const Pair& p, bool outliers, granite::kernels::cpu::ExpertPool& pool, cudaStream_t s) {
+    namespace cpu = granite::kernels::cpu;
     constexpr int T = 12, E = 64;
     const Geo geo(p);
     std::mt19937 rng(7 + (unsigned) p.gu * 5 + (unsigned) p.d);
@@ -390,8 +390,8 @@ int main(int argc, char** argv) {
                               {GGML_TYPE_IQ4_XS, GGML_TYPE_Q2_0, "IQ4_XS / Q2_0"}};
         cudaStream_t s = nullptr;
         ck(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking), "stream");
-        basalt::kernels::cpu::ExpertPool pool((std::max)(1, (int) basalt::kernels::cpu::physical_cores(true).size()),
-                                                    basalt::kernels::cpu::PoolAffinity::All);
+        granite::kernels::cpu::ExpertPool pool((std::max)(1, (int) granite::kernels::cpu::physical_cores(true).size()),
+                                                    granite::kernels::cpu::PoolAffinity::All);
         for (const Pair& p : pairs)
             for (bool outliers : {false, true}) run_pair(p, outliers, pool, s);
         ck(cudaStreamDestroy(s), "destroy");

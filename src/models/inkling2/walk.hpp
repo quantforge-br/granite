@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 /// The row buffers of one forward, by role (the layer numbers are Inkling 2 Mini's).
 enum class Buf : uint8_t {
@@ -51,4 +51,4 @@ struct Walk {
 /// block, a loop of two blocks and a coda of one block (Inkling 2 Mini's 6 + 12 x passes + 6 layers).
 bool walk(const Geometry& g, Walk& w, std::string& err);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

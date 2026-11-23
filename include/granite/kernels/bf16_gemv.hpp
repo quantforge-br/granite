@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 /// Single-token, contiguous 2D BF16-weight/F32-activation MMVF from the pinned llama.cpp CUDA path.
 /// Preserves pair accumulation, adaptive block size and warp-XOR reduction order.
@@ -23,4 +23,4 @@ void bf16_gemv_fp32_mmvf_cols(const float* x, const uint16_t* w, float* y, int64
 void bf16_gemv_fp32_mmvf_multi(const float* x, int64_t ldx, const uint16_t* w, float* y, int64_t ldy,
                                int64_t n_in, int64_t n_out, int n_tok, void* stream);
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

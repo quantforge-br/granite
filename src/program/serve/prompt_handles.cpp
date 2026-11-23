@@ -2,7 +2,7 @@
 #include "prefix_anchor.hpp"
 #include "state.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 const std::vector<int32_t>* Runtime::idle_ids(int b) const {
     if (b < 0 || (size_t) b >= bs.size() || bs[(size_t) b].active) return nullptr;
@@ -29,7 +29,7 @@ std::vector<Runtime::SlotMeet> Runtime::slot_meets(const std::vector<int32_t>& p
         for (const ConvCheckpoint& c : cks) {
             const int64_t cl = (int64_t) c.ids.size();
             if (cl > match && cl <= shared && cl < n &&
-                basalt::core::conversation_ids_equal(c.ids.data(), c.ids.size(), prompt.data()))
+                granite::core::conversation_ids_equal(c.ids.data(), c.ids.size(), prompt.data()))
                 match = cl;
         }
         out[b].match = match;
@@ -92,4 +92,4 @@ void Runtime::prompt_command(const std::string& cmd) {
     std::fflush(stdout);
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

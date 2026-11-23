@@ -1,5 +1,5 @@
 # The models a build contains. Adding a model is one word in BASALT_BUILTIN_MODELS plus its own library under
-# src/models/<arch> (named model_<arch>, in the namespace basalt::models::<arch>, with make_adapter()), gated by
+# src/models/<arch> (named model_<arch>, in the namespace granite::models::<arch>, with make_adapter()), gated by
 # `if(BASALT_MODEL_<ARCH>)`. A model left out is not compiled, not linked and not registered.
 
 # Every model that ships: the architecture ids, as `general.architecture` names them.

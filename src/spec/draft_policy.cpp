@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-namespace basalt::spec {
+namespace granite::spec {
 namespace {
 
 // The shape of a round's cost by window size, relative to one token, used only below the smallest measured size or
@@ -252,4 +252,4 @@ void DraftPolicy::observe(bool lookup, int t, int accepted, int match, double ro
     }
 }
 
-}  // namespace basalt::spec
+}  // namespace granite::spec

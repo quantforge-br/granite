@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 enum class RouterGate : int { SqrtSoftplus = 0, Sigmoid = 1 };
 
@@ -30,4 +30,4 @@ void router(const float* x, const float* gate, const float* bias, int n_tokens, 
 void router_select(const float* logits, const float* bias, int n_tokens, const RouterArgs& a, int32_t* ids, float* weights,
                    void* stream);
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

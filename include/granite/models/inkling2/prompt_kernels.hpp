@@ -11,7 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 /// What one prompt attention call reads.
 struct AttnPromptArgs {
@@ -74,4 +74,4 @@ void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, in
 /// Deterministic vectorized weighted sum of k fp16 expert outputs per row into fp32 y[rows][kWidth].
 void moe_combine_f16(const uint16_t* out, const float* w, int rows, int k, float* y, void* stream);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

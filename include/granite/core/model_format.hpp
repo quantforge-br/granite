@@ -31,7 +31,7 @@
 //   vision/<name>            anything else the vision sidecar reads
 #include <cstdint>
 
-namespace basalt::core {
+namespace granite::core {
 
 constexpr char kModelMagic[8] = {'B', 'A', 'S', 'A', 'L', 'T', 'M', 'F'};
 constexpr uint32_t kModelVersion = 2;
@@ -59,4 +59,4 @@ static_assert(sizeof(SectionEntry) == 128);
 
 constexpr uint32_t kMaxSections = (uint32_t) ((kHeaderBytes - sizeof(FileHeader)) / sizeof(SectionEntry));
 
-}  // namespace basalt::core
+}  // namespace granite::core

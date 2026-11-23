@@ -31,16 +31,16 @@ int main(int argc, char** argv) {
                         "  --link-rates    per GPU, one line \"pcie_h2d BUS_ID GB_PER_S\": pinned host-to-device copy speed\n");
             return 0;
         } else {
-            basalt::log::error("granite", "unknown argument: %s", argv[i]);
+            granite::log::error("granite", "unknown argument: %s", argv[i]);
             return 2;
         }
     }
 
     if (link_rates) {
-        for (int ordinal = 0; ordinal < basalt::core::device_count(); ++ordinal) {
+        for (int ordinal = 0; ordinal < granite::core::device_count(); ++ordinal) {
             std::string bus;
-            const double gbps = basalt::core::device_h2d_gbps(ordinal);
-            if (basalt::core::device_pci_bus_id(ordinal, bus) && gbps > 0) std::printf("pcie_h2d %s %.1f\n", bus.c_str(), gbps);
+            const double gbps = granite::core::device_h2d_gbps(ordinal);
+            if (granite::core::device_pci_bus_id(ordinal, bus) && gbps > 0) std::printf("pcie_h2d %s %.1f\n", bus.c_str(), gbps);
         }
         return 0;
     }
@@ -49,11 +49,11 @@ int main(int argc, char** argv) {
     //   device N: <name>
     //     compute capability 12.0, 31.4 GiB
     if (list_devices) {
-        const int count = basalt::core::device_count();
+        const int count = granite::core::device_count();
         if (count == 0) std::printf("(no GPU device)\n");
         for (int ordinal = 0; ordinal < count; ++ordinal) {
             std::string name, detail;
-            if (!basalt::core::device_summary(ordinal, name, detail)) {
+            if (!granite::core::device_summary(ordinal, name, detail)) {
                 std::printf("device %d: (the runtime cannot describe it)\n", ordinal);
                 continue;
             }
@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
     }
 
     try {
-        const basalt::core::DeviceInfo d = basalt::core::device_info(0);
+        const granite::core::DeviceInfo d = granite::core::device_info(0);
         std::printf("device %d: %s\n", d.ordinal, d.name.c_str());
         std::printf("  compute capability  %d.%d   (sm_%d%d)\n", d.cc_major, d.cc_minor, d.cc_major, d.cc_minor);
         std::printf("  multiprocessors     %d\n", d.multi_processor_count);
@@ -75,11 +75,11 @@ int main(int argc, char** argv) {
             // path leaves NaNs rather than zeros.  A GPU test that only asks the driver for its name does not
             // test the runtime this file exists to provide.
             const uint64_t bytes = 64ull << 20;      // 64 MiB, small enough to be safe on any card
-            basalt::core::DeviceArena arena(bytes, 0, /*poison=*/true);
+            granite::core::DeviceArena arena(bytes, 0, /*poison=*/true);
             void* a = arena.alloc(1 << 20, 256);
             void* b = arena.alloc(1 << 20, 4096);
             if (((uintptr_t) a % 256) || ((uintptr_t) b % 4096)) {
-                basalt::log::error("granite", "selftest: alignment not honoured");
+                granite::log::error("granite", "selftest: alignment not honoured");
                 return 1;
             }
             std::printf("\nselftest: arena %s, used %s after two 1 MiB allocations\n", human(arena.capacity()).c_str(),
@@ -87,16 +87,16 @@ int main(int argc, char** argv) {
             // and the arena must REFUSE rather than wrap
             try {
                 arena.alloc(bytes * 2);
-                basalt::log::error("granite", "selftest: over-allocation did NOT throw");
+                granite::log::error("granite", "selftest: over-allocation did NOT throw");
                 return 1;
-            } catch (const basalt::core::CudaError&) {
+            } catch (const granite::core::CudaError&) {
                 std::printf("selftest: over-allocation refused as required\n");
             }
             std::printf("granite-device selftest OK\n");
         }
         return 0;
     } catch (const std::exception& e) {
-        basalt::log::error("granite-device", "%s", e.what());
+        granite::log::error("granite-device", "%s", e.what());
         return 1;
     }
 }

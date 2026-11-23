@@ -8,7 +8,7 @@
 #include "logprobs.hpp"
 #include "reply_rows.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 template <class B>
 Flow Request::decode_loop(B& b) {
@@ -64,7 +64,7 @@ Flow Request::decode_loop(B& b) {
             // the tails the penalties count over, one per row: the tokens the state has consumed, the fed-back
             // head `x` (it joins `consumed` only after this window commits), then the drafts before that row -
             // what plain decode would have counted there
-            basalt::kernels::penalty_rows(consumed.data(), (int64_t) consumed.size(), window.data(), T,
+            granite::kernels::penalty_rows(consumed.data(), (int64_t) consumed.size(), window.data(), T,
                                           hist_n, b.history_stage());
             b.upload_history(T);
         }
@@ -95,7 +95,7 @@ Flow Request::decode_loop(B& b) {
             const int miss = gguard->scan(outv.data(), a + 1, e0);
             if (miss >= 0) {
                 int32_t gtok = 0;
-                const basalt::program::grammar::Redraw verdict = gguard->redraw(
+                const granite::program::grammar::Redraw verdict = gguard->redraw(
                     req_bias,
                     [&](const std::vector<float>& bias, int32_t& t) { return b.resample_row(miss, p, bias, t, runtime_.err); },
                     [&](std::vector<float>& lg) {
@@ -103,18 +103,18 @@ Flow Request::decode_loop(B& b) {
                         return b.copy_logits(miss, lg.data());
                     },
                     gtok);
-                if (verdict == basalt::program::grammar::Redraw::failed) {
+                if (verdict == granite::program::grammar::Redraw::failed) {
                     std::printf("ERR %s\n", runtime_.err.empty() ? "the masked draw failed" : runtime_.err.c_str());
                     return Flow::error;
                 }
-                if (verdict == basalt::program::grammar::Redraw::dead) grammar_dead = true;
+                if (verdict == granite::program::grammar::Redraw::dead) grammar_dead = true;
                 else outv[(size_t) miss] = gtok;
                 a = miss;
                 ++grammar_resamples;
             }
         }
         if (req_logprobs >= 0 && ppl == nullptr) {   // the picks are final: read their rows before the commit
-            constexpr int S = basalt::kernels::kLogprobStride;
+            constexpr int S = granite::kernels::kLogprobStride;
             lp_rows.resize((size_t) (a + 1 - e0) * S);
             lp_fields.assign((size_t) a + 1, std::string());
             if (!b.row_logprobs(e0, a + 1 - e0, outv.data() + e0, req_logprobs, lp_rows.data())) {
@@ -169,7 +169,7 @@ Flow Request::decode_loop(B& b) {
             for (int i = e0; i <= a && produced_n < max_new && !eos; ++i) {
                 if (req_logprobs >= 0 && ppl == nullptr) std::printf("P%s\n", lp_fields[(size_t) i].c_str());
                 std::printf("T %d\n", (int) outv[(size_t) i]);
-                basalt::core::progress_beat();
+                granite::core::progress_beat();
                 ++produced_n;
                 b.on_token(outv[(size_t) i]);
                 eos = ppl == nullptr &&
@@ -217,7 +217,7 @@ Flow Request::decode_loop(B& b) {
         b.stamp_loop_end();
     }
     if (gguard != nullptr)
-        basalt::log::info("granite grammar", "%lld windows checked, %lld masked resamples, %.3f ms in grammar code (%.2f us/window)",
+        granite::log::info("granite grammar", "%lld windows checked, %lld masked resamples, %.3f ms in grammar code (%.2f us/window)",
                      (long long) gguard->windows(), (long long) grammar_resamples, gguard->ms(),
                      gguard->windows() > 0 ? gguard->ms() * 1000.0 / (double) gguard->windows() : 0.0);
     b.decode_end();
@@ -228,4 +228,4 @@ Flow Request::decode_loop(B& b) {
     return Flow::proceed;
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

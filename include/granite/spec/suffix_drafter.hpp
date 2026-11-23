@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace basalt::spec {
+namespace granite::spec {
 
 class SuffixDrafter {
 public:
@@ -57,4 +57,4 @@ private:
     int last_match_ = 0;
 };
 
-}  // namespace basalt::spec
+}  // namespace granite::spec

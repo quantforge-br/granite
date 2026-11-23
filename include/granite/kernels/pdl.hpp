@@ -11,7 +11,7 @@
 // kernel launched the plain way returns at once.
 #pragma once
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 inline constexpr bool pdl_requested() { return true; }
 
@@ -48,7 +48,7 @@ private:
     PdlState prev_;
 };
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels
 
 #if defined(__CUDACC__)
 #include <cuda_runtime.h>
@@ -60,7 +60,7 @@ private:
 #include <utility>
 #endif
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 __device__ __forceinline__ void pdl_wait() {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
@@ -153,5 +153,5 @@ inline void launch_pdl(void (*kernel)(KArgs...), dim3 grid, dim3 block, size_t s
     kernel<<<grid, block, smem, stream>>>(args...);
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels
 #endif

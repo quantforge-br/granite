@@ -17,7 +17,7 @@
 #include <iterator>
 #include <sstream>
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 namespace {
 
@@ -36,18 +36,18 @@ struct Block {
     int64_t at = 0;
     std::vector<float> rows;
     int n_rows = 0;
-    basalt::model::ImageGrid grid;
+    granite::model::ImageGrid grid;
 };
 
 class SessionRuntime final : public Runtime {
 public:
-    SessionRuntime(CommonOptions& options, basalt::core::ModelFile& file, std::string& error, basalt::model::Started& started)
+    SessionRuntime(CommonOptions& options, granite::core::ModelFile& file, std::string& error, granite::model::Started& started)
         : Runtime(options, file, error, started.model->desc().n_vocab, vocab_), model_(*started.model),
           sessions_(std::move(started.sessions)) {}
 
     int init_before_input() override {
         if (sessions_.size() != (size_t) std::max(o.batch, 1)) {   // the start makes one per slot
-            basalt::log::error("granite serve", "the model has %zu sessions for %d slots", sessions_.size(), std::max(o.batch, 1));
+            granite::log::error("granite serve", "the model has %zu sessions for %d slots", sessions_.size(), std::max(o.batch, 1));
             return 1;
         }
         // one policy for the solo windows and one for the batch windows, whose rounds cost differently
@@ -62,17 +62,17 @@ public:
         if (o.conversation_cache_disk_mib > 0) {
             const auto t0 = Clock::now();
             std::string text = "basalt conversation state " + model_.desc().arch + " vision_in_engine " + (o.vision_in_engine ? "1" : "0");
-            const uint64_t identity = basalt::core::conversation_store_hash_file(
-                o.model, basalt::core::conversation_store_hash(text.data(), text.size(), 1));
+            const uint64_t identity = granite::core::conversation_store_hash_file(
+                o.model, granite::core::conversation_store_hash(text.data(), text.size(), 1));
             std::string de;
             if (o.prompt_cache <= 0) {
-                basalt::log::warn("granite serve", "conversation cache on disk off: --prompt-cache 0");
+                granite::log::warn("granite serve", "conversation cache on disk off: --prompt-cache 0");
             } else if (!disk.open(o.conversation_cache_dir, identity, (uint64_t) o.conversation_cache_disk_mib << 20, de)) {
-                basalt::log::warn("granite serve", "conversation cache on disk off: %s", de.c_str());
+                granite::log::warn("granite serve", "conversation cache on disk off: %s", de.c_str());
             } else {
                 conversations->set_spill(true);
                 const auto st = disk.stats();
-                basalt::log::info("granite serve", "conversation cache on disk: %s, %zu conversations of this model "
+                granite::log::info("granite serve", "conversation cache on disk: %s, %zu conversations of this model "
                                   "(%.2f GiB), budget %lld MiB, indexed in %.0f ms", o.conversation_cache_dir.c_str(),
                                   st.files, (double) st.bytes / 1073741824.0, (long long) o.conversation_cache_disk_mib,
                                   std::chrono::duration<double, std::milli>(Clock::now() - t0).count());
@@ -81,14 +81,14 @@ public:
         if (o.grammar) {   // the token texts the grammar walks, read from the pack's tokenizer files
             std::vector<uint8_t> vj, tj;
             std::string gerr;
-            basalt::program::grammar::PackVocab pv;
+            granite::program::grammar::PackVocab pv;
             std::vector<int32_t> ends(o.eos_ids.begin(), o.eos_ids.end());
-            if (!basalt::core::read_range(model_file.range("tokenizer/vocab.json"), vj, gerr) ||
-                !basalt::core::read_range(model_file.range("tokenizer/token_type.json"), tj, gerr) ||
-                !basalt::program::grammar::vocab_from_pack(std::string_view((const char*) vj.data(), vj.size()),
+            if (!granite::core::read_range(model_file.range("tokenizer/vocab.json"), vj, gerr) ||
+                !granite::core::read_range(model_file.range("tokenizer/token_type.json"), tj, gerr) ||
+                !granite::program::grammar::vocab_from_pack(std::string_view((const char*) vj.data(), vj.size()),
                                                            std::string_view((const char*) tj.data(), tj.size()),
                                                            (size_t) n_vocab, ends, pv, gerr)) {
-                basalt::log::error("granite serve", "--grammar on: %s", gerr.c_str());
+                granite::log::error("granite serve", "--grammar on: %s", gerr.c_str());
                 return 2;
             }
             vocab_ = std::move(pv);
@@ -98,26 +98,26 @@ public:
     // the pack's quantization label and the PCI bus ids of the cards this engine computes on, primary first: what a
     // benchmark row records
     std::string identity_words() const {
-        const basalt::core::Json* nm = model_file.meta().get("name");
+        const granite::core::Json* nm = model_file.meta().get("name");
         std::string ids;
-        for (int d : basalt::program::engine_gpu_order(o.peer_device, o.peer_devices, {})) {
+        for (int d : granite::program::engine_gpu_order(o.peer_device, o.peer_devices, {})) {
             std::string bus;
-            if (basalt::core::device_pci_bus_id(d, bus)) ids += (ids.empty() ? "" : ",") + bus;
+            if (granite::core::device_pci_bus_id(d, bus)) ids += (ids.empty() ? "" : ",") + bus;
         }
-        std::string quant = basalt::program::pack_quant_label(nm != nullptr && nm->is_string() ? nm->s : std::string());
+        std::string quant = granite::program::pack_quant_label(nm != nullptr && nm->is_string() ? nm->s : std::string());
         if (quant == "unknown" && !o.community_quant.empty()) quant = o.community_quant;   // the model names it when the pack's name does not
         return "quant=" + quant + " gpus=" + ids + " ";
     }
     int init_after_input() override {
         reserve_checkpoints();
         for (auto& s : sessions_)
-            if (const basalt::model::Result r = s->prepare(); !r.ok()) {
-                basalt::log::error("granite serve", "%s", r.message.c_str());
+            if (const granite::model::Result r = s->prepare(); !r.ok()) {
+                granite::log::error("granite serve", "%s", r.message.c_str());
                 return 1;
             }
         start_guard();
         // whether the in-engine encoder reads video: FFmpeg found, for a model that reads the shared patches
-        if (o.vision_in_engine && sessions_[0]->reads_patches()) std::printf("%s\n", basalt::vision::video_line().c_str());
+        if (o.vision_in_engine && sessions_[0]->reads_patches()) std::printf("%s\n", granite::vision::video_line().c_str());
         std::printf("INFO %s\n", (identity_words() + sessions_[0]->info_words()).c_str());
         kv_ceiling_note();
         std::printf("READY %lld stop\n", (long long) o.max_context);
@@ -143,8 +143,8 @@ public:
         std::fflush(stdout);
     }
     void probe_command(const std::string& line, std::string& e) override {
-        basalt::program::ProbeEnv env;
-        if (const basalt::model::Result r = session().probe_env(env); !r.ok()) { e = "PROBE: " + r.message; return; }
+        granite::program::ProbeEnv env;
+        if (const granite::model::Result r = session().probe_env(env); !r.ok()) { e = "PROBE: " + r.message; return; }
         if (line.rfind("PROBE set ", 0) == 0) {   // PROBE set workers=K: a live value for the next requests
             std::istringstream kvs(line.substr(10));
             for (std::string kv; kvs >> kv;) {
@@ -154,7 +154,7 @@ public:
             }
             if (e.empty()) std::printf("PROBE end workers=%d\n", env.pool->active_workers());
         } else if (line == "PROBE rates") {
-            basalt::program::probe_rates(env, stdout, e);
+            granite::program::probe_rates(env, stdout, e);
         } else {
             e = "PROBE: expected PROBE rates or PROBE set";
         }
@@ -165,7 +165,7 @@ public:
         const long long reserve = cmd.size() > 4 ? std::strtoll(cmd.c_str() + 4, &end, 10) : -1;
         if (cmd.size() > 4 && (end == cmd.c_str() + 4 || reserve < 0)) { e = "expected: VRAM [reserve_mib]"; return false; }
         int64_t slots = 0;
-        if (const basalt::model::Result r = session().set_vram_reserve(reserve, slots); !r.ok()) {
+        if (const granite::model::Result r = session().set_vram_reserve(reserve, slots); !r.ok()) {
             e = r.message;
             return false;
         }
@@ -174,7 +174,7 @@ public:
     void sleep_command(bool down, std::string& e) override {
         std::string reply;
         int64_t slots = -1;
-        if (const basalt::model::Result r = session().set_low_memory(down, slots); !r.ok()) {
+        if (const granite::model::Result r = session().set_low_memory(down, slots); !r.ok()) {
             e = r.message;
             return;
         }
@@ -192,7 +192,7 @@ public:
         size_t written = 0;
         if (at_exit)
             while (conversations->size() > 0) {
-                basalt::core::SavedConversation s = conversations->take(conversations->size() - 1);
+                granite::core::SavedConversation s = conversations->take(conversations->size() - 1);
                 if (!disk_has(s.live.ids, s.live.imgs, s.checkpoints, s.cvec) && disk.put(std::move(s), kDiskQueueCap)) ++written;
             }
         const uint64_t floor = std::max<uint64_t>((uint64_t) o.conversation_cache_min_free_mib << 20, disk_floor);
@@ -200,13 +200,13 @@ public:
             if (at_exit) disk.flush();   // one image in RAM at a time
             const int64_t positions = (int64_t) ids.size();
             if (!capture_admit(session().running_bytes() + session().cells_bytes(positions), floor)) {
-                basalt::log::info("granite serve", "conversation cache: %zu tokens not written to disk (physical RAM admission)", ids.size());
+                granite::log::info("granite serve", "conversation cache: %zu tokens not written to disk (physical RAM admission)", ids.size());
                 return;
             }
-            basalt::core::SavedConversation image;
+            granite::core::SavedConversation image;
             std::string se;
             if (!capture(image, ids, imgs, cks, cvec, se)) {
-                basalt::log::warn("granite serve", "conversation cache: not written to disk (%s)", se.c_str());
+                granite::log::warn("granite serve", "conversation cache: not written to disk (%s)", se.c_str());
                 return;
             }
             if (disk.put(std::move(image), kDiskQueueCap)) ++written;
@@ -238,7 +238,7 @@ public:
         std::fflush(stdout);
     }
     LookupCounts lookup_counts() override {
-        const basalt::model::ModelSession::ExpertCounts c = sessions_[0]->expert_counts();
+        const granite::model::ModelSession::ExpertCounts c = sessions_[0]->expert_counts();
         return {c.hits, c.lookups, c.offloaded, c.files};
     }
     bool expert_map(int64_t& total, std::vector<uint8_t>& homes, std::vector<uint32_t>& routed) override {
@@ -246,8 +246,8 @@ public:
     }
     std::vector<CardFacts> card_facts() override {
         std::vector<CardFacts> out;
-        const std::vector<basalt::model::ModelSession::CardExperts> cards = sessions_[0]->experts_by_card();
-        for (const basalt::model::ModelSession::CardExperts& c : cards) out.push_back({c.device, c.slots, 0.0, c.bytes, 0});
+        const std::vector<granite::model::ModelSession::CardExperts> cards = sessions_[0]->experts_by_card();
+        for (const granite::model::ModelSession::CardExperts& c : cards) out.push_back({c.device, c.slots, 0.0, c.bytes, 0});
         // every session's KV is on the main card and on each card that holds a copy of it; another card holds experts only
         int64_t kv = 0;
         for (const auto& s : sessions_) kv = kv < 0 || s->kv_bytes() < 0 ? -1 : kv + s->kv_bytes();
@@ -256,16 +256,16 @@ public:
         return out;
     }
     bool capture_admit(uint64_t need, uint64_t floor) override {
-        return basalt::platform::ram_guard_level() == basalt::platform::RamLevel::Ok &&
-               basalt::core::conversation_memory_admit(basalt::core::conversation_available_memory(), need, floor);
+        return granite::platform::ram_guard_level() == granite::platform::RamLevel::Ok &&
+               granite::core::conversation_memory_admit(granite::core::conversation_available_memory(), need, floor);
     }
     /// The session's conversation as an image: its running state and its positional state by layer.
-    bool capture(basalt::core::SavedConversation& image, const std::vector<int32_t>& ids, const std::vector<ImgKey>& imgs,
+    bool capture(granite::core::SavedConversation& image, const std::vector<int32_t>& ids, const std::vector<ImgKey>& imgs,
                  const std::vector<ConvCheckpoint>& cks, bool cvec, std::string& e) {
         const int64_t positions = (int64_t) ids.size();
         image.live.ids = ids;
         image.live.imgs = imgs;
-        basalt::model::Result r = save_running_now(image.live.state_a, positions);
+        granite::model::Result r = save_running_now(image.live.state_a, positions);
         if (r.ok()) r = session().save_cells(image.kv, positions);
         if (!r.ok()) { e = r.message; return false; }
         image.checkpoints = cks;
@@ -290,10 +290,10 @@ public:
         if (to_disk ? disk.queued_bytes() + estimate > kDiskQueueCap : !ram_room) return true;
         const uint64_t floor = std::max<uint64_t>((uint64_t) o.conversation_cache_min_free_mib << 20, disk.enabled() ? disk_floor : 0);
         if (!capture_admit(estimate, floor)) {
-            basalt::log::info("granite serve", "conversation cache: %zu tokens not parked (physical RAM admission)", live.size());
+            granite::log::info("granite serve", "conversation cache: %zu tokens not parked (physical RAM admission)", live.size());
             return true;
         }
-        basalt::core::SavedConversation image;
+        granite::core::SavedConversation image;
         if (!capture(image, live, live_imgs, checks, cvec_cached, err)) return false;
         (void) (to_disk ? disk.put(std::move(image), kDiskQueueCap) : conversations->put(std::move(image), held));
         report_conversations();
@@ -321,8 +321,8 @@ public:
         c.source = source;
         c.ids.assign(prompt.begin(), prompt.begin() + to);
         c.imgs = imgs_below(req_imgs, to);
-        basalt::core::RunningState rs;
-        if (const basalt::model::Result r = session().running_state(to, true, rs); !r.ok()) {
+        granite::core::RunningState rs;
+        if (const granite::model::Result r = session().running_state(to, true, rs); !r.ok()) {
             err = r.message;
             return false;
         }
@@ -330,12 +330,12 @@ public:
         std::memcpy(c.state_a.data(), rs.head.data(), rs.head.size());
         // the state is snapshotted on the device now and moves to the host while the request goes on (each card's part on
         // its own device)
-        const std::vector<basalt::core::SaveSegment> seg{{c.state_a.data() + rs.head.size(), rs.regions}};
+        const std::vector<granite::core::SaveSegment> seg{{c.state_a.data() + rs.head.size(), rs.regions}};
         if (!ckd.save(seg, (cudaStream_t) rs.stream, c.state_a.data(), err)) return false;
         if (!rs.peer_regions.empty()) {
-            const basalt::core::OnDevice on(rs.peer_device);
+            const granite::core::OnDevice on(rs.peer_device);
             ckd_peer_dev = rs.peer_device;
-            const std::vector<basalt::core::SaveSegment> ps{{c.state_a.data() + rs.head.size() + rs.regions_bytes(), rs.peer_regions}};
+            const std::vector<granite::core::SaveSegment> ps{{c.state_a.data() + rs.head.size() + rs.regions_bytes(), rs.peer_regions}};
             if (!ckd_peer.save(ps, (cudaStream_t) rs.peer_stream, c.state_a.data(), err)) return false;
         }
         keep_check(std::move(c));
@@ -343,22 +343,22 @@ public:
     }
 
     /// The running state as it is now, into `to`: when this returns it has landed.
-    basalt::model::Result save_running_now(basalt::core::CheckpointBytes& to, int64_t pos) {
-        basalt::core::RunningState rs;
-        if (const basalt::model::Result r = session().running_state(pos, true, rs); !r.ok()) return r;
+    granite::model::Result save_running_now(granite::core::CheckpointBytes& to, int64_t pos) {
+        granite::core::RunningState rs;
+        if (const granite::model::Result r = session().running_state(pos, true, rs); !r.ok()) return r;
         to.resize(rs.bytes());
         std::memcpy(to.data(), rs.head.data(), rs.head.size());
         std::string e;
-        if (!basalt::core::running_copy_out(rs, to.data(), e)) return {basalt::model::Status::Error, e};
+        if (!granite::core::running_copy_out(rs, to.data(), e)) return {granite::model::Status::Error, e};
         return {};
     }
     /// A checkpoint's or a parked conversation's running state back into the session.
-    basalt::model::Result restore_running_from(const basalt::core::CheckpointBytes& from, int64_t pos) {
-        basalt::core::RunningState rs;
-        if (const basalt::model::Result r = session().running_state(pos, false, rs); !r.ok()) return r;
-        if (from.size() != rs.bytes()) return {basalt::model::Status::Error, "a checkpoint's running state has the wrong size"};
+    granite::model::Result restore_running_from(const granite::core::CheckpointBytes& from, int64_t pos) {
+        granite::core::RunningState rs;
+        if (const granite::model::Result r = session().running_state(pos, false, rs); !r.ok()) return r;
+        if (from.size() != rs.bytes()) return {granite::model::Status::Error, "a checkpoint's running state has the wrong size"};
         std::string e;
-        if (!basalt::core::running_copy_in(rs, from.data(), e)) return {basalt::model::Status::Error, e};
+        if (!granite::core::running_copy_in(rs, from.data(), e)) return {granite::model::Status::Error, e};
         return session().running_restored(pos, from.data());
     }
 
@@ -369,31 +369,31 @@ public:
         const size_t bytes = session().running_bytes();
         if (bytes == 0) return;
         const size_t keep = (size_t) (o.prompt_cache + 1) * (size_t) std::max(o.batch, 1);
-        if (!basalt::core::CheckpointBytes::allocator_type::reserve(bytes, keep, &basalt::core::kCheckpointPin))
-            basalt::log::warn("granite serve", "checkpoint blocks not reserved: out of host memory");
-        if (std::string e; !ckd.reserve(bytes, e)) basalt::log::warn("granite serve", "deferred checkpoint copy off: %s", e.c_str());
-        basalt::core::RunningState rs;   // a split model's second card keeps a spare of its own part
+        if (!granite::core::CheckpointBytes::allocator_type::reserve(bytes, keep, &granite::core::kCheckpointPin))
+            granite::log::warn("granite serve", "checkpoint blocks not reserved: out of host memory");
+        if (std::string e; !ckd.reserve(bytes, e)) granite::log::warn("granite serve", "deferred checkpoint copy off: %s", e.c_str());
+        granite::core::RunningState rs;   // a split model's second card keeps a spare of its own part
         if (session().running_state(0, false, rs).ok() && !rs.peer_regions.empty()) {
-            const basalt::core::OnDevice on(rs.peer_device);
+            const granite::core::OnDevice on(rs.peer_device);
             ckd_peer_dev = rs.peer_device;
-            if (std::string e; !ckd_peer.reserve(basalt::core::RunningState::sum(rs.peer_regions), e))
-                basalt::log::warn("granite serve", "deferred checkpoint copy off on the second card: %s", e.c_str());
+            if (std::string e; !ckd_peer.reserve(granite::core::RunningState::sum(rs.peer_regions), e))
+                granite::log::warn("granite serve", "deferred checkpoint copy off on the second card: %s", e.c_str());
         }
     }
 
-    basalt::model::ModelSession& session() { return *sessions_[(size_t) active_]; }
+    granite::model::ModelSession& session() { return *sessions_[(size_t) active_]; }
     void set_active(int slot) { active_ = slot; }
-    void set_slot_sampling(int slot, const basalt::kernels::SamplerParams& sp) { slot_sampling_[(size_t) slot] = sp; }
-    const basalt::model::ModelDesc& desc() const { return model_.desc(); }
+    void set_slot_sampling(int slot, const granite::kernels::SamplerParams& sp) { slot_sampling_[(size_t) slot] = sp; }
+    const granite::model::ModelDesc& desc() const { return model_.desc(); }
     /// The draft windows' policy (granite/spec/draft_policy.hpp): learns this machine's round times and the drafter's
     /// acceptance across requests.
-    std::optional<basalt::spec::DraftPolicy> policy, bpolicy;
+    std::optional<granite::spec::DraftPolicy> policy, bpolicy;
     /// Prompt lookup (--suffix-draft) for a model whose sessions take copied drafts: the solo request's history.
     bool lookup_on() const { return o.suffix_draft > 0 && sessions_[0]->copy_drafts(); }
-    std::optional<basalt::spec::SuffixDrafter> sfx;
+    std::optional<granite::spec::SuffixDrafter> sfx;
     /// --draft-log FILE, opened once.
     FILE* draft_log() {
-        static FILE* const f = std::fopen(basalt::core::diagnostics().draft_log.c_str(), "a");
+        static FILE* const f = std::fopen(granite::core::diagnostics().draft_log.c_str(), "a");
         return f;
     }
 
@@ -411,10 +411,10 @@ private:
         return true;
     }
 
-    std::optional<basalt::program::grammar::PackVocab> vocab_;
-    basalt::model::LoadedModel& model_;
-    std::vector<std::unique_ptr<basalt::model::ModelSession>> sessions_;
-    std::vector<basalt::kernels::SamplerParams> slot_sampling_;
+    std::optional<granite::program::grammar::PackVocab> vocab_;
+    granite::model::LoadedModel& model_;
+    std::vector<std::unique_ptr<granite::model::ModelSession>> sessions_;
+    std::vector<granite::kernels::SamplerParams> slot_sampling_;
     int active_ = 0;
 };
 
@@ -446,7 +446,7 @@ public:
     }
     void decode_stats_begin() {
         counts0_ = rt_.session().expert_counts();
-        draft_log_ = basalt::core::diagnostics().draft_log.empty() ? nullptr : rt_.draft_log();
+        draft_log_ = granite::core::diagnostics().draft_log.empty() ? nullptr : rt_.draft_log();
         if (draft_log_ != nullptr) {
             std::fprintf(draft_log_, "R temp=%g S=%d\n", (double) req_temperature, max_window());
             std::fflush(draft_log_);
@@ -466,7 +466,7 @@ public:
         const int k = rt_.sfx->propose(most - 1, sbuf_.data());
         sfx_match = rt_.sfx->last_match();
         if (k <= 0 || (n_draft_ > 0 && sbuf_[0] != drafts_[0])) return;
-        const basalt::spec::DraftPolicy::Pick pk = rt_.policy->choose_window(conf_.data(), n_draft_, k, sfx_match);
+        const granite::spec::DraftPolicy::Pick pk = rt_.policy->choose_window(conf_.data(), n_draft_, k, sfx_match);
         if (pk.lookup) {
             T = std::min(pk.t, most);
             from_sfx = true;
@@ -484,7 +484,7 @@ public:
     void upload_history(int) {}
     void mark_before_run() {}
     bool run_window(int T, int e0, int&) {
-        basalt::model::DecodeRequest d;
+        granite::model::DecodeRequest d;
         d.tokens = window.data();
         d.n_tokens = T;
         d.pos = p;
@@ -494,7 +494,7 @@ public:
         d.history = hist_n > 0 ? history_.data() : nullptr;
         d.history_len = hist_n;
         req_sp.counter = draws_;
-        const basalt::model::Result r = rt_.session().decode_window(d);
+        const granite::model::Result r = rt_.session().decode_window(d);
         if (!r.ok()) error_ = r.message;
         return r.ok();
     }
@@ -508,7 +508,7 @@ public:
         return a;
     }
     bool resample_row(int row, int64_t, const std::vector<float>& bias, int32_t& tok, std::string& e) {
-        const basalt::model::Result r = rt_.session().resample_row(row, bias.data(), tok);
+        const granite::model::Result r = rt_.session().resample_row(row, bias.data(), tok);
         if (!r.ok()) e = r.message;
         return r.ok();
     }
@@ -540,8 +540,8 @@ public:
         n_draft_ = 0;
         if (!will_draft || max_window() < 2) return true;
         const int n = drafts_ahead(T, max_window());
-        if (basalt::model::Result r = rt_.session().draft_begin(outv[(size_t) a], p + a + 1, n); !r.ok()) {
-            if (r.status == basalt::model::Status::NotImplemented) return true;
+        if (granite::model::Result r = rt_.session().draft_begin(outv[(size_t) a], p + a + 1, n); !r.ok()) {
+            if (r.status == granite::model::Status::NotImplemented) return true;
             runtime_.err = r.message;
             return false;
         }
@@ -549,7 +549,7 @@ public:
         // room for every draft the session makes (a block drafter may make more than asked, the policy picks); a draft
         // no window can hold need not be made, but a lookup proposal is matched against the first
         const auto need = [this](const float* c, int j, int m) { return (j == 0 && rt_.sfx) || rt_.policy->may_verify(c, j, m); };
-        if (basalt::model::Result r = rt_.session().draft_end(drafts_.data(), conf_.data(), max_window() - 1, n_draft_, need); !r.ok()) {
+        if (granite::model::Result r = rt_.session().draft_end(drafts_.data(), conf_.data(), max_window() - 1, n_draft_, need); !r.ok()) {
             runtime_.err = r.message;
             return false;
         }
@@ -580,13 +580,13 @@ private:
     Flow decode() override { return decode_loop(*this); }
     bool release_room() override { return true; }
     bool checkpoint_mount(const ConvCheckpoint& c) override {
-        const basalt::model::Result r = rt_.restore_running_from(c.state_a, (int64_t) c.ids.size());
+        const granite::model::Result r = rt_.restore_running_from(c.state_a, (int64_t) c.ids.size());
         if (!r.ok()) runtime_.err = r.message;
         return r.ok();
     }
     Flow set_sampling() override {
         hist_n = req_sp.penalty_last_n;
-        const basalt::model::Result r = rt_.session().set_logit_bias(req_bias_present ? req_bias.data() : nullptr);
+        const granite::model::Result r = rt_.session().set_logit_bias(req_bias_present ? req_bias.data() : nullptr);
         if (!r.ok()) {
             std::printf("ERR %s\n", r.message.c_str());
             return Flow::next;
@@ -598,7 +598,7 @@ private:
     // a slot's prompt lookup history: the conversation, then the token its first window feeds
     void slot_init(BSlot& sl) override {
         if (!rt_.lookup_on()) return;
-        sl.sfx = std::make_unique<basalt::spec::SuffixDrafter>(std::max(1, runtime_.o.suffix_draft), 64,
+        sl.sfx = std::make_unique<granite::spec::SuffixDrafter>(std::max(1, runtime_.o.suffix_draft), 64,
                                                                (size_t) runtime_.o.max_context + 4096);
         for (int32_t t : runtime_.live) sl.sfx->append(t);
         sl.sfx->append(x);
@@ -608,12 +608,12 @@ private:
         // a conversation stored by a build whose running state had another layout is read again, not mounted
         bool sized = incoming->live.state_a.size() == rt_.session().running_bytes();
         for (const ConvCheckpoint& c : incoming->checkpoints) sized = sized && c.state_a.size() == rt_.session().running_bytes();
-        basalt::model::Result r = sized ? rt_.session().restore_cells(incoming->kv, positions)
-                                        : basalt::model::Result{basalt::model::Status::Error, "its running state has another size"};
+        granite::model::Result r = sized ? rt_.session().restore_cells(incoming->kv, positions)
+                                        : granite::model::Result{granite::model::Status::Error, "its running state has another size"};
         if (r.ok()) r = rt_.restore_running_from(incoming->live.state_a, positions);
         if (r.ok()) r = rt_.session().set_history(incoming->live.ids.data(), positions);
         if (!r.ok()) {
-            basalt::log::warn("granite serve", "conversation cache: restoring a parked conversation failed (%s); reading the prompt from the start", r.message.c_str());
+            granite::log::warn("granite serve", "conversation cache: restoring a parked conversation failed (%s); reading the prompt from the start", r.message.c_str());
             incoming.reset();
             runtime_.live.clear();
             runtime_.live_imgs.clear();
@@ -632,7 +632,7 @@ private:
     }
     bool turn_checkpoint_at_last_token() const override { return true; }
     DoneCounts done_counts() override {
-        const basalt::model::ModelSession::ExpertCounts c = rt_.session().expert_counts();
+        const granite::model::ModelSession::ExpertCounts c = rt_.session().expert_counts();
         DoneCounts dc;
         dc.hits = c.hits - counts0_.hits;
         dc.lookups = c.lookups - counts0_.lookups;
@@ -644,7 +644,7 @@ private:
 
     void progress_line(const char* tag, int64_t at_pos) {
         const double ms = std::chrono::duration<double, std::milli>(Clock::now() - r0).count();
-        basalt::protocol::emit("%s %lld %lld %.0f %.1f\n", tag, (long long) at_pos, (long long) n, ms,
+        granite::protocol::emit("%s %lld %lld %.0f %.1f\n", tag, (long long) at_pos, (long long) n, ms,
                                ms > 0.0 ? 1000.0 * (double) (at_pos - resume) / ms : 0.0);
     }
 
@@ -657,7 +657,7 @@ private:
     std::vector<float> conf_, window_conf_;
     int n_draft_ = 0;
     FILE* draft_log_ = nullptr;
-    basalt::model::ModelSession::ExpertCounts counts0_;
+    granite::model::ModelSession::ExpertCounts counts0_;
     std::string error_;
     size_t next_block_ = 0;
     double live_ms_ = -1e9;
@@ -669,9 +669,9 @@ struct SlotWin {
     bool from_sfx = false;   // the drafts are a lookup proposal behind a match of `match` tokens
     int match = 0;
     std::vector<int32_t> win, out, history;
-    float chance[basalt::spec::DraftPolicy::kMaxT] = {};
+    float chance[granite::spec::DraftPolicy::kMaxT] = {};
     Clock::time_point round0;
-    basalt::model::DecodeRequest d;
+    granite::model::DecodeRequest d;
     // set by slot_window_accept: the accepted drafts, the tokens' line, the finish reason, the drafts to start next
     int a = 0;
     std::string line;
@@ -691,7 +691,7 @@ void SessionRuntime::slot_window_begin(int b, SlotWin& w, int limit) {
         const int k = sl.sfx->propose(most - 1, sl.sbuf);
         w.match = sl.sfx->last_match();
         if (k > 0 && (sl.n_dr == 0 || sl.sbuf[0] == sl.dr[0])) {
-            const basalt::spec::DraftPolicy::Pick pk = bpolicy->choose_window(sl.dprob, std::min(sl.n_dr, most - 1), k, w.match);
+            const granite::spec::DraftPolicy::Pick pk = bpolicy->choose_window(sl.dprob, std::min(sl.n_dr, most - 1), k, w.match);
             if (pk.lookup) {
                 w.T = std::min(pk.t, most);
                 w.from_sfx = true;
@@ -704,7 +704,7 @@ void SessionRuntime::slot_window_begin(int b, SlotWin& w, int limit) {
     w.out.assign((size_t) T, -1);
     w.win[0] = sl.x;
     std::copy(w.from_sfx ? sl.sbuf : sl.dr, (w.from_sfx ? sl.sbuf : sl.dr) + (T - 1), w.win.begin() + 1);
-    basalt::kernels::SamplerParams& sp = slot_sampling_[(size_t) b];
+    granite::kernels::SamplerParams& sp = slot_sampling_[(size_t) b];
     w.d = {};
     w.d.tokens = w.win.data();
     w.d.n_tokens = T;
@@ -714,7 +714,7 @@ void SessionRuntime::slot_window_begin(int b, SlotWin& w, int limit) {
     w.d.drawn_drafts = !w.from_sfx && T > 1;
     if (sl.pen_n > 0) {
         w.history.resize((size_t) T * sl.pen_n);
-        basalt::kernels::penalty_rows(sl.ids.data(), (int64_t) sl.ids.size(), w.win.data(), T, sl.pen_n, w.history.data());
+        granite::kernels::penalty_rows(sl.ids.data(), (int64_t) sl.ids.size(), w.win.data(), T, sl.pen_n, w.history.data());
         w.d.history = w.history.data();
         w.d.history_len = sl.pen_n;
     }
@@ -726,8 +726,8 @@ void SessionRuntime::slot_window_begin(int b, SlotWin& w, int limit) {
 bool SessionRuntime::slot_window_finish(int b, SlotWin& w) {
     if (!slot_window_accept(b, w)) return false;
     if (w.want > 0) {
-        const basalt::model::Result r = session().draft_begin(bs[(size_t) b].x, bs[(size_t) b].p, w.want);
-        if (!r.ok() && r.status != basalt::model::Status::NotImplemented) {
+        const granite::model::Result r = session().draft_begin(bs[(size_t) b].x, bs[(size_t) b].p, w.want);
+        if (!r.ok() && r.status != granite::model::Status::NotImplemented) {
             std::printf("ERR %s\n", r.message.c_str());
             set_active(0);
             return false;
@@ -760,22 +760,22 @@ bool SessionRuntime::slot_window_accept(int b, SlotWin& w) {
         if (miss >= 0) {
             int32_t y = -1;
             std::string why;
-            const basalt::program::grammar::Redraw verdict = sl.guard->redraw(
+            const granite::program::grammar::Redraw verdict = sl.guard->redraw(
                 {},
                 [&](const std::vector<float>& bias, int32_t& t) {
-                    const basalt::model::Result r = session().resample_row(miss, bias.data(), t);
+                    const granite::model::Result r = session().resample_row(miss, bias.data(), t);
                     if (!r.ok()) why = r.message;
                     return r.ok();
                 },
                 [&](std::vector<float>& lg) {
                     lg.resize((size_t) n_vocab);
-                    const basalt::model::Result r = session().copy_logits(miss, lg.data());
+                    const granite::model::Result r = session().copy_logits(miss, lg.data());
                     if (!r.ok()) why = r.message;
                     return r.ok();
                 },
                 y);
-            if (verdict == basalt::program::grammar::Redraw::failed) return failed(why.empty() ? "the masked draw failed" : why);
-            if (verdict == basalt::program::grammar::Redraw::dead) grammar_dead = true;
+            if (verdict == granite::program::grammar::Redraw::failed) return failed(why.empty() ? "the masked draw failed" : why);
+            if (verdict == granite::program::grammar::Redraw::dead) grammar_dead = true;
             else out_[(size_t) miss] = y;
             a = miss;
         }
@@ -787,15 +787,15 @@ bool SessionRuntime::slot_window_accept(int b, SlotWin& w) {
     const char* fin = nullptr;
     const int64_t sent0 = sl.produced;
     if (sl.lp_top >= 0) {   // the kept rows' logprobs, read before the drafts touch the head
-        lp_rows.resize((size_t) (a + 1) * basalt::kernels::kLogprobStride);
-        if (const basalt::model::Result r = session().row_logprobs(0, a + 1, out_.data(), sl.lp_top, lp_rows.data()); !r.ok())
+        lp_rows.resize((size_t) (a + 1) * granite::kernels::kLogprobStride);
+        if (const granite::model::Result r = session().row_logprobs(0, a + 1, out_.data(), sl.lp_top, lp_rows.data()); !r.ok())
             return failed(r.message);
     }
     for (int i = 0; i <= a && fin == nullptr; ++i) {
         const int32_t y = out_[(size_t) i];
         if (sl.lp_top >= 0)   // ahead of the BT line
-            basalt::protocol::emit_text("BP " + std::to_string(b) +
-                                        logprob_fields(lp_rows.data() + (size_t) i * basalt::kernels::kLogprobStride, y, sl.lp_top) + "\n");
+            granite::protocol::emit_text("BP " + std::to_string(b) +
+                                        logprob_fields(lp_rows.data() + (size_t) i * granite::kernels::kLogprobStride, y, sl.lp_top) + "\n");
         sl.ids.push_back(win_[(size_t) i]);
         ++sl.produced;
         ++sl.p;
@@ -827,12 +827,12 @@ bool SessionRuntime::slot_window_end(int b, SlotWin& w) {
     set_active(b);
     const int T = w.T, a = w.a;
     const char* fin = w.fin;
-    basalt::protocol::emit_text(w.line + "\n");
-    basalt::core::progress_beat();
+    granite::protocol::emit_text(w.line + "\n");
+    granite::core::progress_beat();
     if (w.drafting) {
         const int max_n = std::min(session().max_window() - 1, (int) std::size(sl.dr));
         const auto need = [&](const float* c, int j, int m) { return (j == 0 && sl.sfx) || bpolicy->may_verify(c, j, m); };
-        if (const basalt::model::Result r = session().draft_end(sl.dr, sl.dprob, max_n, sl.n_dr, need); !r.ok()) return failed(r.message);
+        if (const granite::model::Result r = session().draft_end(sl.dr, sl.dprob, max_n, sl.n_dr, need); !r.ok()) return failed(r.message);
         const double ms = std::chrono::duration<double, std::milli>(Clock::now() - w.round0).count();
         if (w.from_sfx) bpolicy->observe(true, T, a, w.match, ms);
         else bpolicy->observe_window(w.chance, T, a, ms);
@@ -872,7 +872,7 @@ bool SessionRuntime::next_batch_window() {
             w.round0 = Clock::now();
             slot_window_begin(b, w, 1 << 20);
             stats_lookups_begin();
-            if (const basalt::model::Result r = session().decode_window(w.d); !r.ok()) return failed(r.message);
+            if (const granite::model::Result r = session().decode_window(w.d); !r.ok()) return failed(r.message);
             if (!slot_window_finish(b, w)) return false;
             stats_lookups_end();
         }
@@ -899,18 +899,18 @@ bool SessionRuntime::next_batch_window() {
         const Clock::time_point t0 = Clock::now();
         stats_lookups_begin();
         if (group.size() == 1) {
-            if (const basalt::model::Result r = sessions_[(size_t) act[group[0]]]->decode_window(wins[group[0]].d); !r.ok()) return failed(r.message);
+            if (const granite::model::Result r = sessions_[(size_t) act[group[0]]]->decode_window(wins[group[0]].d); !r.ok()) return failed(r.message);
         } else {
-            std::vector<basalt::model::ModelSession*> ss;
-            std::vector<basalt::model::DecodeRequest> rq;
+            std::vector<granite::model::ModelSession*> ss;
+            std::vector<granite::model::DecodeRequest> rq;
             for (const size_t i : group) {
                 ss.push_back(sessions_[(size_t) act[i]].get());
                 rq.push_back(wins[i].d);
             }
-            if (const basalt::model::Result r = ss[0]->decode_batch(ss.data(), rq.data(), (int) group.size()); !r.ok()) return failed(r.message);
+            if (const granite::model::Result r = ss[0]->decode_batch(ss.data(), rq.data(), (int) group.size()); !r.ok()) return failed(r.message);
         }
         // every slot's tokens, then the group's drafts as one pass, then each slot's tokens out and drafts read
-        std::vector<basalt::model::ModelSession*> ds;
+        std::vector<granite::model::ModelSession*> ds;
         std::vector<int32_t> anchors;
         std::vector<int64_t> dpos;
         std::vector<int> dn;
@@ -926,8 +926,8 @@ bool SessionRuntime::next_batch_window() {
             }
         }
         if (!ds.empty()) {
-            const basalt::model::Result r = ds[0]->draft_batch(ds.data(), anchors.data(), dpos.data(), dn.data(), (int) ds.size());
-            if (!r.ok() && r.status != basalt::model::Status::NotImplemented) return failed(r.message);
+            const granite::model::Result r = ds[0]->draft_batch(ds.data(), anchors.data(), dpos.data(), dn.data(), (int) ds.size());
+            if (!r.ok() && r.status != granite::model::Status::NotImplemented) return failed(r.message);
             for (const size_t i : group) wins[i].drafting = r.ok() && wins[i].want > 0;
         }
         stats_lookups_end();
@@ -989,14 +989,14 @@ Flow SessionRequest::read_to(int64_t to) {
         for (next_block_ = 0; next_block_ < blocks_.size() && blocks_[next_block_].at < at;) ++next_block_;
     while (at < to) {
         const bool image = next_block_ < blocks_.size() && blocks_[next_block_].at == at;
-        basalt::model::Result r;
+        granite::model::Result r;
         if (image) {
             const Block& b = blocks_[next_block_++];
             r = rt_.session().prefill_embeddings(b.rows.data(), b.n_rows, at, b.grid);
             at += b.n_rows;
         } else {
             const int64_t end = next_block_ < blocks_.size() ? std::min(to, blocks_[next_block_].at) : to;
-            basalt::model::PrefillRequest pr;
+            granite::model::PrefillRequest pr;
             pr.tokens = ids32.data() + at;
             pr.n_tokens = (int) (end - at);
             pr.pos = at;
@@ -1004,9 +1004,9 @@ Flow SessionRequest::read_to(int64_t to) {
             pr.rows_after = to - end;
             pr.more = end < n - 1;
             const int64_t base = at;
-            pr.progress = [this, base](int k) { progress_line("PP", base + k); basalt::core::progress_beat(); };
+            pr.progress = [this, base](int k) { progress_line("PP", base + k); granite::core::progress_beat(); };
             pr.live = [this, base](int k) {
-                basalt::core::progress_beat();
+                granite::core::progress_beat();
                 const double ms = std::chrono::duration<double, std::milli>(Clock::now() - r0).count();
                 if (ms - live_ms_ < 500.0 && ms >= live_ms_) return;
                 live_ms_ = ms;
@@ -1016,14 +1016,14 @@ Flow SessionRequest::read_to(int64_t to) {
             r = rt_.session().prefill_chunk(pr);
             at = end;
         }
-        if (r.status == basalt::model::Status::Refused) {   // no room for this prompt: the engine serves on
-            basalt::log::warn("granite serve", "%s", r.message.c_str());
+        if (r.status == granite::model::Status::Refused) {   // no room for this prompt: the engine serves on
+            granite::log::warn("granite serve", "%s", r.message.c_str());
             rt_.session().end_prompt();
             std::printf("ERR %s\n", r.message.c_str());
             return Flow::next;
         }
         if (!r.ok()) {
-            basalt::log::error("granite serve", "%s", r.message.c_str());
+            granite::log::error("granite serve", "%s", r.message.c_str());
             std::printf("ERR %s\n", r.message.c_str());
             return Flow::error;
         }
@@ -1046,31 +1046,31 @@ void SessionRuntime::enc_command(const std::string& cmd) {
     std::vector<std::string> replies;
     std::string fail;
     const auto ms_since = [](Clock::time_point t) { return (int) std::chrono::duration<double, std::milli>(Clock::now() - t).count(); };
-    const auto write_record = [&](std::FILE* fo, const std::vector<float>& rows, int n, basalt::model::ImageGrid grid) {
+    const auto write_record = [&](std::FILE* fo, const std::vector<float>& rows, int n, granite::model::ImageGrid grid) {
         const int32_t width = n > 0 ? (int32_t) (rows.size() / (size_t) n) : 0;
         const int32_t hdr[5] = {kEmbeddingsMagic, n, grid.nx, grid.ny, width};
         return std::fwrite(hdr, sizeof hdr, 1, fo) == 1 && std::fwrite(rows.data(), sizeof(float), rows.size(), fo) == rows.size();
     };
     if (video) {
         std::string vpath, opath;
-        basalt::vision::VideoOptions vo;
-        const basalt::vision::Geometry geo;
+        granite::vision::VideoOptions vo;
+        const granite::vision::Geometry geo;
         vo.group_tokens = geo.max_tokens;
-        basalt::vision::Video v;
+        granite::vision::Video v;
         const auto te = Clock::now();
         if (!session().reads_patches()) fail = "this model reads no video";
-        else if (!basalt::vision::parse_encv(cmd, vpath, opath, vo, fail)) {
-        } else if (!basalt::vision::read_video(vpath, vo, v, fail)) {
+        else if (!granite::vision::parse_encv(cmd, vpath, opath, vo, fail)) {
+        } else if (!granite::vision::read_video(vpath, vo, v, fail)) {
         } else {
             std::vector<float> patches, rows;
-            basalt::vision::patchify_video(v.frames, (int) v.indices.size(), v.canvas, geo, patches);
+            granite::vision::patchify_video(v.frames, (int) v.indices.size(), v.canvas, geo, patches);
             const int groups = v.groups(), nx = v.canvas.w / 32, ny = v.canvas.h / 32;
             const size_t per = patches.size() / (size_t) groups;
             std::FILE* fo = std::fopen(opath.c_str(), "wb");
             if (!fo) fail = "cannot write " + opath;
             for (int gi = 0; fail.empty() && gi < groups; ++gi) {
                 const std::vector<float> part(patches.begin() + (ptrdiff_t) (gi * per), patches.begin() + (ptrdiff_t) ((gi + 1) * per));
-                const basalt::model::Result er = session().encode_patches(part, v.canvas.w, v.canvas.h, rows);
+                const granite::model::Result er = session().encode_patches(part, v.canvas.w, v.canvas.h, rows);
                 if (!er.ok()) fail = er.message;
                 else if (!write_record(fo, rows, nx * ny, {nx, ny})) fail = "short write to " + opath;
             }
@@ -1078,7 +1078,7 @@ void SessionRuntime::enc_command(const std::string& cmd) {
             if (fail.empty())
                 replies.push_back("ENC OK " + std::to_string(groups) + " " + std::to_string(nx) + " " + std::to_string(ny) + " " +
                                   std::to_string(ms_since(te)) + " " +
-                                  basalt::vision::times_text(basalt::vision::group_times(v.indices, v.fps)));
+                                  granite::vision::times_text(granite::vision::group_times(v.indices, v.fps)));
         }
     } else {
         std::istringstream in(cmd);
@@ -1091,9 +1091,9 @@ void SessionRuntime::enc_command(const std::string& cmd) {
             const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
             std::vector<float> rows;
             int rows_n = 0;
-            basalt::model::ImageGrid grid;
+            granite::model::ImageGrid grid;
             const auto te = Clock::now();
-            const basalt::model::Result er = bytes.empty() ? basalt::model::Result{basalt::model::Status::Error, "cannot read the image " + words[i]}
+            const granite::model::Result er = bytes.empty() ? granite::model::Result{granite::model::Status::Error, "cannot read the image " + words[i]}
                                                            : session().encode_image(bytes.data(), bytes.size(), rows, rows_n, grid);
             if (!er.ok()) { fail = er.message; break; }
             std::FILE* fo = std::fopen(words[i + 1].c_str(), "wb");
@@ -1112,12 +1112,12 @@ void SessionRuntime::enc_command(const std::string& cmd) {
 
 }  // namespace
 
-int run_session(CommonOptions& o, basalt::core::ModelFile& file, const basalt::model::ModelAdapter& adapter,
-                basalt::model::Started& started) {
+int run_session(CommonOptions& o, granite::core::ModelFile& file, const granite::model::ModelAdapter& adapter,
+                granite::model::Started& started) {
     std::string err;
     SessionRuntime runtime(o, file, err, started);
     runtime.pre_ = adapter.pretokenizer();
     return runtime.execute();
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

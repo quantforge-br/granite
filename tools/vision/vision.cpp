@@ -41,7 +41,7 @@
 
 namespace {
 
-using namespace basalt::vision;
+using namespace granite::vision;
 
 // "ENC <image> <out>": paths may contain spaces, so the image path ends at the last " " before the output path;
 // the server always writes paths without spaces, but a user calling the tool by hand might not
@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
     const auto load_t0 = std::chrono::steady_clock::now();
     std::string err;
     Mmproj mp;
-    basalt::core::ModelFile file;
+    granite::core::ModelFile file;
     if (!file.open(model, err) || file.range("vision/mmproj").empty()) {
         if (err.empty()) err = model + " has no vision/mmproj section";
         std::printf("ERR cannot load the vision encoder: %s\n", err.c_str());

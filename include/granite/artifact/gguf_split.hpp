@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt {
+namespace granite {
 
 // Split models: `<name>-00001-of-0000N.gguf` ... `<name>-0000N-of-0000N.gguf`, as llama.cpp's gguf-split names
 // them.  Given ANY shard's path, the shards in split order (the metadata shard, 00001, first); a file without that
@@ -47,4 +47,4 @@ inline std::vector<std::string> gguf_split_paths(const std::string& any) {
     return out;
 }
 
-}  // namespace basalt
+}  // namespace granite

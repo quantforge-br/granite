@@ -3,7 +3,7 @@
 
 #include "state.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 class Request {
 public:
@@ -45,10 +45,10 @@ protected:
     bool ids_ok{};
     bool from_text{};
     int64_t n{};
-    std::unique_ptr<basalt::program::grammar::Guard> gguard{};
+    std::unique_ptr<granite::program::grammar::Guard> gguard{};
     bool grammar_dead{};   // the grammar allowed no token: the reply ends as an error
     int64_t grammar_resamples{};
-    basalt::program::PplGate* ppl{};
+    granite::program::PplGate* ppl{};
     bool bad{};
     std::vector<int32_t> ids32{};
     Clock::time_point r0{};
@@ -70,17 +70,17 @@ protected:
     int64_t resumed_chunk{};
     const ConvCheckpoint* slot_ck{};
     int own_slot{};
-    basalt::core::ConversationCache::Match parked{};
-    std::optional<basalt::core::SavedConversation> incoming{};
+    granite::core::ConversationCache::Match parked{};
+    std::optional<granite::core::SavedConversation> incoming{};
     int64_t in_tokens{};
     bool in_live{};
-    basalt::core::ConversationStore::Match on_disk{};
+    granite::core::ConversationStore::Match on_disk{};
     bool from_disk{};
     Clock::time_point restore_t0{};
     int64_t read_from{};
 
     // per-request sampling (greedy when temperature is absent)
-    basalt::kernels::SamplerParams req_sp{};
+    granite::kernels::SamplerParams req_sp{};
     bool cancelled{};
     std::vector<int32_t> window{};
     std::vector<int32_t> outv{};
@@ -173,4 +173,4 @@ protected:
     virtual void prompt_parts_reset() {}
 };
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

@@ -19,7 +19,7 @@
 #include "affinity_linux.hpp"
 #endif
 
-namespace basalt::platform {
+namespace granite::platform {
 
 #if defined(_WIN32)
 // --------------------------------------------------------------------------------------------- Windows
@@ -422,4 +422,4 @@ std::vector<std::vector<int>> cpu_l3_groups() {
 
 #endif
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

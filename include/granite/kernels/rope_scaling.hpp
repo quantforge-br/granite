@@ -33,7 +33,7 @@
 #define ROPE_SCALING_HD
 #endif
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 enum class RopeScalingType { None, Linear, YaRN };
 
@@ -174,4 +174,4 @@ inline const char* rope_scaling_invalid(const RopeScaling& s) {
 }
 
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

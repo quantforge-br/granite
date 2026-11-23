@@ -14,14 +14,14 @@
 #include <cstdlib>
 #include "granite/log.hpp"
 
-namespace basalt::kernels {
+namespace granite::kernels {
 namespace {
 
 constexpr int HD = 256;   // attention head width
 
 void check(const char* what) {
     const cudaError_t e = cudaGetLastError();
-    if (e != cudaSuccess) { basalt::log::error("granite", "%s: %s", what, cudaGetErrorString(e)); std::exit(1); }
+    if (e != cudaSuccess) { granite::log::error("granite", "%s: %s", what, cudaGetErrorString(e)); std::exit(1); }
 }
 
 unsigned blocks_for(int64_t n, int t = 256) { return (unsigned) ((n + t - 1) / t); }
@@ -701,7 +701,7 @@ void swiglu_scaled(const float* g, const float* u, const float* sg, const float*
 
 void bf16_rows_dot(const float* x, const uint16_t* w, float* y, int64_t T, int64_t N, int64_t K, void* stream, bool tiles) {
     if (T <= 0) return;
-    if (K % 8 != 0) { basalt::log::error("granite", "bf16_rows_dot: K %lld", (long long) K); std::exit(1); }
+    if (K % 8 != 0) { granite::log::error("granite", "bf16_rows_dot: K %lld", (long long) K); std::exit(1); }
     if (tiles && N <= 64 && K >= 1024 && K % RT_KC == 0) {   // few outputs over a long K: a warp per 8 outputs, x staged once
         bf16_rows_dot_tiles_kernel<<<dim3((unsigned) ((T + RD_T - 1) / RD_T), (unsigned) ((N + 8 * RT_W - 1) / (8 * RT_W))), 32 * RT_W, 0,
                                      (cudaStream_t) stream>>>(x, w, y, T, N, K);
@@ -715,7 +715,7 @@ void bf16_rows_dot(const float* x, const uint16_t* w, float* y, int64_t T, int64
 
 void f32_rows_dot(const float* x, const float* w, float* y, int64_t T, int64_t N, int64_t K, void* stream) {
     if (T <= 0) return;
-    if (K % FD_K != 0) { basalt::log::error("granite", "f32_rows_dot: K %lld", (long long) K); std::exit(1); }
+    if (K % FD_K != 0) { granite::log::error("granite", "f32_rows_dot: K %lld", (long long) K); std::exit(1); }
     f32_rows_dot_kernel<<<dim3((unsigned) ((T + FD_T - 1) / FD_T), (unsigned) ((N + FD_N - 1) / FD_N)), 128, 0,
                           (cudaStream_t) stream>>>(x, w, y, T, N, K);
     check("f32_rows_dot");
@@ -725,7 +725,7 @@ void gdn_gating_proj(const float* x, const uint16_t* w_ab, const float* dt, cons
                      int64_t T, int64_t HV, int64_t K, void* stream) {
     if (T <= 0) return;
     if (HV != GP_HV || K % (32 * GP_AHEAD * GP_S) != 0) {
-        basalt::log::error("granite", "gdn_gating_proj: HV %lld K %lld", (long long) HV, (long long) K);
+        granite::log::error("granite", "gdn_gating_proj: HV %lld K %lld", (long long) HV, (long long) K);
         std::exit(1);
     }
     gdn_gating_proj_kernel<float><<<dim3((unsigned) ((T + GP_TT - 1) / GP_TT), 1, GP_S), 128, 0, (cudaStream_t) stream>>>(
@@ -736,7 +736,7 @@ void gdn_gating_proj(const uint16_t* x, const uint16_t* w_ab, const float* dt, c
                      int64_t T, int64_t HV, int64_t K, void* stream) {
     if (T <= 0) return;
     if (HV != GP_HV || K % (32 * GP_AHEAD * GP_S) != 0) {
-        basalt::log::error("granite", "gdn_gating_proj: HV %lld K %lld", (long long) HV, (long long) K);
+        granite::log::error("granite", "gdn_gating_proj: HV %lld K %lld", (long long) HV, (long long) K);
         std::exit(1);
     }
     gdn_gating_proj_kernel<__nv_bfloat16><<<dim3((unsigned) ((T + GP_TT - 1) / GP_TT), 1, GP_S), 128, 0, (cudaStream_t) stream>>>(
@@ -775,7 +775,7 @@ void attn_qk_prepare(const float* q_full, const float* k, const float* v, const 
                      int64_t cap, const int32_t* cell0_dev, KvInt8 q8, KvFar far_kv) {
     if (T <= 0) return;
     if (rope.rot <= 0 || rope.rot > hd || rope.rot % 2 || (hd != 128 && hd != 256)) {
-        basalt::log::error("granite", "attn_qk_prepare: a rotary width of %d in %d-wide heads", rope.rot, hd);
+        granite::log::error("granite", "attn_qk_prepare: a rotary width of %d in %d-wide heads", rope.rot, hd);
         std::exit(1);
     }
     const dim3 grid((unsigned) T, (unsigned) (n_head + n_kv));
@@ -795,7 +795,7 @@ void attn_qk_prepare_bf16(const uint16_t* q_full, const uint16_t* k, const uint1
                           int64_t cell0, void* stream, KvInt8 q8, uint16_t* k_cache, uint16_t* v_cache, KvFar far_kv) {
     if (T <= 0) return;
     if (rope.rot <= 0 || rope.rot > 256 || rope.rot % 2) {
-        basalt::log::error("granite", "attn_qk_prepare_bf16: a rotary width of %d", rope.rot);
+        granite::log::error("granite", "attn_qk_prepare_bf16: a rotary width of %d", rope.rot);
         std::exit(1);
     }
     const dim3 grid((unsigned) T, (unsigned) (n_head + n_kv));
@@ -820,7 +820,7 @@ void candidate_path(const float* lp_rows, int stride, int top, const float* h, c
                     int rank, const int32_t* anchor, int n, int32_t* ids, float* conf, const CandidateDraw& draw, void* stream) {
     if (n <= 0) return;
     if (top > 64 || rank % 32 || rank > 1024) {
-        basalt::log::error("granite", "candidate_path: %d candidates of rank %d", top, rank);
+        granite::log::error("granite", "candidate_path: %d candidates of rank %d", top, rank);
         std::exit(1);
     }
     candidate_path_kernel<<<1, rank, (size_t) rank * sizeof(float), (cudaStream_t) stream>>>(lp_rows, stride, top, h, pred, succ, rank, anchor, n, ids, conf, draw);
@@ -837,7 +837,7 @@ void attn_gate(const float* attn, const float* q_full, float* out, int64_t T, in
 void attn_gate_e4m3(const float* attn, const float* q_full, int64_t T, int n_head, uint8_t* codes, float* scales, void* stream) {
     if (T <= 0) return;
     if (n_head * HD > 256 * 4 * 8) {
-        basalt::log::error("granite", "attn_gate_e4m3: %d heads", n_head);
+        granite::log::error("granite", "attn_gate_e4m3: %d heads", n_head);
         std::abort();
     }
     attn_gate_token_kernel<float><<<(unsigned) T, 256, 0, (cudaStream_t) stream>>>(attn, q_full, n_head, codes, scales);
@@ -847,7 +847,7 @@ void attn_gate_e4m3(const uint16_t* attn, const uint16_t* q_full, int64_t T, int
                     void* stream) {
     if (T <= 0) return;
     if (n_head * HD > 256 * 4 * 8) {
-        basalt::log::error("granite", "attn_gate_e4m3: %d heads", n_head);
+        granite::log::error("granite", "attn_gate_e4m3: %d heads", n_head);
         std::abort();
     }
     attn_gate_token_kernel<__nv_bfloat16, __nv_bfloat16><<<(unsigned) T, 256, 0, (cudaStream_t) stream>>>(
@@ -857,7 +857,7 @@ void attn_gate_e4m3(const uint16_t* attn, const uint16_t* q_full, int64_t T, int
 void attn_gate_e4m3(const float* attn, const uint16_t* q_full, int64_t T, int n_head, uint8_t* codes, float* scales, void* stream) {
     if (T <= 0) return;
     if (n_head * HD > 256 * 4 * 8) {
-        basalt::log::error("granite", "attn_gate_e4m3: %d heads", n_head);
+        granite::log::error("granite", "attn_gate_e4m3: %d heads", n_head);
         std::abort();
     }
     attn_gate_token_kernel<__nv_bfloat16><<<(unsigned) T, 256, 0, (cudaStream_t) stream>>>(
@@ -868,7 +868,7 @@ void attn_gate_bf16(const uint16_t* attn, const uint16_t* q_full, int64_t T, int
                     void* stream) {
     if (T <= 0) return;
     if (n_head * HD > 256 * 4 * 8) {
-        basalt::log::error("granite", "attn_gate_bf16: %d heads", n_head);
+        granite::log::error("granite", "attn_gate_bf16: %d heads", n_head);
         std::abort();
     }
     attn_gate_token_kernel<__nv_bfloat16, __nv_bfloat16, false><<<(unsigned) T, 256, 0, (cudaStream_t) stream>>>(
@@ -880,7 +880,7 @@ void attn_gate_bf16(const float* attn, const uint16_t* q_full, int64_t T, int n_
                     void* stream) {
     if (T <= 0) return;
     if (n_head * HD > 256 * 4 * 8) {
-        basalt::log::error("granite", "attn_gate_bf16: %d heads", n_head);
+        granite::log::error("granite", "attn_gate_bf16: %d heads", n_head);
         std::abort();
     }
     attn_gate_token_kernel<__nv_bfloat16, float, false><<<(unsigned) T, 256, 0, (cudaStream_t) stream>>>(
@@ -889,4 +889,4 @@ void attn_gate_bf16(const float* attn, const uint16_t* q_full, int64_t T, int n_
     check("attn_gate_bf16");
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

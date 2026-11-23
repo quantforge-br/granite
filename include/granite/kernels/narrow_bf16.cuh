@@ -10,7 +10,7 @@
 
 #include <cuda_runtime.h>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 /// a * b on bf16x2, rounded once (fma.rn with a -0 addend: mul.rn.bf16x2 needs sm_90)
 __device__ __forceinline__ unsigned bf16x2_mul_rn(unsigned a, unsigned b) {
@@ -59,4 +59,4 @@ __device__ __forceinline__ void e2m1x8_bf16x2_scaled(unsigned w, unsigned sc, E2
     for (int i = 0; i < 4; ++i) h[i] = bf16x2_mul_rn(__byte_perm(lo[i >> 1], hi[i >> 1], (i & 1) ? 0x7362u : 0x5140u), sc);
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

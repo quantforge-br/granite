@@ -23,7 +23,7 @@ int main() {
     const fs::path root = fs::temp_directory_path() / "basalt_shipped_profiles_test";
     fs::remove_all(root);
     const std::string dir = (root / "data" / "profiles").string();
-    using basalt::core::missing_shipped_profile;
+    using granite::core::missing_shipped_profile;
 
     check(missing_shipped_profile(dir, {}).empty(), "a pack that ships no profile is never refused, with or without the folder");
     const std::string no_dir = missing_shipped_profile(dir, {"m-1x2.prof"});

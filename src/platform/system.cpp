@@ -23,7 +23,7 @@
 #include <unistd.h>
 #endif
 
-namespace basalt::platform {
+namespace granite::platform {
 
 namespace {
 /// An argument for a shell's command line: wrapped in quotes the shell reads literally.
@@ -238,4 +238,4 @@ ThreadWaits threads_in_disk_wait() {
 
 #endif
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

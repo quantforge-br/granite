@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace basalt::program::tokenizer {
+namespace granite::program::tokenizer {
 
 enum CptFlag : uint16_t {
     kNumber = 0x0002,       // \p{N}
@@ -41,4 +41,4 @@ const uint16_t* cpt_flag_table();
 
 /// Splits `text` (UTF-8) into the pieces the qwen35 pre-tokenizer yields and appends each piece's end byte offset.
 
-}  // namespace basalt::program::tokenizer
+}  // namespace granite::program::tokenizer

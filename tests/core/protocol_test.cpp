@@ -15,9 +15,9 @@ int main() {
                 if (t % 2 == 0) {
                     std::string bt = "BT " + std::to_string(t);
                     for (int e = 0; e < 8; ++e) bt += " " + std::to_string(2570 + i + e);
-                    basalt::protocol::emit_text(bt + "\n");
+                    granite::protocol::emit_text(bt + "\n");
                 } else {
-                    basalt::protocol::emit("PL %d %d %.0f %.1f\n", i, kLines, 12.0, 3.5);
+                    granite::protocol::emit("PL %d %d %.0f %.1f\n", i, kLines, 12.0, 3.5);
                 }
             }
         });

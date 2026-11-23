@@ -15,7 +15,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
-namespace basalt::vision {
+namespace granite::vision {
 
 bool decode_image(const uint8_t* data, size_t len, Image& out, std::string& err, int64_t max_pixels, std::vector<uint8_t>* alpha) {
     if (data == nullptr || len == 0) { err = "empty image"; return false; }
@@ -261,4 +261,4 @@ void patchify_padded(const Image& img, const Geometry& g, const float mean[3], c
                 }
 }
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

@@ -5,7 +5,7 @@
 #include <cmath>
 #include <cstdio>
 
-namespace basalt::program {
+namespace granite::program {
 
 namespace {
 // Window model, fitted to cold decode windows of one pack on one card, on two unlike cards and on the layer split:
@@ -69,7 +69,7 @@ MgPlan plan_multi_gpu(const std::vector<GpuCard>& cards, const MgModel& m) {
         total_bw += bw[i];
     }
     const double kGpuGB = m.window_gb, kMissMs = m.miss_ms;
-    auto read_share = [&](double slots, double pairs) { return ::basalt::program::read_share(slots, pairs, m.hit_exponent); };
+    auto read_share = [&](double slots, double pairs) { return ::granite::program::read_share(slots, pairs, m.hit_exponent); };
     const double gpu_main = kGpuGB / bw[0] * 1000.0;
     // expert tier: the main card runs every layer; every card's experts count
     MgPrice tier{Mechanism::ExpertTier, m.tier_built, gpu_main + kMissMs * (1.0 - read_share(total_slots, pairs))};
@@ -404,4 +404,4 @@ std::vector<int64_t> prompt_chunk_list(int64_t tokens, int64_t chunk, int64_t he
     return v;
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

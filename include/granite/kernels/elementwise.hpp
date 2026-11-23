@@ -21,7 +21,7 @@
 
 #include <cstdint>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 /// Decode one canonical embedding row already selected by the caller. Codes are
 /// packed low bits first (2, 4 or 8 bits); scales/offsets are FP32 per group.
@@ -124,4 +124,4 @@ void copy_i32_from_mapped(int32_t* dst, const int32_t* src, int64_t n, void* str
 void copy_i32x3_from_mapped(int32_t* d0, const int32_t* s0, int64_t n0, int32_t* d1, const int32_t* s1, int64_t n1,
                             int32_t* d2, const int32_t* s2, int64_t n2, void* stream);
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

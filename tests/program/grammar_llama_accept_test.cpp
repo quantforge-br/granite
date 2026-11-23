@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-using namespace basalt::program::grammar;
+using namespace granite::program::grammar;
 
 typedef int32_t llama_token;
 

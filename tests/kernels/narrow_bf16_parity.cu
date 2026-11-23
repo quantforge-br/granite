@@ -13,7 +13,7 @@
 #include <cstring>
 #include <vector>
 
-namespace bk = basalt::kernels;
+namespace bk = granite::kernels;
 
 namespace {
 

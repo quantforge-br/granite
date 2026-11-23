@@ -27,7 +27,7 @@
 #define GGUF_MAIN_DISABLED 1
 #include "granite/artifact/gguf_reader.hpp"
 
-namespace basalt {
+namespace granite {
 
 // ---- fp16/bf16 -> fp32. Both handle subnormals and infinities; naive shifts do not.
 inline float fp16_to_fp32(uint16_t h) {
@@ -335,4 +335,4 @@ inline void dequantize_bf16(const uint8_t* p, float* out, int n) {
     for (int i = 0; i < n; ++i) out[i] = bf16_to_fp32(read_u16(p + 2 * i));
 }
 
-} // namespace basalt
+} // namespace granite

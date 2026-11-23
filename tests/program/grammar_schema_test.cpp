@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <string>
 
-using namespace basalt::program::grammar;
+using namespace granite::program::grammar;
 
 static int g_fail = 0;
 #define CHECK(c)                                                              \
@@ -161,7 +161,7 @@ static void test_tools() {
     CHECK(call_ok(g, "<tool_call>\n<function=ping>\n</function>\n</tool_call>\n<tool_call>\n<function=ping>\n</function>\n</tool_call>"));
     // stays inactive until the trigger
     Triggers tr;
-    tr.words = {basalt::program::grammar::tool_form().trigger};
+    tr.words = {granite::program::grammar::tool_form().trigger};
     GrammarState s(g, tr);
     CHECK(!s.active());
     CHECK(s.accept("I will check the weather. Let me <call"));

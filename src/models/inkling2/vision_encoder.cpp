@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 namespace {
 // sized for this picture and no smaller than a typical one, so a few pictures of a request share one region
@@ -106,4 +106,4 @@ bool ImageEncoder::encode(const uint8_t* data, size_t bytes, std::vector<float>&
     return true;
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

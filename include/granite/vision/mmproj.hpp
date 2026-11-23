@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::vision {
+namespace granite::vision {
 
 struct TensorRef {
     std::string name;
@@ -63,4 +63,4 @@ private:
     std::map<std::string, TensorRef> tensors_;
 };
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

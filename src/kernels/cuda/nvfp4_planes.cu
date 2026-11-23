@@ -9,7 +9,7 @@
 
 #include "granite/log.hpp"
 
-namespace basalt::kernels::nvfp4p {
+namespace granite::kernels::nvfp4p {
 namespace {
 
 // One thread per (row, 64-value block): 32 code bytes re-paired, 4 scale bytes to their tile slots.
@@ -118,7 +118,7 @@ __global__ void q8_to_planes_kernel(const uint8_t* __restrict__ blocks, int64_t 
 
 void to_blocks(const void* planes, int64_t rows, int64_t K, void* blocks, void* stream) {
     if (!fits(rows, K)) {
-        basalt::log::error("granite", "nvfp4 planes: a [%lld x %lld] matrix", (long long) rows, (long long) K);
+        granite::log::error("granite", "nvfp4 planes: a [%lld x %lld] matrix", (long long) rows, (long long) K);
         std::exit(1);
     }
     const int64_t n = rows * (K / 64);
@@ -126,14 +126,14 @@ void to_blocks(const void* planes, int64_t rows, int64_t K, void* blocks, void* 
                                                                                       (uint8_t*) blocks);
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        basalt::log::error("granite", "nvfp4 planes: %s", cudaGetErrorString(e));
+        granite::log::error("granite", "nvfp4 planes: %s", cudaGetErrorString(e));
         std::exit(1);
     }
 }
 
 void from_blocks(const void* blocks, int64_t rows, int64_t K, void* planes, void* stream) {
     if (!fits(rows, K)) {
-        basalt::log::error("granite", "nvfp4 planes: a [%lld x %lld] matrix", (long long) rows, (long long) K);
+        granite::log::error("granite", "nvfp4 planes: a [%lld x %lld] matrix", (long long) rows, (long long) K);
         std::exit(1);
     }
     const int64_t n = rows * (K / 64);
@@ -141,14 +141,14 @@ void from_blocks(const void* blocks, int64_t rows, int64_t K, void* planes, void
                                                                                         (uint8_t*) planes);
     const cudaError_t e = cudaGetLastError();
     if (e != cudaSuccess) {
-        basalt::log::error("granite", "nvfp4 planes: %s", cudaGetErrorString(e));
+        granite::log::error("granite", "nvfp4 planes: %s", cudaGetErrorString(e));
         std::exit(1);
     }
 }
 
 void from_q8(const void* q8_blocks, int64_t rows, int64_t K, void* planes, float* scale, void* stream) {
     if (!fits(rows, K) || K % 32 != 0) {
-        basalt::log::error("granite", "nvfp4p::from_q8: %lld x %lld", (long long) rows, (long long) K);
+        granite::log::error("granite", "nvfp4p::from_q8: %lld x %lld", (long long) rows, (long long) K);
         std::exit(1);
     }
     const cudaStream_t s = (cudaStream_t) stream;
@@ -160,4 +160,4 @@ void from_q8(const void* q8_blocks, int64_t rows, int64_t K, void* planes, float
     q8_to_planes_kernel<<<(unsigned) ((n + 255) / 256), 256, 0, s>>>((const uint8_t*) q8_blocks, rows, K, scale, (uint8_t*) planes);
 }
 
-}  // namespace basalt::kernels::nvfp4p
+}  // namespace granite::kernels::nvfp4p

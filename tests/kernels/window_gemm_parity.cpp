@@ -19,8 +19,8 @@
 #include <random>
 #include <vector>
 
-namespace wg = basalt::kernels::wgemm;
-namespace np = basalt::kernels::nvfp4p;
+namespace wg = granite::kernels::wgemm;
+namespace np = granite::kernels::nvfp4p;
 
 namespace {
 
@@ -303,7 +303,7 @@ void parity_packs() {
     void *a1, *a2;
     cudaMalloc(&a1, wg::act_bytes(K));
     cudaMalloc(&a2, wg::act_bytes(K));
-    basalt::kernels::rms_norm_rows(d_x, d_w, d_xn, R, K, 1e-6f, nullptr);
+    granite::kernels::rms_norm_rows(d_x, d_w, d_xn, R, K, 1e-6f, nullptr);
     wg::pack(d_xn, K, K, R, a1, nullptr);
     wg::norm_pack(d_x, d_w, 1e-6f, K, R, a2, nullptr);
     const bool ok = down((const uint8_t*) a1, wg::act_bytes(K)) == down((const uint8_t*) a2, wg::act_bytes(K));
@@ -349,7 +349,7 @@ void bench_call(const char* name, int64_t rows, int64_t K, bool swiglu) {
         wg::workspace_need(c, p, t);
         std::printf("%-24s tiles %zu, slices %zu\n", name, t, p ? p / R / (swiglu ? 2 * rows : rows) : 1);
     }
-    basalt::kernels::PdlScope pdl(true);   // as a decode window launches them
+    granite::kernels::PdlScope pdl(true);   // as a decode window launches them
     cudaEvent_t e0, e1;
     cudaEventCreate(&e0);
     cudaEventCreate(&e1);

@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <string>
 
-using namespace basalt::program;
+using namespace granite::program;
 
 static int g_fail = 0;
 #define CHECK(c)                                                              \
@@ -171,7 +171,7 @@ int main() {
     }
     // Under CUDA_VISIBLE_DEVICES the numbers count within its list, and the narrowed list keeps its tokens.
     {
-        basalt::platform::set_env("CUDA_VISIBLE_DEVICES", "1,0");
+        granite::platform::set_env("CUDA_VISIBLE_DEVICES", "1,0");
         bool known = false;
         const std::vector<GpuCard> v = visible_gpus(known);
         CHECK(known && v.size() == 2);
@@ -184,7 +184,7 @@ int main() {
             const char* order = std::getenv("CUDA_DEVICE_ORDER");
             CHECK_STR(order ? order : "", "PCI_BUS_ID");
         }
-        basalt::platform::set_env("CUDA_VISIBLE_DEVICES", "-1");
+        granite::platform::set_env("CUDA_VISIBLE_DEVICES", "-1");
         CHECK(visible_gpus(known).empty() && known);
     }
     CHECK_STR(gpu_identity(3), "0,1,2");

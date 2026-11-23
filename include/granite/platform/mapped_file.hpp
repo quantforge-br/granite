@@ -13,7 +13,7 @@
 #include <optional>
 #include <string>
 
-namespace basalt::platform {
+namespace granite::platform {
 
 struct MapOptions {
     uint64_t offset = 0;   ///< first byte of the file to expose; on Linux it has to be a multiple of the page size
@@ -71,4 +71,4 @@ private:
 /// (see lock_resident). Used for a table that decode touches at random.
 LockResult lock_view(void* p, uint64_t bytes, const LockProgress& progress = nullptr);
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

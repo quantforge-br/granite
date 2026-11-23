@@ -21,7 +21,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace basalt::program {
+namespace granite::program {
 
 namespace {
 using Clock = std::chrono::steady_clock;
@@ -31,7 +31,7 @@ double secs(Clock::time_point a, Clock::time_point b) { return std::chrono::dura
 class LogFollower {
 public:
     LogFollower(const std::string& path, const std::string& label)
-        : path_(path), t0_(Clock::now()), sum_(label, basalt::platform::stderr_is_terminal(), 0.0),
+        : path_(path), t0_(Clock::now()), sum_(label, granite::platform::stderr_is_terminal(), 0.0),
           thread_([this] { run(); }) {}
     ~LogFollower() { stop(false); }
     void stop(bool ready) {
@@ -51,7 +51,7 @@ private:
     double now() const { return secs(t0_, Clock::now()); }
     static void emit(const std::string& s) {
         if (s.empty()) return;
-        basalt::log::raw_text(s);
+        granite::log::raw_text(s);
     }
     void poll() {
         std::ifstream f(path_, std::ios::binary);
@@ -84,7 +84,7 @@ private:
 
     std::string path_, partial_;
     Clock::time_point t0_;
-    basalt::program::LoadSummary sum_;
+    granite::program::LoadSummary sum_;
     std::streamoff offset_ = 0;
     std::mutex mu_;
     std::condition_variable cv_;
@@ -97,8 +97,8 @@ bool Engine::start(const std::string& engine_bin, const std::vector<std::string>
                    std::string& err) {
     std::vector<std::string> argv = {engine_bin, "--serve"};
     argv.insert(argv.end(), args.begin(), args.end());
-    if (!basalt::platform::spawn_piped(argv, log_path, child_, err)) return false;
-    basalt::platform::set_stop_child(child_.child);
+    if (!granite::platform::spawn_piped(argv, log_path, child_, err)) return false;
+    granite::platform::set_stop_child(child_.child);
     log_path_ = log_path;
     std::string line;
     LogFollower follower(log_path, label);
@@ -182,18 +182,18 @@ void Engine::stop() {
     if (child_.child.id <= 0 && child_.child.handle == nullptr) return;
     const std::string q = "QUIT\n";
     if (child_.in_fd >= 0) {
-        (void) basalt::platform::pipe_write_all(child_.in_fd, q.data(), q.size());
-        basalt::platform::close_fd(child_.in_fd);
+        (void) granite::platform::pipe_write_all(child_.in_fd, q.data(), q.size());
+        granite::platform::close_fd(child_.in_fd);
         child_.in_fd = -1;
     }
     for (int i = 0; i < 600; ++i) {
-        if (basalt::platform::child_wait(child_.child, 100) >= 0) { finish_reap(); return; }
+        if (granite::platform::child_wait(child_.child, 100) >= 0) { finish_reap(); return; }
     }
-    basalt::platform::child_terminate(child_.child);
+    granite::platform::child_terminate(child_.child);
     reap();
 }
 
-bool Engine::write_all(const std::string& s) { return basalt::platform::pipe_write_all(child_.in_fd, s.data(), s.size()); }
+bool Engine::write_all(const std::string& s) { return granite::platform::pipe_write_all(child_.in_fd, s.data(), s.size()); }
 
 bool Engine::read_line(std::string& line) {
     for (;;) {
@@ -205,7 +205,7 @@ bool Engine::read_line(std::string& line) {
             return true;
         }
         char tmp[65536];
-        const int64_t n = basalt::platform::pipe_read(child_.out_fd, tmp, sizeof tmp);
+        const int64_t n = granite::platform::pipe_read(child_.out_fd, tmp, sizeof tmp);
         if (n <= 0) return false;
         buf_.append(tmp, (size_t) n);
     }
@@ -216,17 +216,17 @@ int engine_plan(const std::string& engine_bin, const std::vector<std::string>& a
     std::vector<std::string> argv = {engine_bin};
     argv.insert(argv.end(), args.begin(), args.end());
     argv.push_back("--gpu-plan");
-    basalt::platform::PipedChild child;
+    granite::platform::PipedChild child;
     std::string err;
-    if (!basalt::platform::spawn_piped(argv, log_path, child, err)) return -1;
-    basalt::platform::close_fd(child.in_fd);
+    if (!granite::platform::spawn_piped(argv, log_path, child, err)) return -1;
+    granite::platform::close_fd(child.in_fd);
     char buf[4096];
     answer.clear();
-    for (int64_t n; (n = basalt::platform::pipe_read(child.out_fd, buf, sizeof buf)) > 0;) answer.append(buf, (size_t) n);
-    basalt::platform::close_fd(child.out_fd);
-    const int code = basalt::platform::child_wait(child.child, 20000);
-    if (code < 0) basalt::platform::child_terminate(child.child);
-    basalt::platform::child_close(child.child);
+    for (int64_t n; (n = granite::platform::pipe_read(child.out_fd, buf, sizeof buf)) > 0;) answer.append(buf, (size_t) n);
+    granite::platform::close_fd(child.out_fd);
+    const int code = granite::platform::child_wait(child.child, 20000);
+    if (code < 0) granite::platform::child_terminate(child.child);
+    granite::platform::child_close(child.child);
     return code;
 }
 
@@ -257,7 +257,7 @@ std::string default_engine(const std::string& self, const std::string& built) {
     if (!self.empty()) {
         const std::filesystem::path p(self);
         const std::string beside = (p.parent_path() / ("granite" + p.extension().string())).string();
-        if (basalt::platform::path_executable(beside)) return beside;
+        if (granite::platform::path_executable(beside)) return beside;
     }
     return built;
 }
@@ -282,16 +282,16 @@ std::string community_refusal(const std::vector<std::string>& extra, const std::
 
 void Engine::reap() {
     // wait for it, up to the time a normal exit needs, then let go whether or not it ended
-    (void) basalt::platform::child_wait(child_.child, 10000);
+    (void) granite::platform::child_wait(child_.child, 10000);
     finish_reap();
 }
 
 void Engine::finish_reap() {
-    if (child_.in_fd >= 0) basalt::platform::close_fd(child_.in_fd);
-    if (child_.out_fd >= 0) basalt::platform::close_fd(child_.out_fd);
+    if (child_.in_fd >= 0) granite::platform::close_fd(child_.in_fd);
+    if (child_.out_fd >= 0) granite::platform::close_fd(child_.out_fd);
     child_.in_fd = child_.out_fd = -1;
-    basalt::platform::clear_stop_child();
-    basalt::platform::child_close(child_.child);
+    granite::platform::clear_stop_child();
+    granite::platform::child_close(child_.child);
 }
 
 std::vector<std::string> split(const std::string& s, char sep) {
@@ -368,8 +368,8 @@ std::string engine_failure(const std::string& log_path) {
     while (std::getline(f, line)) {
         if (line.empty()) continue;
         lines.push_back(line);
-        basalt::log::Parsed p;
-        if (basalt::log::parse(line, p) && p.level == basalt::log::Level::error) errors.push_back(line);
+        granite::log::Parsed p;
+        if (granite::log::parse(line, p) && p.level == granite::log::Level::error) errors.push_back(line);
     }
     if (errors.empty() && lines.size() > 8) lines.erase(lines.begin(), lines.end() - 8);
     std::string r;
@@ -398,4 +398,4 @@ bool read_id_lines(const std::string& path, std::vector<std::vector<int64_t>>& l
     return true;
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

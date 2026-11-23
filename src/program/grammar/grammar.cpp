@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <unordered_set>
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 namespace {
 
@@ -971,4 +971,4 @@ std::vector<std::vector<Element>> GrammarState::stack_elements() const {
     return out;
 }
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

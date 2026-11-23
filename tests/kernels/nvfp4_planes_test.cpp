@@ -10,7 +10,7 @@
 #include <random>
 #include <vector>
 
-namespace p = basalt::kernels::nvfp4p;
+namespace p = granite::kernels::nvfp4p;
 
 int main() {
     int n = 0;
@@ -33,13 +33,13 @@ int main() {
     std::vector<float> ref(64);
     for (int64_t r = 0; r < rows; ++r)
         for (int64_t b = 0; b < K / 64; ++b) {
-            basalt::dequantize_nvfp4(&blk[(size_t) (r * (K / 64) + b) * 36], ref.data());
+            granite::dequantize_nvfp4(&blk[(size_t) (r * (K / 64) + b) * 36], ref.data());
             for (int v = 0; v < 64; ++v) {
                 const int64_t k = b * 64 + v;
                 const uint8_t byte = pl[(size_t) (r * (K / 2) + k / 2)];
                 const int code = (k & 1) ? byte >> 4 : byte & 15;
                 const uint8_t sc = pl[p::scale_offset(rows, K) + (size_t) p::scale_index(r, k / 16, K)];
-                const float got = e2m1[code] * basalt::ue4m3_to_fp32_half(sc) * 2.0f;
+                const float got = e2m1[code] * granite::ue4m3_to_fp32_half(sc) * 2.0f;
                 bad += got != ref[(size_t) v] && !(got == 0.0f && ref[(size_t) v] == 0.0f);
             }
         }

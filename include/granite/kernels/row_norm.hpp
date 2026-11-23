@@ -5,7 +5,7 @@
 // synchronises).
 #pragma once
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 /// out[t][i] = x[t][i] * rsqrt(mean(x[t]^2) + eps) * w[i], one fp32 row of n (multiple of 4, at most 8192) per token.
 void rms_norm_rows(const float* x, const float* w, int n_tokens, int n, float eps, float* out, void* stream);
@@ -14,4 +14,4 @@ void rms_norm_rows(const float* x, const float* w, int n_tokens, int n, float ep
 void hc_pre_rms_norm(const float* x, const float* pre, int pre_stride, const float* w, int n_tokens, int n, float eps,
                      float* cur, float* out, void* stream);
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

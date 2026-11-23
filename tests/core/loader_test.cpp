@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-using namespace basalt::core;
+using namespace granite::core;
 
 namespace {
 
@@ -40,7 +40,7 @@ struct TestFile {
     explicit TestFile(uint64_t n) : path((std::filesystem::current_path() / "loader_test.bin").string()), bytes(n) {
         std::mt19937_64 rng(7);
         for (uint8_t& b : bytes) b = (uint8_t) rng();
-        std::FILE* f = basalt::platform::open_file_utf8(path, "wb");
+        std::FILE* f = granite::platform::open_file_utf8(path, "wb");
         std::fwrite(bytes.data(), 1, bytes.size(), f);
         std::fclose(f);
     }
@@ -177,14 +177,14 @@ void conversions(const TestFile& f) {
                 case Conv::ToF16: {
                     float v;
                     std::memcpy(&v, src + i * 4, 4);
-                    const uint16_t h = basalt::kernels::f16_from_f32(v);
+                    const uint16_t h = granite::kernels::f16_from_f32(v);
                     ok = std::memcmp(out.data() + i * 2, &h, 2) == 0;
                     break;
                 }
                 case Conv::WidenF16: {
                     uint16_t h;
                     std::memcpy(&h, src + i * 2, 2);
-                    const float v = basalt::kernels::f32_from_f16(h);
+                    const float v = granite::kernels::f32_from_f16(h);
                     ok = std::memcmp(out.data() + i * 4, &v, 4) == 0;
                     break;
                 }
@@ -221,7 +221,7 @@ void bf16_blocks(Conv conv) {
     const std::string path = (std::filesystem::current_path() / (std::string("loader_") + tag + "_test.bin")).string();
     {
         std::vector<uint8_t> pad(off, 0x5a);
-        std::FILE* fp = basalt::platform::open_file_utf8(path, "wb");
+        std::FILE* fp = granite::platform::open_file_utf8(path, "wb");
         std::fwrite(pad.data(), 1, pad.size(), fp);
         std::fwrite(vals.data(), 2, vals.size(), fp);
         std::fclose(fp);
@@ -237,12 +237,12 @@ void bf16_blocks(Conv conv) {
         uint8_t* o = &want[b * (uint64_t) bb];
         if (q8) {   // ggml's quantize_row_q8_0_ref
             const float d = amax / 127.f, id = d ? 1.f / d : 0.f;
-            const uint16_t dh = basalt::kernels::f16_from_f32(d);
+            const uint16_t dh = granite::kernels::f16_from_f32(d);
             std::memcpy(o, &dh, 2);
             for (int i = 0; i < 32; ++i) o[2 + i] = (uint8_t) (int8_t) roundf(x[i] * id);
         } else {    // ggml's quantize_row_q4_0_ref
             const float d = mx / -8.f, id = d ? 1.f / d : 0.f;
-            const uint16_t dh = basalt::kernels::f16_from_f32(d);
+            const uint16_t dh = granite::kernels::f16_from_f32(d);
             std::memcpy(o, &dh, 2);
             for (int i = 0; i < 16; ++i) {
                 const int x0 = std::min(15, (int) (int8_t) (x[i] * id + 8.5f));
@@ -335,7 +335,7 @@ void errors(const TestFile& f) {
 // 4 KiB aligned host buffers, offsets and lengths: the read goes straight into the destination
 void host_aligned(const TestFile& f) {
     constexpr size_t kLen = 20u << 20;
-    uint8_t* dst = (uint8_t*) basalt::platform::alloc_aligned(kLen + 4096, 4096);
+    uint8_t* dst = (uint8_t*) granite::platform::alloc_aligned(kLen + 4096, 4096);
     check(dst != nullptr, "aligned allocation");
     if (dst == nullptr) return;
     std::memset(dst, 0xEE, kLen + 4096);
@@ -358,7 +358,7 @@ void host_aligned(const TestFile& f) {
         check(dst[kLen] == 0xEE, "aligned host write past its end");
         std::memset(dst, 0xEE, kLen);
     }
-    basalt::platform::free_aligned(dst);
+    granite::platform::free_aligned(dst);
 }
 
 // two device items whose addresses touch are two items: one copy cannot span two allocations
@@ -525,7 +525,7 @@ void steps(const TestFile& f) {
 }
 
 void descriptor(const TestFile& f) {
-    const int fd = basalt::platform::open_fd_utf8(f.path);
+    const int fd = granite::platform::open_fd_utf8(f.path);
     std::vector<uint8_t> dst(100000);
     LoadPlan plan;
     LoadItem it;
@@ -537,7 +537,7 @@ void descriptor(const TestFile& f) {
     Loader loader;
     std::string err;
     check(loader.run(plan, err) && std::memcmp(dst.data(), f.bytes.data() + 5000, dst.size()) == 0, "a descriptor source");
-    basalt::platform::close_fd(fd);
+    granite::platform::close_fd(fd);
 }
 
 void device(const TestFile& f) {
@@ -668,7 +668,7 @@ void device(const TestFile& f) {
         for (uint64_t i = 0; i < (4u << 20) / 2 && ok; ++i) {
             uint16_t h;
             std::memcpy(&h, f.bytes.data() + 8192 + i * 2, 2);
-            const float v = basalt::kernels::f32_from_f16(h);
+            const float v = granite::kernels::f32_from_f16(h);
             ok = std::memcmp(wide.data() + i * 4, &v, 4) == 0;
         }
         check(ok, "device widened elements");
@@ -721,7 +721,7 @@ void cards_first(const TestFile& f) {
     if (!has_device()) return;
     constexpr uint64_t kLen = 16u << 20;   // one staging piece each: every placement is a line of the bar
     void* d = nullptr;
-    uint8_t* h = (uint8_t*) basalt::platform::alloc_aligned(kLen, 4096);
+    uint8_t* h = (uint8_t*) granite::platform::alloc_aligned(kLen, 4096);
     check(cudaMalloc(&d, kLen) == cudaSuccess && h != nullptr, "cards first: buffers");
     LoadPlan plan;
     const int file = plan.file(f.path);
@@ -771,7 +771,7 @@ void cards_first(const TestFile& f) {
     std::filesystem::remove(path, ec);
     std::filesystem::remove(after, ec);
     cudaFree(d);
-    basalt::platform::free_aligned(h);
+    granite::platform::free_aligned(h);
 }
 
 }  // namespace

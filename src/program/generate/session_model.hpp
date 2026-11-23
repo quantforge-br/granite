@@ -3,9 +3,9 @@
 #include "granite/model/adapter.hpp"
 #include "granite/program/options.hpp"
 
-namespace basalt::program::generate {
+namespace granite::program::generate {
 
 /// A model served through its sessions, to its exit code.
-int run_session_model(basalt::program::CommonOptions& o, const basalt::model::ModelAdapter& adapter);
+int run_session_model(granite::program::CommonOptions& o, const granite::model::ModelAdapter& adapter);
 
-}  // namespace basalt::program::generate
+}  // namespace granite::program::generate

@@ -18,7 +18,7 @@
 #define DRAFT_CUM_HD
 #endif
 
-namespace basalt::core {
+namespace granite::core {
 
 /// The acceptance rate of a sampled draft by its probability bin.
 DRAFT_CUM_HD inline float draft_cum_acc(float p) {
@@ -77,4 +77,4 @@ struct DraftCumAdapt {
     }
 };
 
-}  // namespace basalt::core
+}  // namespace granite::core

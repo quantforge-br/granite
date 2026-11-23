@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::program {
+namespace granite::program {
 
 /// The smallest worker count whose CPU expert time (entries per call = `entries`) is within `tolerance` of the best
 /// measured count. False when the rates carry no such rows. `us_best` and `us_pick` are the per-entry times.
@@ -59,4 +59,4 @@ std::string suggest_saved_profile(const std::string& file, double base_tps, doub
 /// "1/96/0.85 251 252 | 64/256/0.70 190 | saved profile 255 tok/s (band 1.0%)", in trial order.
 std::string format_adapt_line(const std::vector<AdaptTrial>& trials, double band);
 
-}  // namespace basalt::program
+}  // namespace granite::program

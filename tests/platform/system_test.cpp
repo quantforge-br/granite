@@ -22,7 +22,7 @@ void check(bool ok, const std::string& what) {
 }  // namespace
 
 int main() {
-    using namespace basalt::platform;
+    using namespace granite::platform;
     check(process_id() > 0, "process_id is positive");
 
     // the root is two path components above the executable: what is left of the path is "/<dir>/<name>"

@@ -4,7 +4,7 @@
 #include <map>
 #include <string>
 
-namespace basalt::core {
+namespace granite::core {
 
 struct Diag {
     bool profile = false;      ///< --profile: per-stage GPU stamps of the verify window (turns PDL off; not for A/B)
@@ -27,4 +27,4 @@ inline double exp_flag(const char* name, double def = 0.0) {
     return it == m.end() ? def : it->second;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

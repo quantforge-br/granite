@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::core::vmm {
+namespace granite::core::vmm {
 
 /// Whether the current device supports virtual memory management (and the driver entry points were found).
 bool supported();
@@ -38,4 +38,4 @@ bool map_handle(uint8_t* va, uint64_t bytes, unsigned long long handle);
 void unmap_only(uint8_t* va, uint64_t bytes);
 void release(unsigned long long handle);
 
-}  // namespace basalt::core::vmm
+}  // namespace granite::core::vmm

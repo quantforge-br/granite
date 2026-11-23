@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 // Snapshot-owned host storage. Appending never relocates existing payloads;
 // only the small segment directory can move. No sharing or copy-on-write is
@@ -165,4 +165,4 @@ private:
     size_t size_ = 0;
 };
 
-} // namespace basalt::core
+} // namespace granite::core

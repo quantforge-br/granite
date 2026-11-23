@@ -31,8 +31,8 @@ bool sound(const std::vector<int>& rows, const Groups& g, int cap) {
 }  // namespace
 
 int main() {
-    using basalt::program::serve::batch_groups;
-    using basalt::program::serve::batch_shares;
+    using granite::program::serve::batch_groups;
+    using granite::program::serve::batch_shares;
     using Joint = std::vector<std::vector<double>>;
     using Rows = std::vector<int>;
 

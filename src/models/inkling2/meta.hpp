@@ -7,7 +7,7 @@
 
 #include <string>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 inline constexpr const char* kArch = "inkling2";
 
@@ -39,4 +39,4 @@ inline model::ModelDesc describe_meta(const GgufFile& g) {
     return d;
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

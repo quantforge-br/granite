@@ -7,7 +7,7 @@
 
 #include "granite/platform/dynlib.hpp"
 
-namespace basalt::vision {
+namespace granite::vision {
 
 namespace {
 
@@ -135,4 +135,4 @@ std::string video_line() {
     return f != nullptr ? "VIDEO on " + f->version + (f->path.empty() ? "" : " from " + f->path) : "VIDEO off " + why;
 }
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

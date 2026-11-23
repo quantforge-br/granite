@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::platform {
+namespace granite::platform {
 
 /// How worker threads are allocated across physical and logical processors.
 enum class CpuAffinity {
@@ -42,4 +42,4 @@ CpuInfo cpu_info();
 /// Intel die. Processors are named as above. Empty when the OS does not say.
 std::vector<std::vector<int>> cpu_l3_groups();
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

@@ -15,7 +15,7 @@
 #include "granite/platform/cpu.hpp"
 #include "granite/platform/memory.hpp"
 
-namespace basalt::program {
+namespace granite::program {
 
 namespace {
 constexpr size_t kBytes = 2ull << 30;
@@ -89,4 +89,4 @@ std::vector<std::pair<std::string, double>> parse_link_rates(const std::string& 
     return out;
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

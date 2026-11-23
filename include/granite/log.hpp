@@ -19,7 +19,7 @@
 
 #include "granite/platform/format_check.hpp"
 
-namespace basalt::log {
+namespace granite::log {
 
 enum class Level { info, warning, error };
 
@@ -146,4 +146,4 @@ inline std::FILE* stream() { return stderr; }
 /// Writes `text` as given (no tag, no newline added).
 inline void raw_text(const std::string& text) { detail::write_all(text); }
 
-}  // namespace basalt::log
+}  // namespace granite::log

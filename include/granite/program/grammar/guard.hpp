@@ -18,7 +18,7 @@
 #include "granite/program/grammar/grammar.hpp"
 #include "granite/program/grammar/reply_form.hpp"
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 struct PackVocab {
     std::shared_ptr<const Vocab> vocab;
@@ -97,4 +97,4 @@ private:
     int64_t windows_ = 0, misses_ = 0, fallbacks_ = 0, ns_ = 0;
 };
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

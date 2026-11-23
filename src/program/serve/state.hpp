@@ -55,12 +55,12 @@
 #include <thread>
 #include <vector>
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
-namespace cli = basalt::program::cli;
+namespace cli = granite::program::cli;
 using Clock = std::chrono::steady_clock;
-using ImgKey = basalt::core::ConversationImageKey;
-using ConvCheckpoint = basalt::core::ConversationCheckpoint;
+using ImgKey = granite::core::ConversationImageKey;
+using ConvCheckpoint = granite::core::ConversationCheckpoint;
 
 uint64_t fnv1a(const void* data, size_t n, uint64_t h = 1469598103934665603ull);
 std::string stage_text();
@@ -74,13 +74,13 @@ enum class Flow { proceed, next, quit, error };
 // a streaming state's residency map).
 inline constexpr int kVramStallMib = 256;
 inline constexpr int kVramFloorMib = 128;
-inline int vram_floor_mib() { return basalt::platform::gpu_memory_pages() ? kVramStallMib : kVramFloorMib; }
+inline int vram_floor_mib() { return granite::platform::gpu_memory_pages() ? kVramStallMib : kVramFloorMib; }
 
 // The server's state every model shares: its input, its requests' conversation chain, its slots.
 class Runtime {
 public:
-    Runtime(basalt::program::CommonOptions& options, basalt::core::ModelFile& file, std::string& error, const int64_t& vocab,
-            std::optional<basalt::program::grammar::PackVocab>& vocab_tables)
+    Runtime(granite::program::CommonOptions& options, granite::core::ModelFile& file, std::string& error, const int64_t& vocab,
+            std::optional<granite::program::grammar::PackVocab>& vocab_tables)
         : o(options), model_file(file), err(error), n_vocab(vocab), grammar_vocab(vocab_tables) {}
     // the stdin reader thread uses this object's state: it ends before the object does
     virtual ~Runtime() {
@@ -100,7 +100,7 @@ public:
     virtual void print_info() = 0;   // the INFO line
     virtual void at_exit() {}
     /// The pack's tokenizer rule, set before the input starts.
-    basalt::model::ModelAdapter::PreTokenizer pre_{};
+    granite::model::ModelAdapter::PreTokenizer pre_{};
     static constexpr int kPenaltyWindowCap = 4096;
     // ---- what a model answers: one call per batch window at most, the rest per command or per request
     virtual bool windows_in_flight() = 0;
@@ -168,11 +168,11 @@ public:
     void stats_lookups_end() { if (stats.on) stats.lookups_end(lookup_counts()); }
     /// Writes the XSLOT and XMAP lines when due (`force`: now, as a request ends).
     void stats_tick(bool force = false);
-    basalt::program::CommonOptions& o;
-    basalt::core::ModelFile& model_file;
+    granite::program::CommonOptions& o;
+    granite::core::ModelFile& model_file;
     std::string& err;
     const int64_t& n_vocab;
-    std::optional<basalt::program::grammar::PackVocab>& grammar_vocab;
+    std::optional<granite::program::grammar::PackVocab>& grammar_vocab;
     // ---- the conversation cache (see ConvCheckpoint).  `live` is what the session holds right now: the tokens it
     // has consumed, so a request that starts with exactly them continues without any copy.  `checks` are the saved
     // points; every one of them is a prefix of `live` (the loop drops the rest), so they form a chain - the radix
@@ -186,9 +186,9 @@ public:
     bool live_ok{};
     std::vector<ConvCheckpoint> checks{};
     /// The checkpoint save in flight (see ckd_finish).  Declared after `checks`: its wait runs before their bytes are freed.
-    basalt::core::CheckpointDeferral ckd{};
+    granite::core::CheckpointDeferral ckd{};
     /// A model split across two cards: the second card's part of that save, on its device.
-    basalt::core::CheckpointDeferral ckd_peer{};
+    granite::core::CheckpointDeferral ckd_peer{};
     int ckd_peer_dev = -1;
     /// A checkpoint of `to` tokens already in the chain is used again (and keeps the higher `source`): true.
     bool touch_check(int64_t to, ConvCheckpoint::Source source);
@@ -196,10 +196,10 @@ public:
     void keep_check(ConvCheckpoint&& c);
     uint64_t check_clock{};
     bool cvec_cached{};
-    std::optional<basalt::core::ConversationCache> conversations;
+    std::optional<granite::core::ConversationCache> conversations;
     // the disk tier under it (--conversation-cache-dir): what leaves the session or the RAM cache is written there,
     // and a prompt that starts with a stored conversation reads it back, after a restart too
-    basalt::core::ConversationStore disk{};
+    granite::core::ConversationStore disk{};
     virtual int64_t disk_min_tokens() const = 0;
     static constexpr int64_t kDiskStaleTokens = 4096;   // a stored copy this close to the chain's end is kept
     static constexpr uint64_t kDiskQueueCap = 4ull << 30;   // images waiting for the writer, in RAM
@@ -215,7 +215,7 @@ public:
     // says so
     std::string ckpt_why{};
     // GENT: the request text arrives as bytes and the reader thread turns it into ids, from the pack's tokenizer tables
-    basalt::program::Tokenizer text_tokenizer{};
+    granite::program::Tokenizer text_tokenizer{};
     std::string text_tokenizer_note{};
     /// The raw bytes a token stands for; empty when the pack's tokenizer tables are not loaded or the id has none.
     std::string_view token_bytes(int32_t id) const {
@@ -293,17 +293,17 @@ public:
         std::mt19937_64 rng;
         // the request's grammar (the batch windows' form of the solo loop's `gguard`): the window's kept picks are
         // scanned, the first refused one is resampled under the mask, and the segment ends there
-        std::unique_ptr<basalt::program::grammar::Guard> guard;
+        std::unique_ptr<granite::program::grammar::Guard> guard;
         int lp_top = -1;   ///< the request's logprobs=K: a BP line ahead of the BT line for every kept pick (-1: off)
         // the MTP drafter's side of the slot (the draft K/V is the drafter's store of the same index): the drafts and
         // their probabilities for the slot's next window, the request's draft-length rule state, its prompt-lookup
         // history and last proposal
-        int32_t dr[basalt::spec::DraftPolicy::kMaxT] = {};
-        float dprob[basalt::spec::DraftPolicy::kMaxT] = {};
+        int32_t dr[granite::spec::DraftPolicy::kMaxT] = {};
+        float dprob[granite::spec::DraftPolicy::kMaxT] = {};
         int n_dr = 0;
-        basalt::core::DraftCumAdapt cum;
-        std::unique_ptr<basalt::spec::SuffixDrafter> sfx;
-        int32_t sbuf[basalt::spec::DraftPolicy::kMaxT] = {};
+        granite::core::DraftCumAdapt cum;
+        std::unique_ptr<granite::spec::SuffixDrafter> sfx;
+        int32_t sbuf[granite::spec::DraftPolicy::kMaxT] = {};
         int sk = 0, smatch = 0;
         int pen_n = 0;                 ///< the request's penalty window (penalty_last_n; 0: no penalties)
         bool from_sfx = false;
@@ -348,8 +348,8 @@ public:
     // two do not fit side by side; copy_from_slot restores from it
     struct SlotHeld {
         int b = -1;
-        std::vector<basalt::core::ConversationCheckpoint> ck;
-        std::vector<std::vector<basalt::core::ConversationKv>> kv;
+        std::vector<granite::core::ConversationCheckpoint> ck;
+        std::vector<std::vector<granite::core::ConversationKv>> kv;
     };
     SlotHeld slot_held{};
     std::vector<ImgKey> imgs_below(const std::vector<ImgKey>& all, int64_t L);
@@ -361,4 +361,4 @@ public:
     bool try_next_line(std::string& out);
 };
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

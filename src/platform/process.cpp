@@ -28,7 +28,7 @@
 #include <unistd.h>
 #endif
 
-namespace basalt::platform {
+namespace granite::platform {
 
 std::string quote_arg(const std::string& s) {
     // An argument list is one string here, so an argument that holds a space or a quote has to be quoted and its
@@ -339,7 +339,7 @@ struct CrashBuf {
 // `with_memory` is false in a POSIX signal handler: the Linux reading opens and parses /proc files, which is not
 // async-signal-safe.
 void append_crash_stage(CrashBuf& b, bool with_memory) noexcept {
-    const auto& p = basalt::core::progress();
+    const auto& p = granite::core::progress();
     const char* where = p.where.load(std::memory_order_relaxed);
     const int64_t detail = p.detail.load(std::memory_order_relaxed);
     const int64_t chunk = p.chunk.load(std::memory_order_relaxed);
@@ -559,4 +559,4 @@ int exec_replacing(const std::vector<std::string>& argv) {
 #endif
 }
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

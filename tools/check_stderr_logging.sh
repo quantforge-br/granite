@@ -34,7 +34,7 @@ for path in "${!hits[@]}"; do
   count="${hits[${path}]}"
   if (( count > have )); then
     echo "stderr logging: ${path} names stderr ${count} times, allowed ${have}." >&2
-    echo "  Write log lines with basalt::log::info / warn / error (include/granite/log.hpp)." >&2
+    echo "  Write log lines with granite::log::info / warn / error (include/granite/log.hpp)." >&2
     status=1
   elif (( count < have )); then
     echo "stderr logging: ${path} is down to ${count} (allowlist says ${have}); lower it in ${allow}." >&2

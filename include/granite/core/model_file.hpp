@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// A byte range of a file.  `bytes == 0` means to the end of the file.
 struct FileRange {
@@ -158,4 +158,4 @@ const Hc8Copy* hc8_find(const std::string& name, int rows, int cols);
 /// Reads a table from a range (the `hc8` section of a .basalt).
 bool hc8_read(const FileRange& r, std::map<std::string, Hc8Copy>& out, std::string& err);
 
-}  // namespace basalt::core
+}  // namespace granite::core

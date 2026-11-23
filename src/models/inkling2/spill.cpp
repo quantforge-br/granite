@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 uint64_t round_up(uint64_t v, uint64_t g) { return g ? (v + g - 1) / g * g : v; }
 }  // namespace
@@ -84,4 +84,4 @@ bool plan_spill(int n_layers, int n_expert, const std::vector<uint64_t>& stride,
     return true;
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

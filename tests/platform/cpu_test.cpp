@@ -17,7 +17,7 @@ void check(bool ok, const std::string& what) {
 }  // namespace
 
 int main() {
-    using namespace basalt::platform;
+    using namespace granite::platform;
     const CpuTopology all = detect_cpu_topology(false, CpuAffinity::All);
     check(!all.worker_cores.empty(), "at least one worker core is found");
     check(all.host_core == -1, "without skip_first no core is reserved");

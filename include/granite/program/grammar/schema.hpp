@@ -20,7 +20,7 @@
 
 #include "granite/program/grammar/grammar.hpp"
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 /// GBNF with a `root` rule for the schema (JSON text). Empty with `err` set on bad JSON or an unresolvable $ref.
 std::string json_schema_to_gbnf(const std::string& schema_json, std::string& err);
@@ -52,4 +52,4 @@ struct RequestGrammar {
 /// not an error; an unusable request sets `err`.
 RequestGrammar grammar_from_request(const std::string& grammar_json, std::string& err);
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

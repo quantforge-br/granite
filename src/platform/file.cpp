@@ -25,7 +25,7 @@
 #include <unistd.h>   // ::open, ::close, ::pread, ::access, ::chdir, ::readlink, fileno
 #endif
 
-namespace basalt::platform {
+namespace granite::platform {
 
 #if defined(_WIN32)
 // --------------------------------------------------------------------------------------------- Windows
@@ -487,4 +487,4 @@ std::string install_root() {
     return dir;
 }
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-using basalt::spec::SuffixDrafter;
+using granite::spec::SuffixDrafter;
 
 namespace {
 int g_fail = 0;

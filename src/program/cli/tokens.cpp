@@ -7,7 +7,7 @@
 #include <iterator>
 #include <sstream>
 
-namespace basalt::program::cli {
+namespace granite::program::cli {
 
 bool parse_i64_list(const char* s, std::vector<int64_t>& out, std::string& err) {
     out.clear();
@@ -32,14 +32,14 @@ bool parse_i64_list(const char* s, std::vector<int64_t>& out, std::string& err) 
 
 std::optional<int> load_tokens_file(const char* path, std::vector<int64_t>& tokens) {
     std::ifstream input(path);
-    if (!input) { basalt::log::error("granite", "cannot open token file"); return 2; }
+    if (!input) { granite::log::error("granite", "cannot open token file"); return 2; }
     std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    if (input.bad()) { basalt::log::error("granite", "cannot read token file"); return 2; }
+    if (input.bad()) { granite::log::error("granite", "cannot read token file"); return 2; }
     std::string error;
     if (text.find('\0') != std::string::npos || !parse_i64_list(text.c_str(), tokens, error)) {
-        basalt::log::error("granite", "malformed token file: %s", error.c_str()); return 2;
+        granite::log::error("granite", "malformed token file: %s", error.c_str()); return 2;
     }
     return std::nullopt;
 }
 
-}  // namespace basalt::program::cli
+}  // namespace granite::program::cli

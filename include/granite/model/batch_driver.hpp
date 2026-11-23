@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::model {
+namespace granite::model {
 
 class BatchSession;
 
@@ -164,4 +164,4 @@ protected:
     virtual Result batch_landed(const BatchView& v, int i) { (void) v; (void) i; return {}; }
 };
 
-}  // namespace basalt::model
+}  // namespace granite::model

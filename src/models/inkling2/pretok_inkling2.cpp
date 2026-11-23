@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 using program::tokenizer::cpt_flag_table;
 using program::tokenizer::decode_cp;
@@ -482,4 +482,4 @@ void pretok_inkling2(const char* text, size_t size, std::vector<size_t>& ends) {
     }
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

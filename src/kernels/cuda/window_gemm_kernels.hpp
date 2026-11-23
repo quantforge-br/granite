@@ -4,7 +4,7 @@
 
 #include "window_gemm.cuh"
 
-namespace basalt::kernels::wgemm::detail {
+namespace granite::kernels::wgemm::detail {
 
 /// The kernel for a call of one or several matrices, and for a SwiGLU pair.
 const Kernel& nvfp4();
@@ -22,4 +22,4 @@ template <int RS, int NM, int CH, int ST> Kernel make_kernel() {
     return k;
 }
 
-}  // namespace basalt::kernels::wgemm::detail
+}  // namespace granite::kernels::wgemm::detail

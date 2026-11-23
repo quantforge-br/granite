@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 class ElasticArray {
 public:
@@ -37,4 +37,4 @@ private:
     std::vector<Extent> extents_;
 };
 
-}  // namespace basalt::core
+}  // namespace granite::core

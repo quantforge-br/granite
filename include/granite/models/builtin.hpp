@@ -2,6 +2,6 @@
 // Programs call it once at startup; shared libraries never do.
 #pragma once
 
-namespace basalt::models {
+namespace granite::models {
 void register_builtin_models();
 }

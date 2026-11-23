@@ -20,7 +20,7 @@
 #include <sched.h>
 #include <unistd.h>
 
-namespace cpu = basalt::kernels::cpu;
+namespace cpu = granite::kernels::cpu;
 
 class DynamicCpuSet {
 public:

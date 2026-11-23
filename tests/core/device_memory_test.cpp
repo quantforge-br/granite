@@ -26,15 +26,15 @@ int main() {
     }
     std::string why;
     uint64_t f = 0, t = 0;
-    check(!basalt::core::device_memory(99, f, t, why), "a card that does not exist has no memory to read");
+    check(!granite::core::device_memory(99, f, t, why), "a card that does not exist has no memory to read");
     check(why.rfind("cuda", 0) == 0 && why.find("(code ") != std::string::npos && why.find("device 99 of ") != std::string::npos,
           "the failure names the call, the error code and the card");
     why.clear();
-    check(!basalt::core::devices_allocate({99}, why) && why.find("device 99 of ") != std::string::npos, "an unserved card fails the allocation check");
+    check(!granite::core::devices_allocate({99}, why) && why.find("device 99 of ") != std::string::npos, "an unserved card fails the allocation check");
     check(cudaGetLastError() == cudaSuccess, "the checks leave no sticky error");
-    check(basalt::core::devices_allocate({}, why), "no cards, nothing to fail");
+    check(granite::core::devices_allocate({}, why), "no cards, nothing to fail");
     std::string why2;
-    check(basalt::core::devices_allocate({-1}, why) == basalt::core::device_memory(-1, f, t, why2),
+    check(granite::core::devices_allocate({-1}, why) == granite::core::device_memory(-1, f, t, why2),
           "the current card (-1) is served exactly when it answers a query");
     std::printf(fails == 0 ? "device_memory_test: ok\n" : "device_memory_test: %d failures\n", fails);
     return fails == 0 ? 0 : 1;

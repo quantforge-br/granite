@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-using namespace basalt::core;
+using namespace granite::core;
 
 namespace {
 int checks = 0;

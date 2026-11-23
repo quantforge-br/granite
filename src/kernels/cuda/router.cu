@@ -29,7 +29,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 namespace {
 
 constexpr int kMaxTok = 8;          // tokens a logits block takes at most
@@ -218,4 +218,4 @@ void router_select(const float* logits, const float* bias, int n_tokens, const R
     if (!stream) cudaStreamSynchronize(nullptr);
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

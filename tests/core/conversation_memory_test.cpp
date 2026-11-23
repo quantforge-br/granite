@@ -6,7 +6,7 @@
 #include <sstream>
 
 
-using namespace basalt::core;
+using namespace granite::core;
 namespace {
 int checks = 0;
 void check(bool ok, const char* label) {

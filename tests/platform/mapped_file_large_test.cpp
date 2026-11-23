@@ -18,15 +18,15 @@ void check(bool ok, const std::string& what) {
 }  // namespace
 
 int main() {
-    using basalt::platform::MapOptions;
-    using basalt::platform::MappedFile;
+    using granite::platform::MapOptions;
+    using granite::platform::MappedFile;
     std::string err;
     // A sparse file past 4 GiB: a section at a 64-bit offset must land on the right bytes.
     {
-        const std::string big = basalt::platform::temp_dir() + "/basalt_mapped_file_large_test.bin";
+        const std::string big = granite::platform::temp_dir() + "/basalt_mapped_file_large_test.bin";
         const uint64_t at = (4ull << 30) + 8192;
-        std::FILE* f = basalt::platform::open_file_utf8(big, "wb");
-        if (f && basalt::platform::fseek64(f, (int64_t) at, SEEK_SET) == 0) {
+        std::FILE* f = granite::platform::open_file_utf8(big, "wb");
+        if (f && granite::platform::fseek64(f, (int64_t) at, SEEK_SET) == 0) {
             const uint8_t mark[4] = {0xde, 0xad, 0xbe, 0xef};
             std::fwrite(mark, 1, 4, f);
             std::fclose(f);

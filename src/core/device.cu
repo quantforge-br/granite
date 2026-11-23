@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace basalt::core {
+namespace granite::core {
 
 namespace {
 
@@ -189,10 +189,10 @@ double device_h2d_gbps(int ordinal) {
     return best;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core
 
 
-namespace basalt::core {
+namespace granite::core {
 
 std::string device_code_error() {
     // every .cu of the engine is compiled for the same CMAKE_CUDA_ARCHITECTURES, so this kernel stands for all
@@ -289,4 +289,4 @@ void* DeviceArena::alloc(uint64_t bytes, uint64_t align) {
     return (char*) base_ + start;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

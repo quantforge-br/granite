@@ -35,7 +35,7 @@
 #include "granite/platform/file.hpp"
 #include "granite/platform/mapped_file.hpp"
 
-namespace basalt {
+namespace granite {
 
 // ---- ggml type ids we care about. 42 = Q2_0, the PrismML ternary 2-bit encoding this engine targets.
 inline const char* ggml_type_name(uint32_t t) {
@@ -500,7 +500,7 @@ inline uint64_t tensor_payload_bytes(const TensorInfo& t) {
     return blocks * (uint64_t) bb;
 }
 
-// The shards of one model (basalt::gguf_split_paths), opened together; tensors are looked up across all of them.
+// The shards of one model (granite::gguf_split_paths), opened together; tensors are looked up across all of them.
 // Split-key validation is a property of the
 // model rather than of one loader: a split GGUF carries the model's metadata (general.architecture and the
 // model keys) in its FIRST shard only, and the later shards just declare split.count / split.no /
@@ -584,4 +584,4 @@ private:
     std::map<std::string, std::pair<size_t, const TensorInfo*>> index_;
 };
 
-} // namespace basalt
+} // namespace granite

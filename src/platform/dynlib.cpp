@@ -14,7 +14,7 @@
 #include <link.h>
 #endif
 
-namespace basalt::platform {
+namespace granite::platform {
 
 #if defined(_WIN32)
 namespace {
@@ -128,4 +128,4 @@ void* DynLib::address(const char* name) const { return h_ == nullptr ? nullptr :
 void DynLib::reset() { h_ = nullptr; }   // never dlclosed, as before: the management library stays loaded
 #endif
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

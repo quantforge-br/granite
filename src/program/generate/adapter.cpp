@@ -30,18 +30,18 @@
 #include <sstream>
 #include <thread>
 
-namespace basalt::program::generate {
+namespace granite::program::generate {
 
 namespace {
 
 using Clock = std::chrono::steady_clock;
-namespace cli = basalt::program::cli;
+namespace cli = granite::program::cli;
 
 // The name of the engine's expert profile for a model (data/profiles/<key>.prof).
-std::string profile_key(const basalt::core::Json& meta) {
-    using T = basalt::core::Json::Type;
-    const basalt::core::Json* kv = meta.get("gguf_kv");
-    const basalt::core::Json* arch = kv ? kv->get("general.architecture") : nullptr;
+std::string profile_key(const granite::core::Json& meta) {
+    using T = granite::core::Json::Type;
+    const granite::core::Json* kv = meta.get("gguf_kv");
+    const granite::core::Json* arch = kv ? kv->get("general.architecture") : nullptr;
     if (arch == nullptr || !arch->is_string() || arch->s.empty()) return {};
     // the counts under the architecture's own prefix, or under the one other prefix a converter wrote them with
     std::string prefix = arch->s;
@@ -54,14 +54,14 @@ std::string profile_key(const basalt::core::Json& meta) {
             prefix = name.substr(0, at);
         }
     }
-    const basalt::core::Json* nl = kv->get(prefix + ".block_count");
-    const basalt::core::Json* ne = kv->get(prefix + ".expert_count");
+    const granite::core::Json* nl = kv->get(prefix + ".block_count");
+    const granite::core::Json* ne = kv->get(prefix + ".expert_count");
     if (nl == nullptr || ne == nullptr || nl->type != T::Int || ne->type != T::Int || nl->neg || ne->neg) return {};
     return arch->s + "-" + std::to_string(nl->u64()) + "x" + std::to_string(ne->u64());
 }
 
 int fatal_start_error(const std::string& text) {
-    basalt::log::error("granite", "%s", text.c_str());
+    granite::log::error("granite", "%s", text.c_str());
     return 1;
 }
 
@@ -74,7 +74,7 @@ struct AdapterImage {
     int64_t at = 0;
     std::vector<float> rows;
     int n_rows = 0;
-    basalt::model::ImageGrid grid;
+    granite::model::ImageGrid grid;
 };
 
 struct AdapterTimes {
@@ -87,7 +87,7 @@ struct AdapterTimes {
 /// text. `next` is the token after the prompt; `pos` the next free position. The first `reuse` tokens (no pictures)
 /// are already in the session. `report`: print `PP <position> <positions in the prompt> <ms> <tok/s>` as the prompt is
 /// read, the reused positions counted as read and left out of the speed.
-bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t>& toks,
+bool adapter_prompt(granite::model::ModelSession& sess, const std::vector<int32_t>& toks,
                     const std::vector<AdapterImage>& images, int32_t& next, int64_t& pos, AdapterTimes& tm,
                     std::string& err, float* logits = nullptr, size_t reuse = 0, bool report = false) {
     const auto t0 = Clock::now();
@@ -101,7 +101,7 @@ bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t
         const double prev = last_ms.load();
         if (ms - prev < 500.0 && ms >= prev) return;
         last_ms.store(ms);
-        basalt::protocol::emit("PL %lld %lld %.0f %.1f\n", (long long) at, (long long) total, ms,
+        granite::protocol::emit("PL %lld %lld %.0f %.1f\n", (long long) at, (long long) total, ms,
                                ms > 0.0 ? 1000.0 * (double) (at - (int64_t) reuse) / ms : 0.0);
     };
     auto report_at = [&](int64_t at) {
@@ -113,11 +113,11 @@ bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t
     };
     size_t done = reuse;   // prompt tokens consumed
     const size_t n_pre = toks.size() - 1;
-    basalt::model::Result r;
+    granite::model::Result r;
     for (size_t i = 0; r.ok() && i <= images.size(); ++i) {
         const size_t end = i < images.size() ? (size_t) images[i].at : n_pre;
         if (end > done) {
-            basalt::model::PrefillRequest pr;
+            granite::model::PrefillRequest pr;
             pr.tokens = toks.data() + done;
             pr.n_tokens = (int) (end - done);
             pr.pos = pos;
@@ -125,7 +125,7 @@ bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t
             if (g_diag_serial_prompt) {   // one token per step, through the decode path
                 for (int t = 0; r.ok() && t < pr.n_tokens; ++t) {
                     int32_t row_next = -1;
-                    basalt::model::DecodeRequest one;
+                    granite::model::DecodeRequest one;
                     one.tokens = pr.tokens + t;
                     one.n_tokens = 1;
                     one.pos = pos + t;
@@ -148,7 +148,7 @@ bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t
             if (report) pr.live = [&, base](int n) { live_at(base + n); };
             const auto tp = Clock::now();
             r = sess.prefill_chunk(pr);
-            basalt::log::info("granite generate", "batched prefill %d tokens in %.0f ms", pr.n_tokens,
+            granite::log::info("granite generate", "batched prefill %d tokens in %.0f ms", pr.n_tokens,
                          std::chrono::duration<double, std::milli>(Clock::now() - tp).count());
             pos += pr.n_tokens;
             done = end;
@@ -157,14 +157,14 @@ bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t
         if (r.ok() && i < images.size()) {
             const auto tp = Clock::now();
             r = sess.prefill_embeddings(images[i].rows.data(), images[i].n_rows, pos, images[i].grid);
-            basalt::log::info("granite generate", "image prefill %d rows in %.0f ms", images[i].n_rows,
+            granite::log::info("granite generate", "image prefill %d rows in %.0f ms", images[i].n_rows,
                          std::chrono::duration<double, std::milli>(Clock::now() - tp).count());
             pos += images[i].n_rows;
             if (r.ok()) report_at(pos);
         }
     }
     if (r.ok()) {
-        basalt::model::DecodeRequest dr;
+        granite::model::DecodeRequest dr;
         dr.tokens = toks.data() + n_pre;
         dr.n_tokens = 1;
         dr.pos = pos;
@@ -190,11 +190,11 @@ bool adapter_prompt(basalt::model::ModelSession& sess, const std::vector<int32_t
 
 // The CLI path of a session model: greedy decode of a pre-tokenized prompt, one `T <id>` line per token.
 // Each --image's embedding block goes before the prompt token at its --image-at index.
-int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_t>& prompt, int64_t max_new,
+int adapter_generate(granite::model::ModelSession* sess, const std::vector<int64_t>& prompt, int64_t max_new,
                             const std::vector<int64_t>& stop_ids, const std::vector<std::string>& images,
                             const std::vector<int64_t>& image_at) {
     if (images.size() != image_at.size()) {
-        basalt::log::error("granite generate", "every --image needs an --image-at");
+        granite::log::error("granite generate", "every --image needs an --image-at");
         return 2;
     }
     std::vector<int32_t> toks(prompt.begin(), prompt.end());
@@ -202,19 +202,19 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
     std::vector<AdapterImage> blocks(images.size());
     for (size_t i = 0; i < images.size(); ++i) {
         if (image_at[i] < 0 || image_at[i] >= (int64_t) toks.size() || (i > 0 && image_at[i] < image_at[i - 1])) {
-            basalt::log::error("granite generate", "--image-at must rise and stay inside the prompt");
+            granite::log::error("granite generate", "--image-at must rise and stay inside the prompt");
             return 2;
         }
         blocks[i].at = image_at[i];
         std::ifstream f(images[i], std::ios::binary);
         const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
         const auto te = Clock::now();
-        const basalt::model::Result er = sess->encode_image(bytes.data(), bytes.size(), blocks[i].rows, blocks[i].n_rows, blocks[i].grid);
+        const granite::model::Result er = sess->encode_image(bytes.data(), bytes.size(), blocks[i].rows, blocks[i].n_rows, blocks[i].grid);
         if (!er.ok()) {
-            basalt::log::error("granite generate", "%s: %s", images[i].c_str(), er.message.c_str());
+            granite::log::error("granite generate", "%s: %s", images[i].c_str(), er.message.c_str());
             return 1;
         }
-        basalt::log::info("granite generate", "image %s -> %d rows in %.0f ms", images[i].c_str(), blocks[i].n_rows,
+        granite::log::info("granite generate", "image %s -> %d rows in %.0f ms", images[i].c_str(), blocks[i].n_rows,
                      std::chrono::duration<double, std::milli>(Clock::now() - te).count());
     }
     if (!images.empty()) sess->images_done();
@@ -224,7 +224,7 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
     std::string err;
     const auto t0 = Clock::now();
     if (!adapter_prompt(*sess, toks, blocks, next, pos, tm, err)) {
-        basalt::log::error("granite generate", "%s", err.c_str());
+        granite::log::error("granite generate", "%s", err.c_str());
         return 1;
     }
     const auto t1 = Clock::now();
@@ -248,18 +248,18 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
         const auto w0 = Clock::now();
         int n_draft = 0;
         if (cap > 1) {
-            basalt::model::Result dres = sess->draft_begin(next, pos, cap - 1);
+            granite::model::Result dres = sess->draft_begin(next, pos, cap - 1);
             if (dres.ok()) dres = sess->draft_end(drafts.data(), conf.data(), cap - 1, n_draft, {});   // a fixed window verifies every draft
-            if (dres.ok() && !basalt::core::diagnostics().draft_log.empty()) {   // --draft-log: the position, the anchor and the drafts of each window
-                if (std::FILE* f = std::fopen(basalt::core::diagnostics().draft_log.c_str(), "a")) {
+            if (dres.ok() && !granite::core::diagnostics().draft_log.empty()) {   // --draft-log: the position, the anchor and the drafts of each window
+                if (std::FILE* f = std::fopen(granite::core::diagnostics().draft_log.c_str(), "a")) {
                     std::fprintf(f, "D %lld %d", (long long) pos, next);
                     for (int i = 0; i < n_draft; ++i) std::fprintf(f, " %d/%.3f", drafts[(size_t) i], (double) conf[(size_t) i]);
                     std::fputc('\n', f);
                     std::fclose(f);
                 }
             }
-            if (!dres.ok() && dres.status != basalt::model::Status::NotImplemented) {
-                basalt::log::error("granite generate", "%s", dres.message.c_str());
+            if (!dres.ok() && dres.status != granite::model::Status::NotImplemented) {
+                granite::log::error("granite generate", "%s", dres.message.c_str());
                 return 1;
             }
         }
@@ -267,7 +267,7 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
         window[0] = next;
         std::copy(drafts.begin(), drafts.begin() + n_draft, window.begin() + 1);
         const auto w1 = Clock::now();
-        basalt::model::DecodeRequest dr;
+        granite::model::DecodeRequest dr;
         dr.tokens = window.data();
         dr.n_tokens = T;
         dr.pos = pos;
@@ -276,9 +276,9 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
             diag_rows.resize((size_t) cap * (size_t) g_n_vocab);
             dr.logits = diag_rows.data();
         }
-        const basalt::model::Result r = sess->decode_window(dr);
+        const granite::model::Result r = sess->decode_window(dr);
         if (!r.ok()) {
-            basalt::log::error("granite generate", "%s", r.message.c_str());
+            granite::log::error("granite generate", "%s", r.message.c_str());
             return 1;
         }
         const auto w2 = Clock::now();
@@ -300,25 +300,25 @@ int adapter_generate(basalt::model::ModelSession* sess, const std::vector<int64_
         next = rows[(size_t) a];
     }
     const auto t2 = Clock::now();
-    basalt::log::info("granite generate", "prompt %.0f ms, %lld tokens in %.0f ms",
+    granite::log::info("granite generate", "prompt %.0f ms, %lld tokens in %.0f ms",
                  std::chrono::duration<double, std::milli>(t1 - t0).count(), (long long) made,
                  std::chrono::duration<double, std::milli>(t2 - t1).count());
     if (cap > 1) {
         std::string by;
         for (int k = 0; k + 1 < cap && offered_at[(size_t) k] > 0; ++k)
             by += (k ? " " : "") + std::to_string(accepted_at[(size_t) k]) + "/" + std::to_string(offered_at[(size_t) k]);
-        basalt::log::info("granite generate", "drafts accepted by position: %s", by.c_str());
+        granite::log::info("granite generate", "drafts accepted by position: %s", by.c_str());
     }
     if (cap > 1)
-        basalt::log::info("granite generate", "windows %lld of %.2f tokens: %lld of %lld drafts accepted; draft %.2f ms, verify %.2f ms per window",
+        granite::log::info("granite generate", "windows %lld of %.2f tokens: %lld of %lld drafts accepted; draft %.2f ms, verify %.2f ms per window",
                           (long long) windows, windows ? (double) (accepted + windows) / (double) windows : 0.0, (long long) accepted,
                           (long long) offered, windows ? ms_draft / (double) windows : 0.0, windows ? ms_verify / (double) windows : 0.0);
     return 0;
 }
 
-int run_session_model(basalt::program::CommonOptions& o, const basalt::model::ModelAdapter& model_adapter) {
-    const basalt::model::ModelAdapter* adapter = &model_adapter;
-    basalt::core::ModelFile model_file;
+int run_session_model(granite::program::CommonOptions& o, const granite::model::ModelAdapter& model_adapter) {
+    const granite::model::ModelAdapter* adapter = &model_adapter;
+    granite::core::ModelFile model_file;
     {
         std::string merr;
         if (!model_file.open(o.model, merr) || !model_file.load_meta(merr) || !model_file.register_gguf_view(merr))
@@ -328,13 +328,13 @@ int run_session_model(basalt::program::CommonOptions& o, const basalt::model::Mo
     g_diag_serial_prompt = o.diag_serial_prompt;
     if (!o.diag_logits.empty()) g_diag_logits = std::fopen(o.diag_logits.c_str(), "wb");
     try {
-        const basalt::GgufFile model_gguf(o.native_shards.front());
+        const granite::GgufFile model_gguf(o.native_shards.front());
         std::string err = adapter->validate(model_gguf);
         if (!err.empty()) return fatal_start_error(err);
-        const basalt::model::ModelDesc desc = adapter->describe(model_gguf);
+        const granite::model::ModelDesc desc = adapter->describe(model_gguf);
         g_n_vocab = desc.n_vocab;
-        basalt::model::Started started;
-        basalt::model::LoadRequest lreq;
+        granite::model::Started started;
+        granite::model::LoadRequest lreq;
         lreq.paths = o.native_shards;
         lreq.diag_dump = o.diag_dump;
         lreq.peer_devices = o.peer_devices;
@@ -348,13 +348,13 @@ int run_session_model(basalt::program::CommonOptions& o, const basalt::model::Mo
             for (const std::string& name : adapter->shipped_profiles(key)) {
                 if (!(name == key + ".prof" && !o.expert_profile.empty())) need.push_back(name);
             }
-            const std::string miss = basalt::core::missing_shipped_profile(basalt::platform::install_root() + "/data/profiles", need);
+            const std::string miss = granite::core::missing_shipped_profile(granite::platform::install_root() + "/data/profiles", need);
             if (!miss.empty()) return fatal_start_error(miss);
         }
         if (lreq.expert_profile.empty()) {   // the engine's own for this model, when it ships one
-            const std::string prof = basalt::platform::install_root() + "/data/profiles/" + key + ".prof";
+            const std::string prof = granite::platform::install_root() + "/data/profiles/" + key + ".prof";
             uint64_t bytes = 0;
-            if (!key.empty() && basalt::platform::file_size(prof, bytes) && bytes > 0) lreq.expert_profile = prof;
+            if (!key.empty() && granite::platform::file_size(prof, bytes) && bytes > 0) lreq.expert_profile = prof;
         }
         lreq.expert_cache = o.expert_cache;
         lreq.pool_workers = o.pool_workers;
@@ -364,18 +364,18 @@ int run_session_model(basalt::program::CommonOptions& o, const basalt::model::Mo
         lreq.spec = o.spec;
         lreq.kv = o.kv;
         lreq.diag_tp_check = o.diag_tp_check;
-        const basalt::model::Result r = adapter->start(lreq, started);
+        const granite::model::Result r = adapter->start(lreq, started);
         if (!r.ok() || started.sessions.empty()) return fatal_start_error(r.message);
         std::vector<int64_t> stop;
         if (o.stop_eos) stop = o.eos_ids;
         if (started.model->context() != 0) o.max_context = started.model->context();
-        if (o.serve) return basalt::program::serve::run_session(o, model_file, *adapter, started);
+        if (o.serve) return granite::program::serve::run_session(o, model_file, *adapter, started);
         if (o.diag_batch_check) {   // every session's windows alone against the same windows batched, bitwise
-            std::vector<basalt::model::ModelSession*> ss;
+            std::vector<granite::model::ModelSession*> ss;
             for (auto& s : started.sessions) ss.push_back(s.get());
             const std::vector<int32_t> prompt(o.tokens.begin(), o.tokens.end());
-            basalt::model::BatchCheck bc;
-            const basalt::model::Result r = basalt::model::check_batch(ss.data(), (int) ss.size(), prompt, (int) std::max<int64_t>(o.max_new, 4),
+            granite::model::BatchCheck bc;
+            const granite::model::Result r = granite::model::check_batch(ss.data(), (int) ss.size(), prompt, (int) std::max<int64_t>(o.max_new, 4),
                                                                        started.model->desc().n_vocab, bc);
             std::printf("%s", bc.report.c_str());
             if (!r.ok()) return fatal_start_error(r.message);
@@ -388,4 +388,4 @@ int run_session_model(basalt::program::CommonOptions& o, const basalt::model::Mo
     }
 }
 
-}  // namespace basalt::program::generate
+}  // namespace granite::program::generate

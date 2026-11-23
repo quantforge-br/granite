@@ -3,7 +3,7 @@
 //
 // What is being proven is the seam, not the file system: `fopen` and `_open` read a path in the machine's ANSI code
 // page on Windows, so an accent or a CJK name survives at one call site and is replaced by "?" at another. Every
-// open here goes through `basalt::platform`, which converts to UTF-16 on Windows and hands the bytes to the OS on
+// open here goes through `granite::platform`, which converts to UTF-16 on Windows and hands the bytes to the OS on
 // Linux, so the same assertion holds on both.
 //
 // The second case (`--name`) is about the other half: the path a user typed. This program runs itself as a child
@@ -67,7 +67,7 @@ std::vector<uint8_t> pattern(size_t n) {
 }
 
 bool write_file(const std::string& path, const std::vector<uint8_t>& bytes) {
-    std::FILE* f = basalt::platform::open_file_utf8(path, "wb");
+    std::FILE* f = granite::platform::open_file_utf8(path, "wb");
     if (f == nullptr) return false;
     const size_t got = std::fwrite(bytes.data(), 1, bytes.size(), f);
     std::fclose(f);
@@ -76,7 +76,7 @@ bool write_file(const std::string& path, const std::vector<uint8_t>& bytes) {
 
 /// Reads the whole file back through the stream seam.
 bool read_file(const std::string& path, const std::vector<uint8_t>& want) {
-    std::FILE* f = basalt::platform::open_file_utf8(path, "rb");
+    std::FILE* f = granite::platform::open_file_utf8(path, "rb");
     if (f == nullptr) return false;
     std::vector<uint8_t> got(want.size());
     const size_t n = std::fread(got.data(), 1, got.size(), f);
@@ -86,35 +86,35 @@ bool read_file(const std::string& path, const std::vector<uint8_t>& want) {
 
 /// Reads at two offsets through the descriptor seam, the way an expert or PLE section is read.
 bool read_positional(const std::string& path, const std::vector<uint8_t>& want) {
-    const int fd = basalt::platform::open_fd_utf8(path);
+    const int fd = granite::platform::open_fd_utf8(path);
     if (fd < 0) return false;
     bool ok = true;
     std::vector<uint8_t> buf(64);
     for (const uint64_t off : {(uint64_t) 0, (uint64_t) (want.size() - buf.size()), (uint64_t) (want.size() / 2)}) {
-        const int64_t got = basalt::platform::pread(fd, buf.data(), buf.size(), off);
+        const int64_t got = granite::platform::pread(fd, buf.data(), buf.size(), off);
         if (got != (int64_t) buf.size()) { ok = false; break; }
         if (std::memcmp(buf.data(), want.data() + off, buf.size()) != 0) { ok = false; break; }
     }
     // a 64-bit seek through the stream seam, past where a 32-bit one would wrap
-    std::FILE* f = basalt::platform::open_file_utf8(path, "rb");
+    std::FILE* f = granite::platform::open_file_utf8(path, "rb");
     if (f == nullptr) { ok = false; } else {
         const long long at = (long long) (want.size() - 8);
-        if (basalt::platform::fseek64(f, at, SEEK_SET) != 0) ok = false;
+        if (granite::platform::fseek64(f, at, SEEK_SET) != 0) ok = false;
         uint64_t tail8 = 0;
         if (std::fread(&tail8, 8, 1, f) != 1) ok = false;
         uint64_t want_tail;
         std::memcpy(&want_tail, want.data() + want.size() - 8, 8);
         if (tail8 != want_tail) ok = false;
-        if (basalt::platform::file_fd(f) < 0) ok = false;
+        if (granite::platform::file_fd(f) < 0) ok = false;
         std::fclose(f);
     }
-    basalt::platform::close_fd(fd);
+    granite::platform::close_fd(fd);
     return ok;
 }
 
 /// The directory the fixtures live in: the system temp directory plus the non-ASCII name.
 std::string fixture_dir() {
-    return basalt::platform::temp_dir() + "/" + kName;
+    return granite::platform::temp_dir() + "/" + kName;
 }
 
 int seam_cases() {
@@ -135,29 +135,29 @@ int seam_cases() {
     // the absolute form of the path, and that form opened again: the name the OS answers with has to be the same
     // bytes going the other way, or a pack path made absolute stops naming the pack
     std::string abs;
-    check(basalt::platform::absolute_path(file, abs), "absolute_path on a UTF-8 path");
+    check(granite::platform::absolute_path(file, abs), "absolute_path on a UTF-8 path");
     check(slashes(abs) == slashes(dir) + "/" + tail(file), "absolute_path leaves the name alone");
     check(read_file(abs, bytes), "the absolute path opens");
     std::printf("path_utf8 %-56s -> %s\n", "absolute form", esc(abs).c_str());
 
     // the working directory, and a path relative to it: `_chdir` is an ANSI call, `_wchdir` is not
     std::string back;
-    const bool have_cwd = basalt::platform::absolute_path(".", back);
+    const bool have_cwd = granite::platform::absolute_path(".", back);
     check(have_cwd, "absolute_path of the current directory");
-    if (have_cwd && basalt::platform::set_working_dir(dir) == 0) {
+    if (have_cwd && granite::platform::set_working_dir(dir) == 0) {
         std::string here;
-        check(basalt::platform::absolute_path(".", here) && slashes(here) == slashes(dir),
+        check(granite::platform::absolute_path(".", here) && slashes(here) == slashes(dir),
               "set_working_dir took the UTF-8 path");
         const std::string base = tail(file);
         check(read_file(base, bytes), "a path relative to it opens");
-        check(basalt::platform::set_working_dir(back) == 0, "back to the directory we came from");
+        check(granite::platform::set_working_dir(back) == 0, "back to the directory we came from");
     } else {
         check(false, "set_working_dir took the UTF-8 path");
     }
 
     // this program's own path, named by the OS, opened through the seam: the OS-to-engine direction
-    const std::string self = basalt::platform::module_path();
-    check(!self.empty() && basalt::platform::open_file_utf8(self, "rb") != nullptr, "module_path names a readable file");
+    const std::string self = granite::platform::module_path();
+    check(!self.empty() && granite::platform::open_file_utf8(self, "rb") != nullptr, "module_path names a readable file");
     std::printf("path_utf8 %-56s -> %s\n", "this program", esc(self).c_str());
 
     std::filesystem::remove_all(dir, ec);
@@ -171,7 +171,7 @@ int long_path_case() {
     const std::string base = fixture_dir() + "/deep";
     std::string dir = base;
     for (int i = 0; i < 8; ++i) dir += "/\xc3\xa9\xe6\x97\xa5\xd0\x96-dir-" + std::string(20, (char) ('a' + i));
-    check(basalt::platform::make_dirs(dir), "a directory past 260 chars is created");
+    check(granite::platform::make_dirs(dir), "a directory past 260 chars is created");
     const std::string file = dir + "/\xc3\xa9-\xe6\x97\xa5.basalt";
     const std::vector<uint8_t> bytes = pattern(1024);
     const bool wrote = write_file(file, bytes);
@@ -179,7 +179,7 @@ int long_path_case() {
     check(wrote && read_file(file, bytes), "a path past 260 chars opens");
     // The tree's own paths are long, so the removal walks it through the prefixed form of its root.
 #if defined(_WIN32)
-    const std::wstring abs = std::filesystem::absolute(basalt::platform::to_wide(base)).make_preferred().wstring();
+    const std::wstring abs = std::filesystem::absolute(granite::platform::to_wide(base)).make_preferred().wstring();
     const std::filesystem::path root(L"\\\\?\\" + abs);
 #else
     const std::filesystem::path root(base);
@@ -195,7 +195,7 @@ int long_path_case() {
 int argv_case(const std::string& name) {
     std::printf("path_utf8 %-56s -> %s\n", "child argument bytes", esc(name).c_str());
     check(name == kName, "argv carried the UTF-8 bytes of the name");
-    const std::string dir = basalt::platform::temp_dir() + "/" + name;
+    const std::string dir = granite::platform::temp_dir() + "/" + name;
     const std::string file = dir + "/pack.basalt";
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
@@ -218,11 +218,11 @@ int main(int argc, char** argv) {
     long_path_case();
     // The argument case runs as a child of this program, so the name reaches it the way a pack path typed by a user
     // reaches a tool: as one argument, decoded by the OS on the way in.
-    const std::string self = basalt::platform::module_path();
+    const std::string self = granite::platform::module_path();
     if (self.empty()) {
         check(false, "module_path to re-run this program");
     } else {
-        const int code = basalt::platform::spawn_and_wait({self, "--name", kName});
+        const int code = granite::platform::spawn_and_wait({self, "--name", kName});
         std::printf("path_utf8 %-56s %d\n", "child exit code", code);
         check(code == 0, "the child saw the UTF-8 name in argv and opened it");
     }

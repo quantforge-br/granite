@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 /// The CPU time this process may use under a cgroup quota, in CPUs (quota / period), or 0 when no group limits it.
 /// The tightest quota of the process's group and its ancestors counts: v2 `cpu.max`, v1 `cpu.cfs_quota_us` over
@@ -11,4 +11,4 @@ namespace basalt::kernels::cpu {
 /// own (platform::self_cgroup_path, platform::cgroup_root), and a system with none has no quota.
 double cgroup_cpu_quota(const std::string& self_cgroup = "", const std::string& cgroup_root = "");
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

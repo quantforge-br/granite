@@ -22,7 +22,7 @@
 #include <cstdio>
 #include <random>
 
-using basalt::spec::DraftPolicy;
+using granite::spec::DraftPolicy;
 
 namespace {
 int g_fail = 0;

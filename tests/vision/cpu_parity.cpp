@@ -19,7 +19,7 @@
 
 #include "granite/vision/encoder_cpu.hpp"
 
-using namespace basalt::vision;
+using namespace granite::vision;
 
 static bool read_f32(const std::string& path, std::vector<float>& v) {
     std::ifstream f(path, std::ios::binary);
@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
     const bool bf16 = argc > 5 && std::atoi(argv[5]) != 0;
     std::string err;
     Mmproj mp;
-    if (!mp.open(basalt::core::FileRange(argv[1]), err)) { std::fprintf(stderr, "%s\n", err.c_str()); return 2; }
+    if (!mp.open(granite::core::FileRange(argv[1]), err)) { std::fprintf(stderr, "%s\n", err.c_str()); return 2; }
     std::ifstream f(argv[2], std::ios::binary);
     const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     Image img;

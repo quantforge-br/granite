@@ -22,7 +22,7 @@
 #define BASALT_IQ_EXPORT(name) name##_base
 #include "iq_avx2_rows.inc"
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 // ggml's quantize_row_q8_K, bit for bit: the signed value of the first element of largest magnitude fixes the
 // scale, codes are rounded to nearest-even (ggml's magic-number rounding) and capped at 127, and each 16 codes
@@ -100,4 +100,4 @@ void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* c
     else iq4nl256_down_rows_base(w, row_bytes, n, hq, nt, out, r0, r1);
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

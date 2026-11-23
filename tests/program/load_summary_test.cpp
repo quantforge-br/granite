@@ -24,7 +24,7 @@ std::string gb(const char* kind, double v) { return std::string("granite load: "
 }  // namespace
 
 int main() {
-    using basalt::program::LoadSummary;
+    using granite::program::LoadSummary;
 
     {   // off a terminal
         LoadSummary s("granite-bench", false, 0.0);

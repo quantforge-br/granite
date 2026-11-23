@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <string>
 
-using namespace basalt::program;
+using namespace granite::program;
 
 static int g_fail = 0;
 #define CHECK(c)                                                              \

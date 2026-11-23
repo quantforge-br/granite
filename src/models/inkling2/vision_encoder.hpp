@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 /// --vision (dynamic): the projector of the pack's `vision/mmproj` section staged once in page-locked RAM. It holds no VRAM
 /// at rest: a request's pictures get a device region (the weights and the work buffers), its room lent by the model (the
@@ -62,4 +62,4 @@ private:
     bool lent_ = false;    ///< the lender's room is out
 };
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

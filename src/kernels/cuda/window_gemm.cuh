@@ -25,7 +25,7 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
-namespace basalt::kernels::wgemm::detail {
+namespace granite::kernels::wgemm::detail {
 
 struct Args {
     const uint8_t* w[kMaxMatrices];
@@ -321,4 +321,4 @@ struct Kernel {
     int threads = 0, smem = 0, rs = 0, ch = 0, nm = 1;
 };
 
-}  // namespace basalt::kernels::wgemm::detail
+}  // namespace granite::kernels::wgemm::detail

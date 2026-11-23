@@ -6,7 +6,7 @@
 // scale, minus the weight scale times the chunk's `hx` (the -1 code offset).  The four-wise integer sums are exact on
 // both builds (codes 0..3, activations -127..127), so the two give the same bits.
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 namespace {
 
 inline float h2f(const uint8_t* p) {
@@ -95,4 +95,4 @@ void BASALT_Q2_EXPORT(q2_0_gguf_rows_multi_avx2)(const uint8_t* w, size_t row_by
     }
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

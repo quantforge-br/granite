@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 /// The chain's root of a prompt read from token 0: its first turn boundary below `below` (the end of the system prompt,
 /// with the tools), when at least `min_tokens` precede it; -1 for none.  A boundary whose role is `reply_role` opens
@@ -22,4 +22,4 @@ inline int64_t root_boundary(const std::vector<int64_t>& ids, int64_t below, int
     return -1;
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

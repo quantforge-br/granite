@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 constexpr int64_t kDefaultContext = 8192;
 
@@ -220,4 +220,4 @@ uint64_t session_bytes(const Geometry& g, int64_t context, bool fp8);
 /// first card's).
 uint64_t shared_bytes(const Geometry& g, bool drafter);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

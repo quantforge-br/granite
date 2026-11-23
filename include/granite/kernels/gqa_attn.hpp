@@ -18,7 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 constexpr int kGqaMaxWindow = 16;
 
@@ -87,4 +87,4 @@ void gqa_prompt_attn(const float* q, const uint16_t* k_cache, const uint16_t* v_
 void gqa_prompt_attn_bf16(const uint16_t* q, int n_head, int n_kv, int64_t pos0, int64_t T, uint16_t* out, void* stream,
                           KvInt8 q8, float* split_scratch = nullptr, size_t split_floats = 0, KvFar far_kv = {});
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

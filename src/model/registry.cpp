@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <map>
 
-namespace basalt::model {
+namespace granite::model {
 
 std::unique_ptr<program::CommonOptions> ModelAdapter::make_options() const {
     return std::make_unique<program::CommonOptions>();
@@ -93,4 +93,4 @@ std::string check_architecture(const GgufFile& meta) {
     return a ? a->validate(meta) : err;
 }
 
-}  // namespace basalt::model
+}  // namespace granite::model

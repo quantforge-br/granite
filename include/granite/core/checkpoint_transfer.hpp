@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// Page-locks pooled checkpoint blocks: pass it to `CheckpointBytes::allocator_type::reserve`.  A lock is refused (the
 /// block stays ordinary memory) when the driver's registration allowance cannot take it.
@@ -80,4 +80,4 @@ private:
     const void* dst_ = nullptr;
 };
 
-}  // namespace basalt::core
+}  // namespace granite::core

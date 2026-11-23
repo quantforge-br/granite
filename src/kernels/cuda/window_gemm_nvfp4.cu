@@ -3,7 +3,7 @@
 // Adapted from Infernix (Ian Ranson and contributors), Apache-2.0: see THIRD_PARTY_LICENSES.
 #include "window_gemm_kernels.hpp"
 
-namespace basalt::kernels::wgemm::detail {
+namespace granite::kernels::wgemm::detail {
 namespace {
 constexpr int CH = 256, ST = 4;
 }
@@ -18,4 +18,4 @@ const Kernel& nvfp4_swiglu() {
     return k;
 }
 
-}  // namespace basalt::kernels::wgemm::detail
+}  // namespace granite::kernels::wgemm::detail

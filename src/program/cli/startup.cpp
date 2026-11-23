@@ -16,7 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace basalt::program::cli {
+namespace granite::program::cli {
 
 namespace {
 
@@ -29,18 +29,18 @@ std::optional<int> find_model(int argc, char** argv, const model::ModelAdapter*&
         if (a == "--model" && i + 1 < argc) path = argv[i + 1];
     }
     if (path.empty()) return std::nullopt;
-    basalt::core::ModelFile file;
+    granite::core::ModelFile file;
     std::string err;
     if (!file.open(path, err) || !file.load_meta(err)) {
-        basalt::log::error("granite", "--model: %s", err.c_str());
+        granite::log::error("granite", "--model: %s", err.c_str());
         return 2;
     }
-    const basalt::core::Json* kv = file.meta().get("gguf_kv");
-    const basalt::core::Json* arch = kv ? kv->get("general.architecture") : nullptr;
+    const granite::core::Json* kv = file.meta().get("gguf_kv");
+    const granite::core::Json* arch = kv ? kv->get("general.architecture") : nullptr;
     const std::string name = arch && arch->is_string() ? arch->s : std::string();
     adapter = model::find_adapter(name);
     if (adapter == nullptr) {
-        basalt::log::error("granite", "--model: %s", model::unavailable_architecture(name).c_str());
+        granite::log::error("granite", "--model: %s", model::unavailable_architecture(name).c_str());
         return 2;
     }
     return std::nullopt;
@@ -48,13 +48,13 @@ std::optional<int> find_model(int argc, char** argv, const model::ModelAdapter*&
 
 // What the flags left unset: each id is the pack's own token.
 void pack_tokens(const model::ModelAdapter& adapter, CommonOptions& o) {
-    basalt::core::ModelFile file;
+    granite::core::ModelFile file;
     std::string err;
     std::vector<uint8_t> text;
-    basalt::core::Json vocab;
-    if (!file.open(o.model, err) || !file.load_meta(err) || !basalt::core::read_range(file.range("tokenizer/vocab.json"), text, err) ||
-        !basalt::core::parse_json((const char*) text.data(), text.size(), vocab, err)) {
-        basalt::log::warn("granite", "the pack's vocabulary cannot be read (%s): no end-of-turn or turn token", err.c_str());
+    granite::core::Json vocab;
+    if (!file.open(o.model, err) || !file.load_meta(err) || !granite::core::read_range(file.range("tokenizer/vocab.json"), text, err) ||
+        !granite::core::parse_json((const char*) text.data(), text.size(), vocab, err)) {
+        granite::log::warn("granite", "the pack's vocabulary cannot be read (%s): no end-of-turn or turn token", err.c_str());
         return;
     }
     // a name with one `*` matches the first token whose text has that start and end (a model whose special tokens carry a suffix
@@ -62,7 +62,7 @@ void pack_tokens(const model::ModelAdapter& adapter, CommonOptions& o) {
     auto id_of = [&](const std::string& name) -> int64_t {
         const size_t star = name.find('*');
         if (star == std::string::npos) {
-            const basalt::core::Json* v = vocab.get(name);
+            const granite::core::Json* v = vocab.get(name);
             return v != nullptr ? (int64_t) v->u64() : -1;
         }
         const std::string head = name.substr(0, star), tail = name.substr(star + 1);
@@ -90,17 +90,17 @@ std::optional<int> start(int argc, char** argv, std::unique_ptr<CommonOptions>& 
     // turns "it crashed at step 7" into "it crashed somewhere", and the difference is a debugging session.
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     if (argc >= 2 && std::strcmp(argv[1], "serve") == 0) return serve_subcommand(argc, argv);
-    basalt::platform::install_crash_handler();
+    granite::platform::install_crash_handler();
     // if memory runs out the kernel ends this process first, not the rest of the machine
-    basalt::platform::prefer_oom_victim();
+    granite::platform::prefer_oom_victim();
     // the CPU expert pool keeps its speed while the window is in the background
-    if (!basalt::platform::keep_full_speed())
-        basalt::log::warn("granite", "full-speed scheduling refused: decode slows while the window is in the background");
+    if (!granite::platform::keep_full_speed())
+        granite::log::warn("granite", "full-speed scheduling refused: decode slows while the window is in the background");
     // Kernels load on first use: loading every kernel of the engine and of cuBLAS at context creation holds a few
     // hundred MiB of device memory for code that never runs.  The expert cache's sizing keeps back room for what loads
     // later (`kLazyKernelsMib`).  CUDA_MODULE_LOADING=EAGER restores the up-front load; batched serving sets it (below).
     const bool module_loading_set = std::getenv("CUDA_MODULE_LOADING") != nullptr;
-    if (!module_loading_set) basalt::platform::set_env("CUDA_MODULE_LOADING", "LAZY");
+    if (!module_loading_set) granite::platform::set_env("CUDA_MODULE_LOADING", "LAZY");
     if (const auto code = find_model(argc, argv, adapter)) return *code;
     out = adapter != nullptr ? adapter->make_options() : std::make_unique<CommonOptions>();
     CommonOptions& o = *out;
@@ -118,30 +118,30 @@ std::optional<int> start(int argc, char** argv, std::unique_ptr<CommonOptions>& 
         pack_tokens(*adapter, o);
         // nothing would end a reply
         if (o.eos_ids.empty() && o.generates && !o.gpu_plan && (o.serve || (o.max_new > 0 && o.stop_eos))) {
-            basalt::log::error("granite", "this pack names no end-of-text token: give --eos-ids");
+            granite::log::error("granite", "this pack names no end-of-text token: give --eos-ids");
             return 2;
         }
-        basalt::program::grammar::set_tool_form(adapter->tool_form());
-        basalt::program::grammar::set_reply_form(adapter->reply_form());
+        granite::program::grammar::set_tool_form(adapter->tool_form());
+        granite::program::grammar::set_reply_form(adapter->reply_form());
     }
     // Batched serving reads a prompt on its own thread while verify windows run.  A lazy kernel load on that thread
     // synchronizes the context and can wait on a window kernel that waits on the load, so batched serving loads every
     // kernel up front.  An explicit CUDA_MODULE_LOADING wins.
-    if (o.serve && o.batch >= 2 && !module_loading_set) basalt::platform::set_env("CUDA_MODULE_LOADING", "EAGER");
+    if (o.serve && o.batch >= 2 && !module_loading_set) granite::platform::set_env("CUDA_MODULE_LOADING", "EAGER");
     return std::nullopt;
 }
 
 std::optional<int> prepare_model_process(const CommonOptions& o) {
     if (o.model.empty()) {
-        basalt::log::error("granite generate", "--model FILE.basalt is required");
+        granite::log::error("granite generate", "--model FILE.basalt is required");
         usage();
         return 2;
     }
     // a load that exhausts the RAM ends here instead of swapping the machine to a halt; stopped at READY
-    if (o.serve) basalt::platform::start_memory_watchdog(1ull << 30);
+    if (o.serve) granite::platform::start_memory_watchdog(1ull << 30);
     // the serve protocol's pipes carry bytes, so its newlines are the engine's own
-    if (o.serve) basalt::platform::set_stdio_binary();
+    if (o.serve) granite::platform::set_stdio_binary();
     return std::nullopt;
 }
 
-}  // namespace basalt::program::cli
+}  // namespace granite::program::cli

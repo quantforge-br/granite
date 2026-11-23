@@ -16,7 +16,7 @@
 #define BASALT_Q2_EXPORT(name) name##_base
 #include "q2_avx2_rows.inc"
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 void q2_0_gguf_rows_multi_avx2(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a, int nt,
                                float* const* out, int r0, int r1) {
@@ -65,4 +65,4 @@ void act_quant_q8_1_avx2(const float* x, int n, ActQ& a) {
     }
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

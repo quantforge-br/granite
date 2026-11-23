@@ -30,9 +30,9 @@
 #include <random>
 #include <vector>
 
-using namespace basalt::models::inkling2;
-namespace bk = basalt::kernels;
-namespace mmq = basalt::prefill::mmq;
+using namespace granite::models::inkling2;
+namespace bk = granite::kernels;
+namespace mmq = granite::prefill::mmq;
 
 namespace {
 

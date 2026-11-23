@@ -13,7 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::kernels::wgemm {
+namespace granite::kernels::wgemm {
 
 constexpr int kRows = 8;   // rows (columns of the product) a call takes: a drafted block
 
@@ -64,4 +64,4 @@ void workspace_need(const Call& c, std::size_t& partial_floats, std::size_t& tic
 /// Runs the call for rows 0..T-1 (1..kRows) of `act` (packed for c.K): W 16-byte aligned, rows and K multiples of 128.
 void gemm(const Call& c, const void* act, int T, const Workspace& ws, void* stream);
 
-}  // namespace basalt::kernels::wgemm
+}  // namespace granite::kernels::wgemm

@@ -7,7 +7,7 @@
 #include <thread>
 #include <vector>
 
-namespace basalt::vision {
+namespace granite::vision {
 
 namespace {
 
@@ -95,4 +95,4 @@ void gemm_f32w(const float* X, const float* W, float* Y, int M, int N, int K, in
     run(X, Y, M, N, K, threads, [&](int n, float* dst) { std::memcpy(dst, W + (size_t) n * K, sizeof(float) * K); });
 }
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

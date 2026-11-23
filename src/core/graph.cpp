@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cstdio>
 
-namespace basalt::core {
+namespace granite::core {
 namespace {
 
 /// Fills `err` from the CUDA runtime, naming the call that failed.  A bare "invalid argument" with no call
@@ -143,4 +143,4 @@ bool GraphRegistry::launch(LayerType type, int n_tokens, int timeout_ms, std::st
     return true;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

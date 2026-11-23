@@ -51,8 +51,7 @@ bin/granite serve models/Inkling-2-Mini-NVFP4-DQ8.basalt --gpu 0
 The server listens on 127.0.0.1. The model guide: [Inkling 2 Mini](docs/models/inkling2.md). Every setting:
 [configuration](docs/configuration/index.md).
 
-Names kept from Basalt: the C++ namespaces (`basalt::`) and the `.basalt` pack format, so upstream packs load unchanged
-and upstream fixes can be cherry-picked.
+Name kept from Basalt: the `.basalt` pack format, so upstream packs load unchanged.
 
 ## Credits
 

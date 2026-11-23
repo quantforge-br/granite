@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 class DsparkHook;
 
@@ -44,4 +44,4 @@ std::unique_ptr<PromptRunner> make_prompt(InklingModel& m, void* const streams[2
 /// The device bytes of the prompt path on a card (one for every session; with tensor parallelism on each card, no more).
 uint64_t prompt_bytes(const Geometry& g);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

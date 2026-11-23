@@ -9,7 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 constexpr int kDsBlock = 8;          ///< rows of a block: the anchor and seven masks
 constexpr int kDsDrafts = kDsBlock - 1;
@@ -91,4 +91,4 @@ void dspark_fold(const void* head_q8_0, int64_t n_rows, const uint16_t* w, const
 /// into w_sp [kDsRnn][2 kDsRank], w_h and w_f [kDsRnn][kWidth].
 void dspark_split_rnn(const uint16_t* w, uint16_t* w_sp, uint16_t* w_h, uint16_t* w_f, void* stream);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 class InklingModel;
 
@@ -36,4 +36,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

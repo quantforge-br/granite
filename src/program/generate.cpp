@@ -9,5 +9,5 @@
 #include "generate/run.hpp"
 
 int main(int argc, char** argv) {
-    return basalt::program::generate::run(argc, argv);
+    return granite::program::generate::run(argc, argv);
 }

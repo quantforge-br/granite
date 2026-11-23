@@ -8,7 +8,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 namespace {
 
@@ -92,4 +92,4 @@ double cgroup_cpu_quota(const std::string& self_cgroup_arg, const std::string& c
     return 0;
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

@@ -29,11 +29,11 @@
 #include <memory>
 #include <stdexcept>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 
-namespace bk = basalt::kernels;
-namespace mmq = basalt::prefill::mmq;
+namespace bk = granite::kernels;
+namespace mmq = granite::prefill::mmq;
 
 constexpr int kChunk = kPromptChunk;       // rows of one chunk forward
 constexpr int kTypeBF16 = 30;
@@ -585,4 +585,4 @@ uint64_t prompt_bytes(const Geometry& g) {
     return (uint64_t) std::max(c.at, h.at) + kMmqSpare;
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

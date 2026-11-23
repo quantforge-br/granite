@@ -26,7 +26,7 @@ void check(bool ok, const std::string& what) {
 
 int child_echo() {
     // the protocol is newline-framed bytes: no text-mode translation may touch it
-    basalt::platform::set_stdio_binary();
+    granite::platform::set_stdio_binary();
     std::fprintf(stderr, "child ready\n");
     std::fflush(stderr);
     std::string line;
@@ -40,7 +40,7 @@ int child_echo() {
 std::string read_line(int fd) {
     std::string line;
     char c = 0;
-    while (basalt::platform::pipe_read(fd, &c, 1) == 1 && c != '\n') line += c;
+    while (granite::platform::pipe_read(fd, &c, 1) == 1 && c != '\n') line += c;
     return line;
 }
 }  // namespace
@@ -54,15 +54,15 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (argc > 1 && std::strcmp(argv[1], "--crash-terminate") == 0) {
-        basalt::platform::install_crash_handler();
-        basalt::core::progress_at("decode", 17, 64);
+        granite::platform::install_crash_handler();
+        granite::core::progress_at("decode", 17, 64);
         try {
             throw std::runtime_error("boom");
         } catch (...) {
             std::terminate();
         }
     }
-    using namespace basalt::platform;
+    using namespace granite::platform;
     const std::string self = module_path();
     check(!self.empty(), "the program knows its own path");
     check(process_id() > 0, "process_id");

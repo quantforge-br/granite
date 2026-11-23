@@ -19,7 +19,7 @@
 #include <mutex>
 #include <thread>
 
-namespace basalt::core {
+namespace granite::core {
 
 namespace {
 
@@ -43,7 +43,7 @@ void convert(Conv conv, const uint8_t* src, uint64_t n, uint8_t* out) {
             for (uint64_t i = 0; i < n / 4; ++i) {
                 float v;
                 std::memcpy(&v, src + i * 4, 4);
-                const uint16_t h = basalt::kernels::f16_from_f32(v);
+                const uint16_t h = granite::kernels::f16_from_f32(v);
                 std::memcpy(out + i * 2, &h, 2);
             }
             break;
@@ -51,7 +51,7 @@ void convert(Conv conv, const uint8_t* src, uint64_t n, uint8_t* out) {
             for (uint64_t i = 0; i < n / 2; ++i) {
                 uint16_t h;
                 std::memcpy(&h, src + i * 2, 2);
-                const float v = basalt::kernels::f32_from_f16(h);
+                const float v = granite::kernels::f32_from_f16(h);
                 std::memcpy(out + i * 4, &v, 4);
             }
             break;
@@ -119,7 +119,7 @@ void quantize_bf16_q8_0(const uint16_t* bf16, uint64_t n, uint8_t* blocks) {
         const float d = amax / 127.0f;
         const float id = d != 0.0f ? 1.0f / d : 0.0f;
         uint8_t* o = blocks + b * 34;
-        const uint16_t dh = basalt::kernels::f16_from_f32(d);
+        const uint16_t dh = granite::kernels::f16_from_f32(d);
         std::memcpy(o, &dh, 2);
         for (int i = 0; i < 32; ++i) o[2 + i] = (uint8_t) (int8_t) std::round(x[i] * id);
     }
@@ -139,7 +139,7 @@ void quantize_bf16_q4_0(const uint16_t* bf16, uint64_t n, uint8_t* blocks) {
         const float d = m / -8.0f;
         const float id = d != 0.0f ? 1.0f / d : 0.0f;
         uint8_t* o = blocks + b * 18;
-        const uint16_t dh = basalt::kernels::f16_from_f32(d);
+        const uint16_t dh = granite::kernels::f16_from_f32(d);
         std::memcpy(o, &dh, 2);
         for (int i = 0; i < 16; ++i) {
             const int lo = std::min(15, (int) (int8_t) (x[i] * id + 8.5f));
@@ -553,7 +553,7 @@ bool Loader::run(const LoadPlan& plan, std::string& err) {
     auto device_done = [&]() {
         if (device_tasks == rounds[0].size()) return;   // no RAM reads follow
         LoadProgress::into("ram");
-        basalt::log::info("granite loader", "the cards' share is read (%.2f GiB in %.1f s); RAM next",
+        granite::log::info("granite loader", "the cards' share is read (%.2f GiB in %.1f s); RAM next",
                           (double) device_bytes / 1073741824.0,
                           std::chrono::duration<double>(std::chrono::steady_clock::now() - run_t0).count());
     };
@@ -756,4 +756,4 @@ bool place_start(Loader& loader, const LoadPlan& plan, std::string& err) {
     return ok;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

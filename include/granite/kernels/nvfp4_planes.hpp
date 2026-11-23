@@ -23,7 +23,7 @@
 #define BASALT_NVFP4P_HD
 #endif
 
-namespace basalt::kernels::nvfp4p {
+namespace granite::kernels::nvfp4p {
 
 BASALT_NVFP4P_HD inline constexpr bool fits(int64_t rows, int64_t K) {
     return rows > 0 && K > 0 && rows % 128 == 0 && K % 64 == 0;
@@ -50,4 +50,4 @@ void from_q8(const void* q8_blocks, int64_t rows, int64_t K, void* planes, float
 /// The ggml NVFP4 blocks of a plane matrix, for products that read blocks (distinct buffers, `bytes` each).
 void to_blocks(const void* planes, int64_t rows, int64_t K, void* blocks, void* stream);
 
-}  // namespace basalt::kernels::nvfp4p
+}  // namespace granite::kernels::nvfp4p

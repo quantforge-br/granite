@@ -14,7 +14,7 @@
 //
 // Formats: IQ2_XXS (16), IQ2_XS (17), IQ3_XXS (18), IQ3_S (21), IQ2_S (22), IQ4_XS (23).  IQ1_M stays on ggml-cpu.
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 namespace {
 
 inline float h2f(uint16_t h) { return _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128((int) h))); }
@@ -722,7 +722,7 @@ void BASALT_IQ_EXPORT(iq4nl256_down_rows)(const uint8_t* w, size_t row_bytes, in
                         int r0, int r1) {
     // the tokens' block scales are held on the stack: rows of at most iq4nl_max_blocks blocks (iq4nl256_fits)
     if (n % QK4_NL != 0 || n / QK4_NL > iq4nl_max_blocks) {
-        basalt::log::error("granite", "iq4nl256_down_rows: rows of %d values; at most %d, in blocks of %d", n,
+        granite::log::error("granite", "iq4nl256_down_rows: rows of %d values; at most %d, in blocks of %d", n,
                            iq4nl_max_blocks * QK4_NL, QK4_NL);
         std::exit(1);
     }
@@ -740,4 +740,4 @@ void BASALT_IQ_EXPORT(iq4nl256_down_rows)(const uint8_t* w, size_t row_bytes, in
     }
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

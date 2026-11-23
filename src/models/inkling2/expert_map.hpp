@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 /// The card's running counts split by where each pair is served: `all` every lookup, `card` those of the experts on the card
 /// (`on_card(layer, expert)`); the rest were read from RAM. The end-of-session line and the server's hit rate both come from this.
@@ -48,4 +48,4 @@ private:
     std::vector<uint32_t> last_;
 };
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

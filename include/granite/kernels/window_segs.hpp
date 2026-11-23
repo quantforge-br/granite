@@ -11,7 +11,7 @@
 #define BASALT_SEGS_HD
 #endif
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 constexpr int kWindowSegsMax = 16;   ///< segments one call holds at most
 
@@ -33,6 +33,6 @@ BASALT_SEGS_HD inline int seg_of(const WindowSegs& s, int r) {
 /// is 0).
 BASALT_SEGS_HD inline int seg_first(const WindowSegs& s, int r) { return s.n > 0 ? s.row0[seg_of(s, r)] : 0; }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels
 
 #undef BASALT_SEGS_HD

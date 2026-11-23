@@ -15,9 +15,9 @@
 #include <cstring>
 #include <string>
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
-constexpr int kMaxTopLogprobs = basalt::kernels::kLogprobMaxTop;
+constexpr int kMaxTopLogprobs = granite::kernels::kLogprobMaxTop;
 
 /// " <tok> <lp>[ <id>:<lp> ...]" from one row of kernels::row_logprobs (kLogprobStride floats) for pick `tok`.
 inline std::string logprob_fields(const float* row, int32_t tok, int top) {
@@ -36,4 +36,4 @@ inline std::string logprob_fields(const float* row, int32_t tok, int top) {
     return out;
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

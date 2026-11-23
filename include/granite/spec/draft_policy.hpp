@@ -28,7 +28,7 @@
 
 #include <array>
 
-namespace basalt::spec {
+namespace granite::spec {
 
 class DraftPolicy {
 public:
@@ -89,4 +89,4 @@ private:
     std::array<double, kChanceBins> c_ok_{}, c_n_{};       // drafter drafts accepted / tested, by stated chance, decayed
 };
 
-}  // namespace basalt::spec
+}  // namespace granite::spec

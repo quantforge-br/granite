@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 struct VisitCache {
     void* k = nullptr;                   ///< [cap][kKvHeads][kHeadDim], position p in cell p % cap; fp16 or unit-scale E4M3
@@ -18,4 +18,4 @@ struct VisitCache {
     float* m_ring = nullptr;             ///< the experts' sum's [kConvRing][n_embd]
 };
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

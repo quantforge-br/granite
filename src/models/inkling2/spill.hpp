@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 /// Zeroed bytes after a spilled layer's last slot: the prompt path's products read past the end of a weight matrix (a
 /// tile's last K step runs over a down matrix whose rows are not a whole number of steps) and multiply what they find by
@@ -41,4 +41,4 @@ bool plan_spill(int n_layers, int n_expert, const std::vector<uint64_t>& stride,
                 const std::vector<std::pair<int32_t, int32_t>>& rank, uint64_t need, int64_t keep, SpillPlan& out,
                 std::string& err);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

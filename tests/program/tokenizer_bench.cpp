@@ -8,7 +8,7 @@
 #include <string>
 
 #include "granite/program/tokenizer.hpp"
-namespace basalt::program::tokenizer { void pretok_qwen35(const char* text, size_t size, std::vector<size_t>& ends); }
+namespace granite::program::tokenizer { void pretok_qwen35(const char* text, size_t size, std::vector<size_t>& ends); }
 
 namespace {
 
@@ -30,10 +30,10 @@ int main(int argc, char** argv) {
                       types = read_all(dir + "/token_type.json");
     for (int a = 2; a < argc; ++a) {
         const std::string text = read_all(argv[a]);
-        basalt::program::Tokenizer t;
+        granite::program::Tokenizer t;
         std::string err;
         auto t0 = std::chrono::steady_clock::now();
-        t.set_pretokenize(basalt::program::tokenizer::pretok_qwen35);
+        t.set_pretokenize(granite::program::tokenizer::pretok_qwen35);
         if (!t.load(vocab, merges, types, err)) { std::fprintf(stderr, "load: %s\n", err.c_str()); return 1; }
         const double load_ms = ms_since(t0);
         std::vector<int32_t> ids;

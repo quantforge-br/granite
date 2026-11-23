@@ -61,9 +61,9 @@ void spec_block(const uint8_t* b, double* out) {
 void exhaustive() {
     int bad = 0;
     for (int x = 0; x < 256; ++x)
-        if ((double)basalt::ue4m3_to_fp32_half((uint8_t)x) * 2.0 != spec_ue4m3((uint8_t)x)) ++bad;
+        if ((double)granite::ue4m3_to_fp32_half((uint8_t)x) * 2.0 != spec_ue4m3((uint8_t)x)) ++bad;
     check(bad == 0, "UE4M3 decode differs from the bit-field formula");
-    check(basalt::ue4m3_to_fp32_half(0xFF) == 0.0f && basalt::ue4m3_to_fp32_half(0x7F) == 0.0f, "scale byte 0xFF is not decoded as 0 like 0x7F");
+    check(granite::ue4m3_to_fp32_half(0xFF) == 0.0f && granite::ue4m3_to_fp32_half(0x7F) == 0.0f, "scale byte 0xFF is not decoded as 0 like 0x7F");
     const ggml_type_traits* t = ggml_get_type_traits(GGML_TYPE_NVFP4);
     if (t != nullptr) {
         uint8_t blk[BLK] = {};
@@ -77,7 +77,7 @@ void exhaustive() {
     }
     bad = 0;
     for (int c = 0; c < 16; ++c)
-        if (basalt::kvalues_fp4[c] != spec_e2m1(c) * 2.0) ++bad;
+        if (granite::kvalues_fp4[c] != spec_e2m1(c) * 2.0) ++bad;
     check(bad == 0, "kvalues_fp4 differs from E2M1 doubled");
     std::printf("exhaustive: 256 scale bytes, 16 codes ok\n");
 }
@@ -100,7 +100,7 @@ void random_blocks(std::mt19937& rng) {
         const uint8_t* row = w.data() + (size_t)r * GU_ROW;
         t->to_float(row, ref.data(), N_EMBD);
         for (int b = 0; b < N_EMBD / 64; ++b) {
-            basalt::dequantize_nvfp4(row + (size_t)b * BLK, a.data() + 64 * b);
+            granite::dequantize_nvfp4(row + (size_t)b * BLK, a.data() + 64 * b);
             spec_block(row + (size_t)b * BLK, spec.data() + 64 * b);
         }
         double dd = 0, mag = 0;
@@ -162,7 +162,7 @@ int real_pack(const char* path) {
         double amax = 0;
         for (size_t b = 0; b + 16 < BLOB; b += BLK) {
             for (int s = 0; s < 4; ++s) nan_scales += (blob[b + s] & 0x7F) == 0x7F;
-            basalt::dequantize_nvfp4(blob.data() + b, v.data());
+            granite::dequantize_nvfp4(blob.data() + b, v.data());
             for (float e : v) {
                 nonfinite += !std::isfinite(e);
                 amax = std::fmax(amax, std::fabs(e));

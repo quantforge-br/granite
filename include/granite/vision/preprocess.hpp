@@ -11,7 +11,7 @@
 #include <vector>
 
 
-namespace basalt::vision {
+namespace granite::vision {
 
 struct Image {
     int w = 0, h = 0;
@@ -69,4 +69,4 @@ inline constexpr float kClipStd[3] = {0.26862954f, 0.2613026f, 0.2757771f};
 /// kClipStd[c]), then bf16((x bf16(kClipStd[c]) + bf16(kClipMean[c]) - mean[c]) / std[c]) (mean, std: the encoder's).
 void patchify_padded(const Image& img, const Geometry& g, const float mean[3], const float std[3], std::vector<float>& out);
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

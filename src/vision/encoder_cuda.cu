@@ -15,7 +15,7 @@
 #include "hy4_weights.hpp"
 #include "vision_kernels.cuh"
 
-namespace basalt::vision {
+namespace granite::vision {
 
 #define CK(x)                                                                                    \
     do {                                                                                         \
@@ -624,4 +624,4 @@ void CudaEncoder::detach() { impl_->detach(); }
 size_t CudaEncoder::device_bytes() const { return impl_->arena_size; }
 std::string CudaEncoder::last_error() const { return impl_->err; }
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

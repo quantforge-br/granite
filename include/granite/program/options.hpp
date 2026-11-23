@@ -9,7 +9,7 @@
 #include "granite/kernels/cpu/pool.hpp"
 #include "granite/platform/memory.hpp"
 
-namespace basalt::program {
+namespace granite::program {
 
 /// The context of every model without --max-context.
 inline constexpr int64_t kDefaultContext = 8192;
@@ -25,7 +25,7 @@ struct CommonOptions {
     std::vector<std::string> native_shards;
     int pool_workers = 0;         ///< >0 = the user's worker count; otherwise the start-up pick
     /// The pool's core layout; the start-up pick unless given
-    basalt::kernels::cpu::PoolAffinity pool_affinity = basalt::kernels::cpu::PoolAffinity::Auto;
+    granite::kernels::cpu::PoolAffinity pool_affinity = granite::kernels::cpu::PoolAffinity::Auto;
     /// Slots of VRAM-resident experts.  **0 = off, and off is the default.**  Switching the cache on moves work off the
     /// CPU pool (the model's hit kernel).
     int expert_cache = 0;
@@ -54,7 +54,7 @@ struct CommonOptions {
     /// Stop when the model emits an end-of-turn token (the pack's own, or --eos-ids).
     bool stop_eos = false;
     /// --ram-reserve-mib: the RAM left free for the rest of the system (platform::ram_reserve); 0 turns the guard off.
-    int64_t ram_reserve_mib = (int64_t) (basalt::platform::kDefaultRamReserveBytes >> 20);
+    int64_t ram_reserve_mib = (int64_t) (granite::platform::kDefaultRamReserveBytes >> 20);
     std::vector<int64_t> eos_ids;
     /// --gpu: the cards this run uses (gpu_select.hpp); empty = GPU 0 alone.  --gpu-plan prints the choice and exits.
     std::string gpu;
@@ -132,4 +132,4 @@ struct CommonOptions {
     std::vector<LossyFlag> lossy;
 };
 
-}  // namespace basalt::program
+}  // namespace granite::program

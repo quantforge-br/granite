@@ -51,10 +51,10 @@ struct Cache {
     bool int8 = false;
     int64_t cells = 0, at = 0;
     uint16_t *k = nullptr, *v = nullptr;            // one buffer, fp16
-    basalt::kernels::KvInt8 q8;                     // one buffer, int8
+    granite::kernels::KvInt8 q8;                     // one buffer, int8
     uint16_t *nk = nullptr, *nv = nullptr;          // split: near_p
-    basalt::kernels::KvInt8 n8;
-    basalt::kernels::KvFar far_kv;                     // split: far
+    granite::kernels::KvInt8 n8;
+    granite::kernels::KvFar far_kv;                     // split: far
     size_t bytes(int64_t n, bool scales) const { return (size_t) n * ROW * (int8 ? 1 : 2) / (scales ? 32 : 1); }
 
     bool on_host = false;
@@ -99,10 +99,10 @@ struct Cache {
             ck(cudaMemcpy(near_p, h.data(), a * elem, cudaMemcpyDefault), "copy");
             ck(cudaMemcpy(farp, h.data() + a * elem, (n - a) * elem, cudaMemcpyDefault), "copy");
         };
-        const auto f16 = [&](uint8_t* p) { const uint16_t x = basalt::kernels::f16_from_f32(nd(rng)); std::memcpy(p, &x, 2); };
+        const auto f16 = [&](uint8_t* p) { const uint16_t x = granite::kernels::f16_from_f32(nd(rng)); std::memcpy(p, &x, 2); };
         const auto i8 = [&](uint8_t* p) { *(int8_t*) p = (int8_t) code(rng); };
         const auto sc = [&](uint8_t* p) {
-            const uint16_t x = basalt::kernels::f16_from_f32(0.004f + 0.02f * std::fabs(nd(rng)));
+            const uint16_t x = granite::kernels::f16_from_f32(0.004f + 0.02f * std::fabs(nd(rng)));
             std::memcpy(p, &x, 2);
         };
         if (!int8) {
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
     for (auto& x : kr) x = nd(rng);
     for (auto& x : vr) x = nd(rng);
     std::vector<uint16_t> qb(q.size());
-    for (size_t i = 0; i < q.size(); ++i) qb[i] = basalt::kernels::bf16_from_f32(q[i]);
+    for (size_t i = 0; i < q.size(); ++i) qb[i] = granite::kernels::bf16_from_f32(q[i]);
     float* d_q = (float*) dev_bytes(q.size() * 4);
     uint16_t* d_qb = (uint16_t*) dev_bytes(qb.size() * 2);
     float *d_qf = (float*) dev_bytes(qf.size() * 4), *d_kr = (float*) dev_bytes(kr.size() * 4), *d_vr = (float*) dev_bytes(vr.size() * 4);
@@ -176,12 +176,12 @@ int main(int argc, char** argv) {
     const size_t out_floats = (size_t) TB * NH * HD;
     float *d_o1 = (float*) dev_bytes(out_floats * 4), *d_o2 = (float*) dev_bytes(out_floats * 4);
     float* d_qo = (float*) dev_bytes((size_t) 16 * NH * HD * 4);
-    float* d_scr = (float*) dev_bytes(basalt::kernels::gqa_decode_scratch_floats(L, basalt::kernels::kGqaMaxWindow, NH) * 4);
-    const size_t split_floats = basalt::kernels::gqa_prompt_split_floats(TP, NH, 8);
+    float* d_scr = (float*) dev_bytes(granite::kernels::gqa_decode_scratch_floats(L, granite::kernels::kGqaMaxWindow, NH) * 4);
+    const size_t split_floats = granite::kernels::gqa_prompt_split_floats(TP, NH, 8);
     float* d_split = (float*) dev_bytes(split_floats * 4);
     int32_t* d_pos = (int32_t*) dev_bytes(16 * 3 * 4);
     int32_t* d_at = (int32_t*) dev_bytes(2 * 4);
-    basalt::kernels::RopeSpec rope;
+    granite::kernels::RopeSpec rope;
     rope.rot = 64;
     rope.theta = 1e7f;
     const auto same = [&](size_t floats) { return down(d_o1, floats) == down(d_o2, floats); };
@@ -196,9 +196,9 @@ int main(int argc, char** argv) {
             std::vector<int32_t> pos((size_t) T * 3);
             for (int t = 0; t < T; ++t) pos[(size_t) t * 3] = pos[(size_t) t * 3 + 1] = pos[(size_t) t * 3 + 2] = (int32_t) (cell0 + t);
             ck(cudaMemcpy(d_pos, pos.data(), pos.size() * 4, cudaMemcpyHostToDevice), "copy");
-            basalt::kernels::attn_qk_prepare(d_qf, d_kr, d_vr, d_norm, d_norm, 1e-6f, rope, d_pos, T, NH, NKV, d_qo, c.k, c.v, cell0,
+            granite::kernels::attn_qk_prepare(d_qf, d_kr, d_vr, d_norm, d_norm, 1e-6f, rope, d_pos, T, NH, NKV, d_qo, c.k, c.v, cell0,
                                              nullptr, 256, true, 0, nullptr, c.q8);
-            basalt::kernels::attn_qk_prepare(d_qf, d_kr, d_vr, d_norm, d_norm, 1e-6f, rope, d_pos, T, NH, NKV, d_qo, c.nk, c.nv,
+            granite::kernels::attn_qk_prepare(d_qf, d_kr, d_vr, d_norm, d_norm, 1e-6f, rope, d_pos, T, NH, NKV, d_qo, c.nk, c.nv,
                                              cell0, nullptr, 256, true, 0, nullptr, c.n8, c.far_kv);
             ck(cudaDeviceSynchronize(), "prepare");
             std::snprintf(what, sizeof what, "%s attn_qk_prepare across the split: the two buffers hold the one buffer's bytes", kv);
@@ -207,10 +207,10 @@ int main(int argc, char** argv) {
         // decode: far cells in host memory
         Cache c(int8, L, at, true, rng);
         bool ok = true;
-        for (int T = 1; T <= basalt::kernels::kGqaMaxWindow; ++T) {
+        for (int T = 1; T <= granite::kernels::kGqaMaxWindow; ++T) {
             const int64_t p0 = L - T;
-            basalt::kernels::gqa_decode_attn(d_q, c.k, c.v, NH, NKV, p0, T, d_scr, L, d_o1, nullptr, nullptr, c.q8);
-            basalt::kernels::gqa_decode_attn(d_q, c.nk, c.nv, NH, NKV, p0, T, d_scr, L, d_o2, nullptr, nullptr, c.n8, nullptr,
+            granite::kernels::gqa_decode_attn(d_q, c.k, c.v, NH, NKV, p0, T, d_scr, L, d_o1, nullptr, nullptr, c.q8);
+            granite::kernels::gqa_decode_attn(d_q, c.nk, c.nv, NH, NKV, p0, T, d_scr, L, d_o2, nullptr, nullptr, c.n8, nullptr,
                                              nullptr, c.far_kv);
             ok = ok && same((size_t) T * NH * HD);
         }
@@ -219,19 +219,19 @@ int main(int argc, char** argv) {
         {   // a device first cell (a captured window), and a window that ends before the split
             const int32_t a2[2] = {(int32_t) (L - 8), 0};
             ck(cudaMemcpy(d_at, a2, sizeof a2, cudaMemcpyHostToDevice), "copy");
-            basalt::kernels::gqa_decode_attn(d_q, c.k, c.v, NH, NKV, L - 8, 8, d_scr, L, d_o1, nullptr, d_at, c.q8);
-            basalt::kernels::gqa_decode_attn(d_q, c.nk, c.nv, NH, NKV, L - 8, 8, d_scr, L, d_o2, nullptr, d_at, c.n8, nullptr, nullptr,
+            granite::kernels::gqa_decode_attn(d_q, c.k, c.v, NH, NKV, L - 8, 8, d_scr, L, d_o1, nullptr, d_at, c.q8);
+            granite::kernels::gqa_decode_attn(d_q, c.nk, c.nv, NH, NKV, L - 8, 8, d_scr, L, d_o2, nullptr, d_at, c.n8, nullptr, nullptr,
                                              c.far_kv);
             bool ok2 = same((size_t) 8 * NH * HD);
-            basalt::kernels::gqa_decode_attn(d_q, c.k, c.v, NH, NKV, at - 40, 3, d_scr, L, d_o1, nullptr, nullptr, c.q8);
-            basalt::kernels::gqa_decode_attn(d_q, c.nk, c.nv, NH, NKV, at - 40, 3, d_scr, L, d_o2, nullptr, nullptr, c.n8, nullptr,
+            granite::kernels::gqa_decode_attn(d_q, c.k, c.v, NH, NKV, at - 40, 3, d_scr, L, d_o1, nullptr, nullptr, c.q8);
+            granite::kernels::gqa_decode_attn(d_q, c.nk, c.nv, NH, NKV, at - 40, 3, d_scr, L, d_o2, nullptr, nullptr, c.n8, nullptr,
                                              nullptr, c.far_kv);
             ok2 = ok2 && same((size_t) 3 * NH * HD);
             std::snprintf(what, sizeof what, "%s gqa_decode_attn, a device first cell and a window before the split", kv);
             report(what, ok2);
         }
         {   // two segments in one launch: a split cache and a one-buffer one
-            basalt::kernels::GqaSeg s1[2], s2[2];
+            granite::kernels::GqaSeg s1[2], s2[2];
             s1[0].T = s2[0].T = 5;
             s1[0].pos0 = s2[0].pos0 = L - 5;
             s1[1].T = s2[1].T = 7;
@@ -243,8 +243,8 @@ int main(int argc, char** argv) {
             s2[0].v_cache = c.nv;
             s2[0].q8 = c.n8;
             s2[0].far_kv = c.far_kv;
-            basalt::kernels::gqa_decode_attn_segs(d_q, NH, NKV, s1, 2, d_scr, L, d_o1, nullptr);
-            basalt::kernels::gqa_decode_attn_segs(d_q, NH, NKV, s2, 2, d_scr, L, d_o2, nullptr);
+            granite::kernels::gqa_decode_attn_segs(d_q, NH, NKV, s1, 2, d_scr, L, d_o1, nullptr);
+            granite::kernels::gqa_decode_attn_segs(d_q, NH, NKV, s2, 2, d_scr, L, d_o2, nullptr);
             std::snprintf(what, sizeof what, "%s gqa_decode_attn_segs, a split segment beside a one-buffer one", kv);
             report(what, same((size_t) 12 * NH * HD));
         }
@@ -255,12 +255,12 @@ int main(int argc, char** argv) {
             const int64_t p0 = L - T;
             float* sp = cfg == 1 ? d_split : nullptr;
             const size_t sf = cfg == 1 ? split_floats : 0;
-            basalt::kernels::gqa_prompt_attn(d_q, p.k, p.v, NH, NKV, p0, T, d_o1, nullptr, p.q8, sp, sf);
-            basalt::kernels::gqa_prompt_attn(d_q, p.nk, p.nv, NH, NKV, p0, T, d_o2, nullptr, p.n8, sp, sf, p.far_kv);
+            granite::kernels::gqa_prompt_attn(d_q, p.k, p.v, NH, NKV, p0, T, d_o1, nullptr, p.q8, sp, sf);
+            granite::kernels::gqa_prompt_attn(d_q, p.nk, p.nv, NH, NKV, p0, T, d_o2, nullptr, p.n8, sp, sf, p.far_kv);
             bool okp = same((size_t) T * NH * HD);
             if (int8) {   // the BF16 form
-                basalt::kernels::gqa_prompt_attn_bf16(d_qb, NH, NKV, p0, T, (uint16_t*) d_o1, nullptr, p.q8, sp, sf);
-                basalt::kernels::gqa_prompt_attn_bf16(d_qb, NH, NKV, p0, T, (uint16_t*) d_o2, nullptr, p.n8, sp, sf, p.far_kv);
+                granite::kernels::gqa_prompt_attn_bf16(d_qb, NH, NKV, p0, T, (uint16_t*) d_o1, nullptr, p.q8, sp, sf);
+                granite::kernels::gqa_prompt_attn_bf16(d_qb, NH, NKV, p0, T, (uint16_t*) d_o2, nullptr, p.n8, sp, sf, p.far_kv);
                 okp = okp && same((size_t) T * NH * HD / 2);
             }
             static const char* shape[3] = {"300 rows", "300 rows split", "2048 rows"};
@@ -273,7 +273,7 @@ int main(int argc, char** argv) {
     if (argc > 1 && std::strcmp(argv[1], "--bench") == 0) {
         // a decode row and an 8-row window over 128K int8 and fp16 cells, none, half or all of them in host memory
         const int64_t N = 131072;
-        float* d_s = (float*) dev_bytes(basalt::kernels::gqa_decode_scratch_floats(N, 8, NH) * 4);
+        float* d_s = (float*) dev_bytes(granite::kernels::gqa_decode_scratch_floats(N, 8, NH) * 4);
         for (const bool int8 : {true, false})
             for (const int64_t split : {N - 1, N / 2, (int64_t) 1}) {   // (about) none, half and all of the cells far
                 Cache b(int8, N, split, true, rng);
@@ -282,12 +282,12 @@ int main(int argc, char** argv) {
                     cudaEventCreate(&e0);
                     cudaEventCreate(&e1);
                     for (int i = 0; i < 3; ++i)
-                        basalt::kernels::gqa_decode_attn(d_q, b.nk, b.nv, NH, NKV, N - T, T, d_s, N, d_o2, nullptr, nullptr, b.n8,
+                        granite::kernels::gqa_decode_attn(d_q, b.nk, b.nv, NH, NKV, N - T, T, d_s, N, d_o2, nullptr, nullptr, b.n8,
                                                          nullptr, nullptr, b.far_kv);
                     cudaEventRecord(e0);
                     const int reps = 20;
                     for (int i = 0; i < reps; ++i)
-                        basalt::kernels::gqa_decode_attn(d_q, b.nk, b.nv, NH, NKV, N - T, T, d_s, N, d_o2, nullptr, nullptr, b.n8,
+                        granite::kernels::gqa_decode_attn(d_q, b.nk, b.nv, NH, NKV, N - T, T, d_s, N, d_o2, nullptr, nullptr, b.n8,
                                                          nullptr, nullptr, b.far_kv);
                     cudaEventRecord(e1);
                     cudaEventSynchronize(e1);

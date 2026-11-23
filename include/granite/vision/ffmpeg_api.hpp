@@ -12,7 +12,7 @@
 
 #include "granite/vision/ffmpeg_abi.hpp"
 
-namespace basalt::vision {
+namespace granite::vision {
 
 struct Ffmpeg {
     ff::AbiRow abi{};      ///< the loaded release's row
@@ -77,4 +77,4 @@ const Ffmpeg* ffmpeg(std::string& why);
 /// "VIDEO off <reason>". Loads FFmpeg if no call has yet.
 std::string video_line();
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

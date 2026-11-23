@@ -14,7 +14,7 @@
 
 #include "granite/vision/preprocess.hpp"
 
-namespace basalt::vision {
+namespace granite::vision {
 
 struct VideoOptions {
     double fps = 2.0;                  ///< frames sampled per second of the source
@@ -79,4 +79,4 @@ bool parse_encv(const std::string& line, std::string& video, std::string& output
 /// separated.
 std::string times_text(const std::vector<double>& times);
 
-}  // namespace basalt::vision
+}  // namespace granite::vision

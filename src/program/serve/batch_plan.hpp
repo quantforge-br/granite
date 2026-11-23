@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 /// The most rows each active slot's window may take in a batch of `cap` rows. joint[i][k] is the chance slot i's drafts
 /// 0..k are all kept. With no more slots than rows, one pass serves them all: each slot takes one row, then each further
@@ -50,4 +50,4 @@ inline std::vector<std::vector<size_t>> batch_groups(const std::vector<int>& row
     return out;
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 struct DeviceInfo {
     int ordinal = -1;
@@ -107,4 +107,4 @@ private:
     bool poison_ = false;
 };
 
-}  // namespace basalt::core
+}  // namespace granite::core

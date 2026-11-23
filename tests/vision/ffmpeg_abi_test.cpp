@@ -14,7 +14,7 @@ extern "C" {
 
 #include "granite/vision/ffmpeg_abi.hpp"
 
-namespace ff = basalt::vision::ff;
+namespace ff = granite::vision::ff;
 
 int main() {
     const ff::AbiRow* row = nullptr;

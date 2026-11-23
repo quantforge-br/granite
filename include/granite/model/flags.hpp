@@ -5,7 +5,7 @@
 
 #include <cstdlib>
 
-namespace basalt::model {
+namespace granite::model {
 
 class FlagArgs {
 public:
@@ -13,7 +13,7 @@ public:
     /// The next argument, the value of flag `what`; a flag without one ends the program.
     const char* next(const char* what) {
         if (i_ + 1 >= argc_) {
-            basalt::log::error("granite", "%s needs a value", what);
+            granite::log::error("granite", "%s needs a value", what);
             std::exit(2);
         }
         return argv_[++i_];
@@ -28,4 +28,4 @@ private:
     int& i_;
 };
 
-}  // namespace basalt::model
+}  // namespace granite::model

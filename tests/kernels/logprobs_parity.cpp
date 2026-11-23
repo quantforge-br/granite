@@ -18,7 +18,7 @@
 #include <numeric>
 #include <vector>
 
-using namespace basalt::kernels;
+using namespace granite::kernels;
 
 namespace {
 

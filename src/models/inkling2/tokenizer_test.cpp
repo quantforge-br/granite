@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
         std::printf("no pack at %s: skipped\n", argv[2]);
         return 77;
     }
-    basalt::core::ModelFile mf;
+    granite::core::ModelFile mf;
     std::string err;
     std::vector<uint8_t> files[3];
     const char* names[3] = {"tokenizer/vocab.json", "tokenizer/merges.txt", "tokenizer/token_type.json"};
@@ -33,9 +33,9 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 3; ++i)
         if (!mf.read(names[i], files[i], err)) { std::fprintf(stderr, "%s: %s\n", names[i], err.c_str()); return 1; }
     const auto view = [](const std::vector<uint8_t>& b) { return std::string_view((const char*) b.data(), b.size()); };
-    basalt::program::Tokenizer t;
-    t.set_pretokenize(basalt::models::inkling2::pretok_inkling2);
-    t.set_ignore_merges(basalt::models::inkling2::kIgnoreMerges);
+    granite::program::Tokenizer t;
+    t.set_pretokenize(granite::models::inkling2::pretok_inkling2);
+    t.set_ignore_merges(granite::models::inkling2::kIgnoreMerges);
     if (!t.load(view(files[0]), view(files[1]), view(files[2]), err)) { std::fprintf(stderr, "load: %s\n", err.c_str()); return 1; }
 
     std::ifstream g(argv[1], std::ios::binary);
@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
     while (std::getline(g, line)) {
         if (line.empty() || line[0] == '#') continue;
         const size_t tab = line.find('\t');
-        basalt::program::json::Scan sc{std::string_view(line).substr(0, tab)};
+        granite::program::json::Scan sc{std::string_view(line).substr(0, tab)};
         std::string text;
         if (tab == std::string::npos || !sc.str(text)) { std::fprintf(stderr, "bad line: %s\n", line.c_str()); return 1; }
         std::vector<int32_t> want;

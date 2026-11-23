@@ -8,12 +8,12 @@
 #include <cstddef>
 #include <vector>
 
-namespace basalt::program::tokenizer {
+namespace granite::program::tokenizer {
 /// The qwen35 pre-tokenizer: `ends` gets where each piece of the text ends.
 void pretok_qwen35(const char* text, size_t size, std::vector<size_t>& ends);
-}  // namespace basalt::program::tokenizer
+}  // namespace granite::program::tokenizer
 
-namespace basalt::program {
+namespace granite::program {
 
 /// `<tool_call>\n<function=NAME>\n<parameter=P>\nVALUE\n</parameter>\n</function>\n</tool_call>`
 inline grammar::ToolForm qwen_tool_form() {
@@ -36,4 +36,4 @@ inline model::TokenNames qwen_token_names() {
     return {{"<|endoftext|>", "<|im_end|>"}, "<|im_start|>", "<|image_pad|>", "<|video_pad|>", "assistant"};
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

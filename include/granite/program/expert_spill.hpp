@@ -7,7 +7,7 @@
 
 #include "granite/log.hpp"
 
-namespace basalt::program {
+namespace granite::program {
 
 struct ExpertSpill {
     int64_t experts = 0;   ///< (layer, expert) pairs only the file holds
@@ -20,7 +20,7 @@ struct ExpertSpill {
 inline void warn_spill(const ExpertSpill& s, const std::string& levers) {
     if (s.experts <= 0) return;
     const double gib = (double) s.bytes / 1073741824.0;
-    basalt::log::warn("granite", "%lld experts on SSD (%.1f GiB) \xc2\xb7 free %.1f GiB RAM%s", (long long) s.experts, gib, gib,
+    granite::log::warn("granite", "%lld experts on SSD (%.1f GiB) \xc2\xb7 free %.1f GiB RAM%s", (long long) s.experts, gib, gib,
                       levers.c_str());
 }
 
@@ -30,4 +30,4 @@ inline std::string spill_words(const ExpertSpill& s) {
            " spill_bytes=" + std::to_string(s.bytes);
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace basalt::model {
+namespace granite::model {
 
 /// The windows reqs[0..n) as one window: request i is segment i, its rows after the segments before it.
 struct BatchWindow {
@@ -111,4 +111,4 @@ private:
     uint64_t clock_ = 0;
 };
 
-}  // namespace basalt::model
+}  // namespace granite::model

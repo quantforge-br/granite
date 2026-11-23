@@ -6,7 +6,7 @@
 #include <cstdarg>
 #include <cstdio>
 
-namespace basalt::program {
+namespace granite::program {
 
 namespace {
 std::string fmt(const char* f, ...) {
@@ -115,4 +115,4 @@ std::string format_adapt_line(const std::vector<AdaptTrial>& trials, double band
     return s + fmt(" tok/s (band %.1f%%)", band * 100.0);
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::program {
+namespace granite::program {
 
 struct CommunityGpu {
     std::string name;
@@ -83,4 +83,4 @@ bool community_add_row(const std::string& file, const CommunityRow& row, std::st
 /// unless the write itself failed part way.
 bool community_add_row_file(const std::string& path, const CommunityRow& row, std::string& err, CommunityEdit* edit = nullptr);
 
-}  // namespace basalt::program
+}  // namespace granite::program

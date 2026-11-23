@@ -25,7 +25,7 @@
 #include "granite/vision/encoder_cuda.hpp"
 #include "vision_kernels.cuh"
 
-using namespace basalt::vision;
+using namespace granite::vision;
 
 namespace {
 
@@ -201,7 +201,7 @@ void check_interp() {
 }
 
 // double precision merge, projection and newline of post-encoder rows, to check the end of the pipeline independently
-void check_encoder(const basalt::core::FileRange& fr, int gx, int gy) {
+void check_encoder(const granite::core::FileRange& fr, int gx, int gy) {
     Mmproj mp;
     std::string err;
     if (!mp.open(fr, err, "hy_v4_flash")) { std::printf("open: %s\n", err.c_str()); g_fail++; return; }
@@ -271,7 +271,7 @@ int main() {
     check_interp();
     const std::string path = "hy4_encoder_parity.gguf";
     write_gguf(path.c_str());
-    basalt::core::FileRange fr;
+    granite::core::FileRange fr;
     fr.path = path;
     check_encoder(fr, 8, 6);     // smaller than the 24 x 24 table
     check_encoder(fr, 40, 24);   // larger than it

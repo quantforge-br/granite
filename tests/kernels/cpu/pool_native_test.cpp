@@ -25,7 +25,7 @@
 #include <thread>
 #include <vector>
 
-namespace cpu = basalt::kernels::cpu;
+namespace cpu = granite::kernels::cpu;
 
 namespace {
 

@@ -4,14 +4,14 @@
 #include "basalt_git.h"
 #include "granite/platform/cpu.hpp"
 
-namespace basalt::program::serve {
+namespace granite::program::serve {
 
 // ---- what the watchdog prints before it stops a stalled engine
 struct MemSample {
     unsigned long long faults = 0, rss_mib = 0, avail_mib = 0, commit_mib = 0;   // faults: hard
 };
 MemSample mem_sample() {
-    const basalt::platform::ProcessMemory p = basalt::platform::process_memory();
+    const granite::platform::ProcessMemory p = granite::platform::process_memory();
     MemSample m;
     m.faults = p.faults;
     m.rss_mib = p.rss_mib;
@@ -22,7 +22,7 @@ MemSample mem_sample() {
 
 // the stage the watchdog names: "<where> <detail>", and the prompt chunk a batched read is in
 std::string stage_text() {
-    const basalt::core::Progress& p = basalt::core::progress();
+    const granite::core::Progress& p = granite::core::progress();
     std::string s = std::string(p.where.load()) + " " + std::to_string((long long) p.detail.load());
     if (const int64_t c = p.chunk.load(); c >= 0) s += " of the prompt chunk from token " + std::to_string((long long) c);
     return s;
@@ -31,7 +31,7 @@ std::string stage_text() {
 // the engine's threads in uninterruptible sleep (state D - almost always waiting for the disk), and where
 // (wchan): many threads in blk_io_schedule is a disk that cannot keep up, not a deadlock in the engine
 void disk_wait_threads(std::FILE* f) {
-    const basalt::platform::ThreadWaits w = basalt::platform::threads_in_disk_wait();
+    const granite::platform::ThreadWaits w = granite::platform::threads_in_disk_wait();
     if (w.threads == 0) return;
     std::string list;
     for (const auto& [name, n] : w.where) list += (list.empty() ? " (" : ", ") + name + " x" + std::to_string(n);
@@ -42,18 +42,18 @@ void disk_wait_threads(std::FILE* f) {
 }
 
 void stall_report(std::FILE* f, uint64_t layers_during) {
-    basalt::core::Progress& p = basalt::core::progress();
+    granite::core::Progress& p = granite::core::progress();
     std::fprintf(f, "granite serve: error: stall report (engine %s): stage \"%s\" for %lld s; %llu layers served since the "
                     "last finished step (0 = stopped, more = slow)\n", BASALT_VERSION, stage_text().c_str(),
-                 (long long) ((basalt::core::progress_now_ms() - p.since_ms.load()) / 1000),
+                 (long long) ((granite::core::progress_now_ms() - p.since_ms.load()) / 1000),
                  (unsigned long long) layers_during);
     for (int pass = 0; pass < 2; ++pass) {
         if (pass == 1) {
             std::this_thread::sleep_for(std::chrono::seconds(2));
             std::fprintf(f, "  2 s later:\n");
         }
-        if (auto fn = basalt::core::diag_pool_fn().load()) fn(f);
-        if (auto fn = basalt::core::diag_verify_fn().load()) fn(f);
+        if (auto fn = granite::core::diag_pool_fn().load()) fn(f);
+        if (auto fn = granite::core::diag_verify_fn().load()) fn(f);
         disk_wait_threads(f);
         const MemSample m = mem_sample();
         std::fprintf(f, "  memory: %llu MiB resident, %llu MiB %s, %llu MiB RAM available; %llu %s\n", m.rss_mib,
@@ -66,7 +66,7 @@ void stall_report(std::FILE* f, uint64_t layers_during) {
 
 void Runtime::report_conversations(long long restored, double restored_ms) {
     if (!conversations) return;
-    basalt::protocol::emit_text(basalt::protocol::conversation_line(conversations->size(), conversations->bytes(),
+    granite::protocol::emit_text(granite::protocol::conversation_line(conversations->size(), conversations->bytes(),
                                                                     conversations->evictions(), restored, restored_ms));
 }
 
@@ -92,7 +92,7 @@ int Runtime::next_line_within(std::string& out, int ms) {
 
 bool Runtime::halted() {
     if (stop_req.load() || stdin_lost.load()) return true;
-    if (basalt::platform::ram_guard_level() != basalt::platform::RamLevel::Critical) return false;
+    if (granite::platform::ram_guard_level() != granite::platform::RamLevel::Critical) return false;
     ram_stop.store(true);
     return true;
 }
@@ -111,10 +111,10 @@ int Runtime::init_protocol() {
     {
         std::vector<uint8_t> vj, mj, tj, cj;
         std::string terr;
-        if (basalt::core::read_range(model_file.range("tokenizer/vocab.json"), vj, terr) &&
-            basalt::core::read_range(model_file.range("tokenizer/merges.txt"), mj, terr) &&
-            basalt::core::read_range(model_file.range("tokenizer/token_type.json"), tj, terr) &&
-            basalt::core::read_range(model_file.range("tokenizer/tokenizer.json"), cj, terr) &&
+        if (granite::core::read_range(model_file.range("tokenizer/vocab.json"), vj, terr) &&
+            granite::core::read_range(model_file.range("tokenizer/merges.txt"), mj, terr) &&
+            granite::core::read_range(model_file.range("tokenizer/token_type.json"), tj, terr) &&
+            granite::core::read_range(model_file.range("tokenizer/tokenizer.json"), cj, terr) &&
             std::string_view((const char*) cj.data(), cj.size()).find("\"pre\": \"" + std::string(pre_.name) + "\"") != std::string_view::npos) {
             text_tokenizer.set_pretokenize(pre_.split);
             text_tokenizer.set_ignore_merges(pre_.ignore_merges);
@@ -144,9 +144,9 @@ int Runtime::init_protocol() {
         // the next bytes of stdin, waited for in slices so that the runtime's end stops this thread before its state
         // goes; -2 when it has
         auto read_some = [&]() -> std::ptrdiff_t {
-            while (!basalt::platform::pipe_wait_readable(0, 100))
+            while (!granite::platform::pipe_wait_readable(0, 100))
                 if (reader_stop_.load()) return -2;
-            return (std::ptrdiff_t) basalt::platform::pipe_read(0, chunk, sizeof chunk);
+            return (std::ptrdiff_t) granite::platform::pipe_read(0, chunk, sizeof chunk);
         };
         auto getline_fd = [&](std::string& out) -> bool {
             for (;;) {
@@ -208,7 +208,7 @@ int Runtime::init_protocol() {
             std::string payload;
             if (!read_exact((size_t) nbytes, payload)) { line_out = "ERR_GENT the prompt text was cut short"; return false; }
             if (!text_tokenizer_note.empty()) { line_out = "ERR_GENT " + text_tokenizer_note; return true; }
-            std::vector<basalt::program::Tokenizer::Span> spans;
+            std::vector<granite::program::Tokenizer::Span> spans;
             for (size_t p = 0; p < plain_text.size();) {
                 char* e1 = nullptr;
                 const unsigned long long a = std::strtoull(plain_text.c_str() + p, &e1, 10);
@@ -289,9 +289,9 @@ int Runtime::init_protocol() {
         cudaMemGetInfo(&free_b, &total_b);
         const int64_t free_mib = (int64_t) (free_b >> 20);
         if (free_mib >= vram_floor_mib()) {
-            basalt::log::info("granite serve", "%lld MiB of VRAM free with everything loaded", (long long) free_mib);
+            granite::log::info("granite serve", "%lld MiB of VRAM free with everything loaded", (long long) free_mib);
         } else {
-            basalt::log::warn("granite", "only %lld MiB of VRAM free, requests may stall; close other "
+            granite::log::warn("granite", "only %lld MiB of VRAM free, requests may stall; close other "
                                  "programs that use the GPU", (long long) free_mib);
         }
     }
@@ -308,7 +308,7 @@ int Runtime::announce() {
     if (text_tokenizer_note.empty()) std::printf("INFO text_prompt=1\n");
     {   // the build's commit, and the processors that share each L3 cache (the console's load per CCD)
         std::string l3;
-        for (const std::vector<int>& g : basalt::platform::cpu_l3_groups()) {
+        for (const std::vector<int>& g : granite::platform::cpu_l3_groups()) {
             std::string part;
             for (size_t i = 0; i < g.size(); ++i) {
                 size_t j = i;
@@ -334,7 +334,7 @@ int Runtime::announce() {
         const int limit = 60;   // one step (a prompt layer, a verify window) takes seconds
         if (limit > 0)
             std::thread([limit] {
-                basalt::core::Progress& p = basalt::core::progress();
+                granite::core::Progress& p = granite::core::progress();
                 uint64_t last = p.beats.load(), ticks_at = p.ticks.load();
                 auto since = std::chrono::steady_clock::now();
                 for (;;) {
@@ -343,11 +343,11 @@ int Runtime::announce() {
                     const uint64_t b = p.beats.load();
                     if (!p.busy.load() || b != last) { last = b; ticks_at = p.ticks.load(); since = now; continue; }
                     if (now - since < std::chrono::seconds(limit)) continue;
-                    basalt::log::error("granite serve", "no progress for %d s during a request (%s) - stopping "
+                    granite::log::error("granite serve", "no progress for %d s during a request (%s) - stopping "
                                          "the engine so the server starts it again",
                                  limit, stage_text().c_str());
-                    stall_report(basalt::log::stream(), p.ticks.load() - ticks_at);
-                    basalt::core::release_gpu_waits(basalt::log::stream());   // no spin kernel outlives the process
+                    stall_report(granite::log::stream(), p.ticks.load() - ticks_at);
+                    granite::core::release_gpu_waits(granite::log::stream());   // no spin kernel outlives the process
                     std::abort();
                 }
             }).detach();
@@ -355,4 +355,4 @@ int Runtime::announce() {
     return 0;
 }
 
-}  // namespace basalt::program::serve
+}  // namespace granite::program::serve

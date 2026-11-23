@@ -11,10 +11,10 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 
-namespace bk = basalt::kernels;
+namespace bk = granite::kernels;
 
 constexpr int kThreads = 256;
 constexpr int kPerThread = kWidth / kThreads;   // 9
@@ -669,4 +669,4 @@ void softcap(float* x, int rows, int n, int64_t ld, float cap, void* stream) {
     check("softcap");
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

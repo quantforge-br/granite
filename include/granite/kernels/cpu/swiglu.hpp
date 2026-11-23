@@ -3,7 +3,7 @@
 
 #include <cmath>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 /// Which SwiGLU a layer's experts take.  Both zero: silu(g) * u.
 struct SwiGlu {
@@ -25,4 +25,4 @@ static inline float swiglu(const SwiGlu& s, float g, float u) {
     return (g / (1.f + std::exp(-g))) * u;
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

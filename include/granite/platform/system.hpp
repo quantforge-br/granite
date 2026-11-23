@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::platform {
+namespace granite::platform {
 
 /// This process's id.
 int64_t process_id();
@@ -78,4 +78,4 @@ ThreadWaits threads_in_disk_wait();
 /// started.
 std::optional<std::string> capture_output(const std::vector<std::string>& argv, bool include_stderr);
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

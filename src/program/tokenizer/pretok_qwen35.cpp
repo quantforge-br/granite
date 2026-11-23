@@ -8,7 +8,7 @@
 #include "granite/program/qwen_forms.hpp"
 #include "unicode_flags.hpp"
 
-namespace basalt::program::tokenizer {
+namespace granite::program::tokenizer {
 
 namespace {
 
@@ -131,4 +131,4 @@ void pretok_qwen35(const char* text, size_t size, std::vector<size_t>& ends) {
     }
 }
 
-}  // namespace basalt::program::tokenizer
+}  // namespace granite::program::tokenizer

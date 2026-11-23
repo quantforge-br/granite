@@ -18,8 +18,8 @@
 #else
 #include <unistd.h>
 #endif
-using basalt::platform::DirectFile;
-using basalt::platform::Completion;
+using granite::platform::DirectFile;
+using granite::platform::Completion;
 
 static void check(bool ok, const char* why) { if (!ok) throw std::runtime_error(why); }
 struct FileCloser { void operator()(std::FILE* f) const { std::fclose(f); } };
@@ -82,7 +82,7 @@ struct Fixture {
 /// Two opens of one file with a bounded issuing pool: reads stay positional, stay on the open that queued them,
 /// and a close leaves neither an in-flight read nor a completion behind.
 static void test_bounded_opens() {
-    using namespace basalt::platform;
+    using namespace granite::platform;
     const uint32_t page = DirectFile::alignment();
     constexpr unsigned pages = 12;
     Fixture fx(pages, 0);
@@ -157,7 +157,7 @@ static void test_bounded_opens() {
 /// A file the process also maps and reads through a cached descriptor, read with either open: every read completes
 /// once with the file's bytes, including the short last page and reads past the end.
 static void test_mapped_elsewhere() {
-    using namespace basalt::platform;
+    using namespace granite::platform;
     const uint32_t page = DirectFile::alignment();
     constexpr unsigned pages = 40, tail = 123, past_end = 4;
     Fixture fx(pages + 1, 0);
@@ -229,7 +229,7 @@ static void test_mapped_elsewhere() {
 
 /// The same descriptor serves concurrent positional reads without mixing offsets, including a short final sector.
 static void test_unbuffered_descriptor() {
-    namespace fp = basalt::platform;
+    namespace fp = granite::platform;
     const size_t page = 4096, pages = 64;
     Fixture fx((unsigned) pages, 'x');
     std::string expected(page * pages + 17, 'z');

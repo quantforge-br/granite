@@ -52,7 +52,7 @@ if [[ -n "${hits}" ]]; then
 fi
 
 # 5. a model's host code lives in its own namespace
-hits=$(grep -rnE 'namespace basalt::program' --include='*.[ch]pp' src/models include/granite/models \
+hits=$(grep -rnE 'namespace granite::program' --include='*.[ch]pp' src/models include/granite/models \
          | grep -v 'shared_names.hpp' || true)
 if [[ -n "${hits}" ]]; then
   echo "model layering: a model's code opens a shared namespace:" >&2

@@ -13,7 +13,7 @@
 
 #include "granite/program/gpu_select.hpp"
 
-namespace basalt::program {
+namespace granite::program {
 
 enum class Mechanism { ExpertTier, LayerSplit, TensorParallel };
 const char* mechanism_name(Mechanism m);
@@ -132,4 +132,4 @@ std::pair<int64_t, int64_t> prompt_one_card_chunks(int64_t tokens, int64_t cap, 
 /// min(head, chunk) when the part is longer than one chunk, then chunks of `chunk`, the last one what is left.
 std::vector<int64_t> prompt_chunk_list(int64_t tokens, int64_t chunk, int64_t head);
 
-}  // namespace basalt::program
+}  // namespace granite::program

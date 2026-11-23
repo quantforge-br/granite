@@ -34,7 +34,7 @@
 #include <thread>
 #include <vector>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 /// One expert for the `nt` tokens of a verify window that were routed to it.  Every token's output is bitwise the
 /// single-token job's.
@@ -235,4 +235,4 @@ private:
     CpuTopology topo_;
 };
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

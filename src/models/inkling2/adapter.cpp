@@ -12,7 +12,7 @@
 
 #include <cstdlib>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 
 class Adapter final : public model::ModelAdapter {
@@ -60,7 +60,7 @@ public:
 
     std::optional<int> finish_flags(program::CommonOptions& o) const override {
         if (!o.kv.empty() && o.kv != "fp16" && o.kv != "fp8") {
-            basalt::log::error("granite inkling2", "--kv %s: the attention caches are fp16 (the default) or fp8", o.kv.c_str());
+            granite::log::error("granite inkling2", "--kv %s: the attention caches are fp16 (the default) or fp8", o.kv.c_str());
             return 2;
         }
         dspark_finish_flags(o);   // DSPARK HOOK
@@ -78,4 +78,4 @@ public:
 
 std::unique_ptr<model::ModelAdapter> make_adapter() { return std::make_unique<Adapter>(); }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

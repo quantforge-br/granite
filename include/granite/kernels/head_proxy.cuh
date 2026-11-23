@@ -13,7 +13,7 @@
 
 #include <cstdint>
 
-namespace basalt::kernels::px {
+namespace granite::kernels::px {
 namespace {
 
 constexpr int kPer = 4;           // candidates kept per tile of 32 rows
@@ -392,4 +392,4 @@ __device__ __forceinline__ void pick_block(Final& f, int n, int n_tiles, const i
 }
 
 }  // namespace
-}  // namespace basalt::kernels::px
+}  // namespace granite::kernels::px

@@ -21,7 +21,7 @@
 #include <unistd.h>
 #endif
 
-namespace basalt::platform {
+namespace granite::platform {
 
 double now_us() {
     using namespace std::chrono;
@@ -456,4 +456,4 @@ int DirectFile::wait(Completion* out, int max, int timeout_ms) {
 }
 #endif
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

@@ -12,7 +12,7 @@
 
 #include "json_value.hpp"
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 struct SchemaNode;
 using SchemaPtr = std::unique_ptr<SchemaNode>;
@@ -84,4 +84,4 @@ private:
 /// The grammar for a whole document (rule `root`), as llama.cpp's json_schema_to_grammar. Throws std::invalid_argument.
 std::string schema_document_to_gbnf(const SchemaDocument& doc);
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

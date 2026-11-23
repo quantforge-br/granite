@@ -31,7 +31,7 @@
 #define F16_HD
 #endif
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 /// Round-to-nearest-even f32 -> fp16, returned as raw bits.
 F16_HD inline uint16_t f16_from_f32(float f) {
@@ -93,4 +93,4 @@ F16_HD inline float f32_from_f16(uint16_t h) {
     return f;
 }
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace basalt::program::generate {
+namespace granite::program::generate {
 
 int run(int argc, char** argv);
 

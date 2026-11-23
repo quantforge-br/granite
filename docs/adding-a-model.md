@@ -6,7 +6,7 @@ A model lives in `src/models/<arch>/` and `include/granite/models/<arch>/`. Shar
 ## What a model writes
 
 - An adapter (`include/granite/model/adapter.hpp`): validate the file, describe it, make its `LoadedModel`, name its tokens,
-  pre-tokenizer and tool-call form. It is `basalt::models::<arch>::make_adapter()`, in the library `model_<arch>`.
+  pre-tokenizer and tool-call form. It is `granite::models::<arch>::make_adapter()`, in the library `model_<arch>`.
 - A `ModelSession` with `decode_window`, `prefill_chunk` and the state calls it supports.
   A model whose conversations resume from checkpoints lists its running state in `running_state` (device regions, in a fixed
   order, and a host head) and takes the head back in `running_restored`; the shared engine copies it through page-locked blocks

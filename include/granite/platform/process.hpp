@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::platform {
+namespace granite::platform {
 
 /// Quotes one argument for a platform that takes one command line rather than a vector: backslashes before a quote
 /// are doubled, a run of backslashes before the closing quote is doubled, and anything with a space or a quote is
@@ -83,7 +83,7 @@ void ignore_broken_pipe();
 
 /// Installs handlers for unhandled C++ exceptions (`std::set_terminate`) and fatal OS faults (access violation,
 /// stack overflow, illegal instruction, integer divide by zero, page fault) so a dying engine writes a single
-/// `granite crash: error: ...` line with the fault kind, address and `basalt::core::progress()` stage before exiting.
+/// `granite crash: error: ...` line with the fault kind, address and `granite::core::progress()` stage before exiting.
 void install_crash_handler();
 
 /// Sets an environment variable of this process, which a child started from it inherits. The two platforms spell the
@@ -102,4 +102,4 @@ int spawn_and_wait(const std::vector<std::string>& argv);
 /// what the child's did.
 int exec_replacing(const std::vector<std::string>& argv);
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

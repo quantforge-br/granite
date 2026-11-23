@@ -12,7 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 
 constexpr int kWidth = 2304;        ///< the hidden width the kernels are built for
 constexpr int kHeads = 24;          ///< query heads
@@ -70,7 +70,7 @@ struct SegCaches {
 /// and a row's convolutions read only the rows of its own segment before it. at.n = 0 (the default): one conversation, the
 /// arguments' own caches. Every row gives the bits it gives in its conversation's own call.
 struct Segments {
-    basalt::kernels::WindowSegs at;
+    granite::kernels::WindowSegs at;
     SegCaches c[kDecodeRows];
 };
 
@@ -314,4 +314,4 @@ void moe_finish(const MoeFinish& a, int rows, void* stream);
 /// x = cap * tanh(x / cap) over rows of n values (row stride ld).
 void softcap(float* x, int rows, int n, int64_t ld, float cap, void* stream);
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

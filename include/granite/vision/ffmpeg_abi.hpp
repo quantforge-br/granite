@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace basalt::vision::ff {
+namespace granite::vision::ff {
 
 struct AVFormatContext;
 struct AVStream;
@@ -140,4 +140,4 @@ T field(const void* p, size_t off) {
     return v;
 }
 
-}  // namespace basalt::vision::ff
+}  // namespace granite::vision::ff

@@ -28,13 +28,13 @@
 #include <functional>
 #include <limits>
 
-namespace basalt::core {
+namespace granite::core {
 
 // one aligned buffer, freed on scope exit
 struct ConversationStoreBuffer {
     void* p = nullptr;
-    explicit ConversationStoreBuffer(size_t n) : p(basalt::platform::DirectFile::alloc_aligned(n)) {}
-    ~ConversationStoreBuffer() { basalt::platform::DirectFile::free_aligned(p); }
+    explicit ConversationStoreBuffer(size_t n) : p(granite::platform::DirectFile::alloc_aligned(n)) {}
+    ~ConversationStoreBuffer() { granite::platform::DirectFile::free_aligned(p); }
     ConversationStoreBuffer(const ConversationStoreBuffer&) = delete;
     ConversationStoreBuffer& operator=(const ConversationStoreBuffer&) = delete;
     uint8_t* data() const { return static_cast<uint8_t*>(p); }
@@ -110,12 +110,12 @@ using Aligned = ConversationStoreBuffer;
 struct ReadFd {
     int fd = -1;
     explicit ReadFd(const std::string& path) {
-        fd = basalt::platform::open_unbuffered(path);
-        if (fd < 0) fd = basalt::platform::open_fd_utf8(path);
+        fd = granite::platform::open_unbuffered(path);
+        if (fd < 0) fd = granite::platform::open_fd_utf8(path);
     }
     ~ReadFd() { close(); }
     void close() {   // before the file is removed: an open file cannot be deleted everywhere
-        basalt::platform::close_fd(fd);
+        granite::platform::close_fd(fd);
         fd = -1;
     }
     ReadFd(const ReadFd&) = delete;
@@ -249,9 +249,9 @@ bool write_container(const std::string& path, Header h, Srcs& srcs, std::vector<
     for (auto& s : srcs) { s.s.offset = at; at = align_up(at + s.s.bytes, kAlign); }
     h.file_bytes = at;
     file_bytes = at;
-    const std::string tmp = path + "." + std::to_string((long long) basalt::platform::process_id()) + ".tmp";
-    int fd = basalt::platform::open_write_unbuffered(tmp);
-    if (fd < 0) fd = basalt::platform::open_write_utf8(tmp);
+    const std::string tmp = path + "." + std::to_string((long long) granite::platform::process_id()) + ".tmp";
+    int fd = granite::platform::open_write_unbuffered(tmp);
+    if (fd < 0) fd = granite::platform::open_write_utf8(tmp);
     if (fd < 0) { error = "cannot create " + tmp; return false; }
     std::vector<uint64_t> own;
     std::vector<uint64_t>& hashes = known ? *known : own;
@@ -266,7 +266,7 @@ bool write_container(const std::string& path, Header h, Srcs& srcs, std::vector<
                 for (uint64_t b = 0; b < n; b += kBlock)
                     hashes[s.s.first_hash + (from + b) / kBlock] =
                         conversation_store_hash(stage.data() + b, std::min(kBlock, n - b), s.s.kind * 131 + s.s.index);
-            ok = basalt::platform::pwrite_all(fd, stage.data(), len, s.s.offset + from);
+            ok = granite::platform::pwrite_all(fd, stage.data(), len, s.s.offset + from);
         }
     }
     const std::vector<Section> table = table_of(srcs);
@@ -282,14 +282,14 @@ bool write_container(const std::string& path, Header h, Srcs& srcs, std::vector<
             std::memcpy(meta.data(), &h, sizeof h);
             std::memcpy(meta.data() + h.table_offset, table.data(), h.table_bytes);
             std::memcpy(meta.data() + h.hash_offset, hashes.data(), h.hash_count * 8);
-            ok = basalt::platform::pwrite_all(fd, meta.data(), payload_at, 0);
+            ok = granite::platform::pwrite_all(fd, meta.data(), payload_at, 0);
         }
     }
-    ok = ok && basalt::platform::sync_fd(fd);
-    basalt::platform::close_fd(fd);
-    if (ok) ok = basalt::platform::rename_replace(tmp, path);
+    ok = ok && granite::platform::sync_fd(fd);
+    granite::platform::close_fd(fd);
+    if (ok) ok = granite::platform::rename_replace(tmp, path);
     if (!ok) {
-        basalt::platform::remove_file(tmp);
+        granite::platform::remove_file(tmp);
         error = "cannot write " + tmp;
     }
     return ok;
@@ -354,7 +354,7 @@ struct ConversationStore::Entry {
 namespace {
 
 bool read_exact(int fd, void* dst, uint64_t n, uint64_t off) {
-    return basalt::platform::pread_all(fd, dst, n, off);
+    return granite::platform::pread_all(fd, dst, n, off);
 }
 
 // header, table and hashes of an open file; false when any check fails
@@ -508,26 +508,26 @@ ConversationStore::~ConversationStore() {
 
 bool ConversationStore::open(const std::string& dir, uint64_t identity, uint64_t budget, std::string& error) {
     if (open_) { error = "conversation store: already open"; return false; }
-    if (dir.empty() || !basalt::platform::make_dirs(dir)) {
+    if (dir.empty() || !granite::platform::make_dirs(dir)) {
         error = "conversation store: cannot create the directory " + dir;
         return false;
     }
     dir_ = dir;
     identity_ = identity;
     budget_ = budget;
-    std::vector<basalt::platform::DirFile> files;
-    if (!basalt::platform::list_files(dir_, files)) {
+    std::vector<granite::platform::DirFile> files;
+    if (!granite::platform::list_files(dir_, files)) {
         error = "conversation store: cannot list " + dir;
         return false;
     }
     std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return a.mtime < b.mtime; });
-    const int64_t now = basalt::platform::file_time_now();
+    const int64_t now = granite::platform::file_time_now();
     const std::string prefix = hex16(identity_) + "-";
     for (const auto& f : files) {
         const std::string path = dir_ + "/" + f.name;
         if (f.name.size() > 4 && f.name.compare(f.name.size() - 4, 4, ".tmp") == 0) {
             // a write cut short an hour ago or more (a newer one may be another process's write in progress)
-            if (now - f.mtime >= 3600) basalt::platform::remove_file(path);
+            if (now - f.mtime >= 3600) granite::platform::remove_file(path);
             continue;
         }
         if (f.name.size() <= 4 || f.name.compare(f.name.size() - 4, 4, kExt) != 0) continue;
@@ -588,10 +588,10 @@ bool ConversationStore::open(const std::string& dir, uint64_t identity, uint64_t
                 for (int64_t c : e->checks) ok = ok && c > 0 && c <= e->head.n_ids;
             }
             if (!ok) {   // fail closed: a file of this identity that does not check out is removed
-                basalt::log::warn("granite serve", "conversation cache: %s dropped (%s)", f.name.c_str(),
+                granite::log::warn("granite serve", "conversation cache: %s dropped (%s)", f.name.c_str(),
                                   why.empty() ? "its tokens do not match its key" : why.c_str());
                 rf.close();
-                basalt::platform::remove_file(path);
+                granite::platform::remove_file(path);
                 ++stats_.dropped;
                 continue;
             }
@@ -608,9 +608,9 @@ bool ConversationStore::open(const std::string& dir, uint64_t identity, uint64_t
         bool whole = true;
         for (const auto& r : e.refs) whole = whole && parts_.count(r) != 0;
         if (!whole) {
-            basalt::log::warn("granite serve", "conversation cache: %s dropped (a block or state file is missing)",
+            granite::log::warn("granite serve", "conversation cache: %s dropped (a block or state file is missing)",
                               e.name.c_str());
-            basalt::platform::remove_file(dir_ + "/" + e.name);
+            granite::platform::remove_file(dir_ + "/" + e.name);
             entries_.erase(entries_.begin() + (std::ptrdiff_t) i);
             ++stats_.dropped;
             continue;
@@ -832,7 +832,7 @@ bool ConversationStore::load(const Match& m, SavedConversation& out, std::string
         std::lock_guard<std::mutex> lk(mu_);
         if (bad != SIZE_MAX && bad > 0 && bad < opened.size()) {
             // a block or state file that does not check out goes; every conversation that refers to it fails its read
-            basalt::platform::remove_file(dir_ + "/" + opened[bad].name);
+            granite::platform::remove_file(dir_ + "/" + opened[bad].name);
             parts_.erase(opened[bad].name);
             error += " (" + opened[bad].name + ")";
         }
@@ -848,7 +848,7 @@ bool ConversationStore::load(const Match& m, SavedConversation& out, std::string
         f.rf = std::make_unique<ReadFd>(path);
         uint64_t file_bytes = 0;
         std::string why;
-        const bool ok = f.rf->fd >= 0 && basalt::platform::file_size(path, file_bytes) &&
+        const bool ok = f.rf->fd >= 0 && granite::platform::file_size(path, file_bytes) &&
                         read_index(f.rf->fd, file_bytes, f.h, f.tab, f.hashes, why) && f.h.identity == identity_ &&
                         f.h.file_kind == kind && f.h.key == key;
         opened.push_back(std::move(f));
@@ -1033,7 +1033,7 @@ bool ConversationStore::load(const Match& m, SavedConversation& out, std::string
     out = std::move(img);
     for (auto& f : opened) {
         f.rf->close();
-        basalt::platform::touch_file(dir_ + "/" + f.name);
+        granite::platform::touch_file(dir_ + "/" + f.name);
     }
     std::lock_guard<std::mutex> lk(mu_);
     ++stats_.restored;
@@ -1149,19 +1149,19 @@ void ConversationStore::drop_locked(size_t index) {
         }
         // a write in progress finishes into a file nobody indexes: the writer removes it (see writer)
     } else {
-        basalt::platform::remove_file(dir_ + "/" + e.name);
+        granite::platform::remove_file(dir_ + "/" + e.name);
         release_locked(e.refs);
     }
     entries_.erase(entries_.begin() + (std::ptrdiff_t) index);
 }
 
 void ConversationStore::gc_locked(int64_t min_age) {
-    const int64_t now = min_age > 0 ? basalt::platform::file_time_now() : 0;
+    const int64_t now = min_age > 0 ? granite::platform::file_time_now() : 0;
     for (auto it = parts_.begin(); it != parts_.end();) {
         if (it->second.refs > 0 || (min_age > 0 && now - it->second.mtime < min_age)) { ++it; continue; }
         const std::string path = dir_ + "/" + it->first;
         uint64_t bytes = 0;
-        if (basalt::platform::remove_file(path) || !basalt::platform::file_size(path, bytes)) it = parts_.erase(it);
+        if (granite::platform::remove_file(path) || !granite::platform::file_size(path, bytes)) it = parts_.erase(it);
         else ++it;   // open somewhere (a read in progress): the next pass
     }
 }
@@ -1202,15 +1202,15 @@ void ConversationStore::writer() {
         }
         std::string why;
         uint64_t wrote = 0, whole = 0;
-        const uint64_t free_bytes = basalt::platform::disk_free_bytes(dir_);
+        const uint64_t free_bytes = granite::platform::disk_free_bytes(dir_);
         const bool room = free_bytes >= job->bytes + kSpaceFloor;
         const bool ok = room && write_job(*job, wrote, whole, why);
         if (!room)
-            basalt::log::warn("granite serve", "conversation cache: %s has %.1f GiB free, not written (%.1f GiB "
+            granite::log::warn("granite serve", "conversation cache: %s has %.1f GiB free, not written (%.1f GiB "
                               "image, %.0f GiB kept free)", dir_.c_str(), (double) free_bytes / 1073741824.0,
                               (double) job->bytes / 1073741824.0, (double) kSpaceFloor / 1073741824.0);
         else if (!ok)
-            basalt::log::warn("granite serve", "conversation cache: %s", why.c_str());
+            granite::log::warn("granite serve", "conversation cache: %s", why.c_str());
         std::lock_guard<std::mutex> lk(mu_);
         if (!queue_.empty() && queue_.front() == job) {
             queue_.pop_front();
@@ -1222,7 +1222,7 @@ void ConversationStore::writer() {
         for (auto& e : entries_) if (e->job == job) mine = e.get();
         if (mine == nullptr) {
             // dropped while it was being written: the file is nobody's
-            if (ok) basalt::platform::remove_file(dir_ + "/" + job->name);
+            if (ok) granite::platform::remove_file(dir_ + "/" + job->name);
             release_locked(job->held);
         } else if (!ok) {
             for (size_t i = 0; i < entries_.size(); ++i)
@@ -1235,7 +1235,7 @@ void ConversationStore::writer() {
             ReadFd rf(dir_ + "/" + job->name);
             uint64_t file_bytes = 0;
             std::vector<uint64_t> hashes;
-            if (rf.fd >= 0 && basalt::platform::file_size(dir_ + "/" + job->name, file_bytes) &&
+            if (rf.fd >= 0 && granite::platform::file_size(dir_ + "/" + job->name, file_bytes) &&
                 read_index(rf.fd, file_bytes, mine->head, mine->table, hashes, why2)) {
                 mine->bytes = file_bytes;
                 mine->blocks = job->blocks;
@@ -1248,7 +1248,7 @@ void ConversationStore::writer() {
                 for (size_t i = 0; i < entries_.size(); ++i)
                     if (entries_[i].get() == mine) { entries_.erase(entries_.begin() + (std::ptrdiff_t) i); break; }
                 rf.close();
-                basalt::platform::remove_file(dir_ + "/" + job->name);
+                granite::platform::remove_file(dir_ + "/" + job->name);
                 release_locked(job->held);
                 ++stats_.dropped;
             }
@@ -1303,7 +1303,7 @@ bool ConversationStore::write_job(Job& job, uint64_t& wrote, uint64_t& whole, st
             }
             PartFile& p = parts_[name];
             p.refs = 1;
-            p.mtime = basalt::platform::file_time_now();
+            p.mtime = granite::platform::file_time_now();
             job.held.push_back(name);
         }
         h.identity = identity_;
@@ -1450,18 +1450,18 @@ uint64_t ConversationStore::queued_bytes() const {
 
 uint64_t conversation_store_hash_file(const std::string& path, uint64_t seed) {
     uint64_t h = seed, size = 0;
-    basalt::platform::file_size(path, size);
+    granite::platform::file_size(path, size);
     h = conversation_store_hash(&size, sizeof size, h);
-    const int fd = basalt::platform::open_fd_utf8(path);
+    const int fd = granite::platform::open_fd_utf8(path);
     std::vector<uint8_t> buf((size_t) 64 << 10);
     const uint64_t n = std::min<uint64_t>(buf.size(), size);
     for (int i = 0; i < 16 && fd >= 0 && n > 0; ++i) {
         const uint64_t off = (size - n) / 15 * (uint64_t) i;
-        if (!basalt::platform::pread_all(fd, buf.data(), n, off)) break;
+        if (!granite::platform::pread_all(fd, buf.data(), n, off)) break;
         h = conversation_store_hash(buf.data(), (size_t) n, h);
     }
-    basalt::platform::close_fd(fd);
+    granite::platform::close_fd(fd);
     return h;
 }
 
-}  // namespace basalt::core
+}  // namespace granite::core

@@ -32,7 +32,7 @@ int mode_of(const std::string& path) {
 }
 #endif
 
-const basalt::platform::DirFile* find(const std::vector<basalt::platform::DirFile>& files, const std::string& name) {
+const granite::platform::DirFile* find(const std::vector<granite::platform::DirFile>& files, const std::string& name) {
     for (const auto& f : files)
         if (f.name == name) return &f;
     return nullptr;
@@ -40,7 +40,7 @@ const basalt::platform::DirFile* find(const std::vector<basalt::platform::DirFil
 }  // namespace
 
 int main() {
-    using namespace basalt::platform;
+    using namespace granite::platform;
     const std::string dir = temp_dir() + "/basalt-file-write-" + std::to_string((long long) process_id()) +
                             "/\xc3\xa9-\xe6\x97\xa5";   // é-日 under a fresh parent
 #if !defined(_WIN32)

@@ -21,7 +21,7 @@
 #define LOGPROBS_HD
 #endif
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 constexpr int kLogprobMaxTop = 20;
 constexpr int kLogprobStride = 2 + 2 * kLogprobMaxTop;
@@ -35,4 +35,4 @@ inline size_t row_logprobs_scratch_floats(int n_rows, int n_vocab) {
 void row_logprobs(const float* logits, int n_rows, int n_vocab, const int32_t* picks, int top, float* out, float* scratch,
                   void* stream);
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

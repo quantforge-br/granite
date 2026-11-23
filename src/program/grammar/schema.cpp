@@ -9,7 +9,7 @@
 
 #include "schema_internal.hpp"
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 namespace {
 
@@ -500,4 +500,4 @@ RequestGrammar grammar_from_request(const std::string& grammar_json, std::string
     return out;
 }
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

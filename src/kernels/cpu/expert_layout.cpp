@@ -8,7 +8,7 @@
 #include "granite/platform/compiler.hpp"
 #include <sstream>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 namespace {
 ExpertLayout g_layout;
 }
@@ -201,4 +201,4 @@ bool expert_layout_load_text(const std::string& text, int64_t n_layers, int64_t 
     return true;
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

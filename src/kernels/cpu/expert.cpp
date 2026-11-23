@@ -12,7 +12,7 @@
 #include <cstring>
 #include "granite/log.hpp"
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 namespace {
 
 /// fp16 -> fp32, written out rather than using `_cvtsh_ss`, because the F16C intrinsic's behaviour on
@@ -318,4 +318,4 @@ void q2_0_gguf_rows_multi(const uint8_t* w, size_t row_bytes, int nblocks, const
     }
 }
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu

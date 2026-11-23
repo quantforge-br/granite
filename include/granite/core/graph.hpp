@@ -36,7 +36,7 @@
 
 #include <cuda_runtime.h>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// The two attention families.  the model definition: 36 GDN layers and 12 QSA, at indices 3, 7, ... 47.
 enum class LayerType : int { GDN = 0, QSA = 1 };
@@ -110,4 +110,4 @@ private:
     size_t captures_ = 0;
 };
 
-}  // namespace basalt::core
+}  // namespace granite::core

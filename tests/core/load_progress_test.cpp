@@ -14,7 +14,7 @@
 #include <system_error>
 #include <vector>
 
-using basalt::core::LoadProgress;
+using granite::core::LoadProgress;
 
 int main() {
     const std::string path = (std::filesystem::current_path() / "load_progress_test.txt").string();

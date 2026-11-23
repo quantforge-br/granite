@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::program {
+namespace granite::program {
 
 /// One finished GEN request, from its DONE line.
 struct Done {
@@ -50,7 +50,7 @@ private:
     bool read_line(std::string& line);
     void reap();
     void finish_reap();
-    basalt::platform::PipedChild child_;
+    granite::platform::PipedChild child_;
     std::string buf_, log_path_;
     size_t rpos_ = 0;
 };
@@ -96,4 +96,4 @@ std::string engine_failure(const std::string& log_path);
 /// A fixture file: one comma-separated token-id list per line.
 bool read_id_lines(const std::string& path, std::vector<std::vector<int64_t>>& lines, std::string& err);
 
-}  // namespace basalt::program
+}  // namespace granite::program

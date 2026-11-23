@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-using namespace basalt::vision;
+using namespace granite::vision;
 
 namespace {
 int failures = 0;

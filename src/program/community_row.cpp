@@ -9,7 +9,7 @@
 
 #include "granite/platform/file.hpp"
 
-namespace basalt::program {
+namespace granite::program {
 
 std::string json_quote(const std::string& s) {
     std::string o = "\"";
@@ -422,4 +422,4 @@ std::vector<std::string> split_gpu_ids(const std::string& csv) {
     return out;
 }
 
-}  // namespace basalt::program
+}  // namespace granite::program

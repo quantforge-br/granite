@@ -30,7 +30,7 @@
 #include "granite/log.hpp"
 #include "granite/platform/system.hpp"
 
-namespace basalt::platform {
+namespace granite::platform {
 
 #if defined(_WIN32)
 namespace {
@@ -269,9 +269,9 @@ bool cgroup_available_bytes(uint64_t limit, const CgroupMemoryStat& stat, uint64
 bool host_available_memory(HostMemory& m, const std::string& meminfo_arg, const std::string& self_cgroup_arg,
                            const std::string& cgroup_root_arg) {
     m = HostMemory{};
-    const std::string meminfo = meminfo_arg.empty() ? basalt::platform::meminfo_path() : meminfo_arg;
-    const std::string self_cgroup = self_cgroup_arg.empty() ? basalt::platform::self_cgroup_path() : self_cgroup_arg;
-    const std::string cgroup_root = cgroup_root_arg.empty() ? basalt::platform::cgroup_root() : cgroup_root_arg;
+    const std::string meminfo = meminfo_arg.empty() ? granite::platform::meminfo_path() : meminfo_arg;
+    const std::string self_cgroup = self_cgroup_arg.empty() ? granite::platform::self_cgroup_path() : self_cgroup_arg;
+    const std::string cgroup_root = cgroup_root_arg.empty() ? granite::platform::cgroup_root() : cgroup_root_arg;
     if (meminfo.empty()) {
         // No memory accounting files and no cgroup hierarchy here: the OS reading is the whole answer, and there is
         // no container limit tighter than it.
@@ -408,7 +408,7 @@ void start_memory_watchdog(uint64_t floor_bytes) {
         while (!g_watch_stop.load()) {
             const uint64_t avail = available_memory();
             if (avail > 0 && avail < floor_bytes) {
-                basalt::log::error("granite", "%s", ram_exhausted_message(avail).c_str());
+                granite::log::error("granite", "%s", ram_exhausted_message(avail).c_str());
                 _exit(1);
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -516,16 +516,16 @@ void guard_judge(uint64_t avail) {
     g_guard_level = level;
     const unsigned long long mib = (unsigned long long) (avail >> 20);
     if (was == RamLevel::Ok && level != RamLevel::Ok)
-        basalt::log::warn("granite", "RAM low: %llu MiB free < %llu MiB guard", mib, (unsigned long long) (floor >> 20));
+        granite::log::warn("granite", "RAM low: %llu MiB free < %llu MiB guard", mib, (unsigned long long) (floor >> 20));
     if (level == RamLevel::Critical && was != RamLevel::Critical && stalls.known)
-        basalt::log::warn("granite", "RAM critical: %llu MiB free, hard floor %llu MiB, memory stalls some "
+        granite::log::warn("granite", "RAM critical: %llu MiB free, hard floor %llu MiB, memory stalls some "
                           "%.0f%% full %.0f%%", mib, (unsigned long long) (kRamHardFloor >> 20), stalls.some, stalls.full);
     if (level == RamLevel::Critical && was != RamLevel::Critical && !stalls.known && avail >= kRamHardFloor)
-        basalt::log::warn("granite", "RAM critical: %llu MiB free, below the %llu MiB guard for %llu s", mib,
+        granite::log::warn("granite", "RAM critical: %llu MiB free, below the %llu MiB guard for %llu s", mib,
                           (unsigned long long) (floor >> 20), (unsigned long long) (below_ms / 1000));
     if (level == RamLevel::Low && was == RamLevel::Critical)
-        basalt::log::info("granite", "RAM low, no longer critical: %llu MiB free", mib);
-    if (level == RamLevel::Ok && was != RamLevel::Ok) basalt::log::info("granite", "RAM back: %llu MiB free", mib);
+        granite::log::info("granite", "RAM low, no longer critical: %llu MiB free", mib);
+    if (level == RamLevel::Ok && was != RamLevel::Ok) granite::log::info("granite", "RAM back: %llu MiB free", mib);
     g_judged = level;
 }
 #if defined(_WIN32)
@@ -591,7 +591,7 @@ void start_ram_guard(uint64_t floor_bytes) {
                 }
                 if (have) {
                     if (!logged_reclaim) {
-                        basalt::log::info("granite", "RAM guard: mapped experts view given back at %llu MiB free",
+                        granite::log::info("granite", "RAM guard: mapped experts view given back at %llu MiB free",
                                      (unsigned long long) (avail >> 20));
                         logged_reclaim = true;
                     }
@@ -1097,4 +1097,4 @@ uint64_t system_page_size() {
 #endif
 }
 
-}  // namespace basalt::platform
+}  // namespace granite::platform

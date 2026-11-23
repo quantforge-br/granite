@@ -22,10 +22,10 @@
 #include <stdexcept>
 #include <string>
 
-namespace basalt::models::inkling2 {
+namespace granite::models::inkling2 {
 namespace {
 
-namespace bk = basalt::kernels;
+namespace bk = granite::kernels;
 
 constexpr int kWarps = 4;
 constexpr int kTile = 32;
@@ -436,4 +436,4 @@ void attention_window(const AttnPrep& pa, const AttnArgs& a, int rows, int64_t m
     attention_decode(a, rows, max_keys, scratch, nullptr, stream);
 }
 
-}  // namespace basalt::models::inkling2
+}  // namespace granite::models::inkling2

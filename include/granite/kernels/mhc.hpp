@@ -4,8 +4,8 @@
 // Hyper-connection streams are laid out [T][4][n_embd] (stream-major per token).
 #pragma once
 
-namespace basalt::kernels {
+namespace granite::kernels {
 
 constexpr int kHcMult = 4;
 
-}  // namespace basalt::kernels
+}  // namespace granite::kernels

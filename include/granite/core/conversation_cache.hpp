@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// Page-locks a block of host memory (and releases it); supplied by the code that owns the GPU runtime, so this header
 /// stays free of it.  `pin` returns false when the block cannot be locked: it is then used as ordinary memory.
@@ -522,4 +522,4 @@ private:
     const void* reuse_owner_ = nullptr;
 };
 
-} // namespace basalt::core
+} // namespace granite::core

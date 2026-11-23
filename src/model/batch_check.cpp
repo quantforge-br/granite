@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace basalt::model {
+namespace granite::model {
 
 namespace {
 
@@ -107,4 +107,4 @@ Result check_batch(ModelSession* const* ss, int n, const std::vector<int32_t>& p
     return {};
 }
 
-}  // namespace basalt::model
+}  // namespace granite::model

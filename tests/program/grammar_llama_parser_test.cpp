@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-using basalt::program::grammar::Grammar;
+using granite::program::grammar::Grammar;
 
 static int g_cases = 0;
 

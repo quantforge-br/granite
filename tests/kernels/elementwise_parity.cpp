@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
         check(cudaMemcpy(d_a, alpha.data(), n * 4, cudaMemcpyHostToDevice), "ca");
         check(cudaMemcpy(d_dt, dt.data(), n * 4, cudaMemcpyHostToDevice), "cd");
         check(cudaMemcpy(d_sa, a.data(), n * 4, cudaMemcpyHostToDevice), "cs");
-        basalt::kernels::gdn_gate(d_a, d_dt, d_sa, d_g, 1, H_V, nullptr);
+        granite::kernels::gdn_gate(d_a, d_dt, d_sa, d_g, 1, H_V, nullptr);
         std::vector<float> got((size_t) n);
         check(cudaMemcpy(got.data(), d_g, n * 4, cudaMemcpyDeviceToHost), "cg");
 
@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
         float* d_x = nullptr;
         check(cudaMalloc(&d_x, n * 4), "sx");
         check(cudaMemcpy(d_x, x.data(), n * 4, cudaMemcpyHostToDevice), "csx");
-        basalt::kernels::silu_inplace(d_x, n, nullptr);
+        granite::kernels::silu_inplace(d_x, n, nullptr);
         std::vector<float> got((size_t) n);
         check(cudaMemcpy(got.data(), d_x, n * 4, cudaMemcpyDeviceToHost), "csg");
         const double rel = rel_l1(want, got);
@@ -190,7 +190,7 @@ int main(int argc, char** argv) {
         check(cudaMalloc(&d_x, n * 4), "ex");
         check(cudaMalloc(&d_h, n * 2), "eh");
         check(cudaMemcpy(d_x, x.data(), n * 4, cudaMemcpyHostToDevice), "cex");
-        basalt::kernels::scale_inplace(d_x, n, s, nullptr);
+        granite::kernels::scale_inplace(d_x, n, s, nullptr);
         std::vector<float> got((size_t) n);
         check(cudaMemcpy(got.data(), d_x, n * 4, cudaMemcpyDeviceToHost), "ceg");
         int diff = 0;
@@ -198,12 +198,12 @@ int main(int argc, char** argv) {
         std::printf("  %-44s %d of %d differ\n", "scale_inplace is exact", diff, n);
         if (diff) ++bad;
 
-        basalt::kernels::f32_to_f16_bulk(d_x, d_h, n, nullptr);
+        granite::kernels::f32_to_f16_bulk(d_x, d_h, n, nullptr);
         std::vector<uint16_t> h((size_t) n);
         check(cudaMemcpy(h.data(), d_h, n * 2, cudaMemcpyDeviceToHost), "ceh");
         int hbad = 0;
         for (int i = 0; i < n; ++i)
-            if (h[(size_t) i] != basalt::kernels::f16_from_f32(got[(size_t) i])) ++hbad;
+            if (h[(size_t) i] != granite::kernels::f16_from_f32(got[(size_t) i])) ++hbad;
         std::printf("  %-44s %d of %d differ\n", "f32_to_f16_bulk uses the shared conversion", hbad, n);
         if (hbad) ++bad;
         cudaFree(d_x); cudaFree(d_h);
@@ -268,7 +268,7 @@ int main(int argc, char** argv) {
         check(cudaMalloc(&d_w, w.size() * 4), "m rmsw");
         check(cudaMemcpy(d_x, x.data(), x.size() * 4, cudaMemcpyHostToDevice), "c rmsx");
         check(cudaMemcpy(d_w, w.data(), w.size() * 4, cudaMemcpyHostToDevice), "c rmsw");
-        basalt::kernels::rms_norm_weighted(d_x, d_w, rows, cols, eps, nullptr);
+        granite::kernels::rms_norm_weighted(d_x, d_w, rows, cols, eps, nullptr);
         std::vector<float> got((size_t) (rows * cols));
         check(cudaMemcpy(got.data(), d_x, got.size() * 4, cudaMemcpyDeviceToHost), "c rmsg");
 
@@ -296,7 +296,7 @@ int main(int argc, char** argv) {
         // sides were never looking at the same input.
         const std::vector<float> want_null = ref(false, false);
         check(cudaMemcpy(d_x, x.data(), x.size() * 4, cudaMemcpyHostToDevice), "c rmsx2");
-        basalt::kernels::rms_norm_weighted(d_x, nullptr, rows, cols, eps, nullptr);
+        granite::kernels::rms_norm_weighted(d_x, nullptr, rows, cols, eps, nullptr);
         check(cudaMemcpy(got.data(), d_x, got.size() * 4, cudaMemcpyDeviceToHost), "c rmsn");
         int null_bad = 0;
         for (size_t i = 0; i < got.size(); ++i)
@@ -361,7 +361,7 @@ int main(int argc, char** argv) {
                                 if (std::memcmp(&fused, &want[(size_t) i], sizeof(float)) != 0) ++fma_diff;
                             }
                             check(cudaMemcpyAsync(out, got.data(), got.size() * sizeof(float), cudaMemcpyHostToDevice, stream), "embedding output guards");
-                            basalt::kernels::embedding_gather(dc + (size_t) row * row_bytes,
+                            granite::kernels::embedding_gather(dc + (size_t) row * row_bytes,
                                 ds + (size_t) row * row_groups,
                                 with_offset ? dof + (size_t) row * row_groups : nullptr,
                                 n, bits, bias, group, out + 1, stream);
@@ -379,11 +379,11 @@ int main(int argc, char** argv) {
                                 cudaGraph_t graph;
                                 cudaGraphExec_t exec;
                                 check(cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal), "embedding capture");
-                                basalt::kernels::embedding_gather(dc + (size_t) row * row_bytes,
+                                granite::kernels::embedding_gather(dc + (size_t) row * row_bytes,
                                     ds + (size_t) row * row_groups,
                                     with_offset ? dof + (size_t) row * row_groups : nullptr,
                                     n, bits, bias, group, out + 1, stream);
-                                basalt::kernels::scale_inplace(out + 1, n, 2.0f, stream);
+                                granite::kernels::scale_inplace(out + 1, n, 2.0f, stream);
                                 check(cudaStreamEndCapture(stream, &graph), "embedding capture end");
                                 check(cudaGraphInstantiate(&exec, graph, 0), "embedding instantiate");
                                 check(cudaGraphLaunch(exec, stream), "embedding replay");
@@ -428,7 +428,7 @@ int main(int argc, char** argv) {
         check(cudaMalloc(&dx, n * 4), "bf16 x");
         check(cudaMalloc(&dy, n * 2), "bf16 y");
         check(cudaMemcpy(dx, bits.data(), n * 4, cudaMemcpyHostToDevice), "bf16 cx");
-        basalt::kernels::f32_to_bf16_bulk(dx, dy, (int64_t) n, nullptr);
+        granite::kernels::f32_to_bf16_bulk(dx, dy, (int64_t) n, nullptr);
         std::vector<uint16_t> got(n);
         check(cudaMemcpy(got.data(), dy, n * 2, cudaMemcpyDeviceToHost), "bf16 cy");
         int wrong = 0;
@@ -461,10 +461,10 @@ int main(int argc, char** argv) {
         int wrong = 0;
         for (int t = 0; t <= MT; ++t) {   // t = 0: the token array empty
             check(cudaMemsetAsync(d, 0x5a, 2 * (MT + MT * 4 + NPOS) * 4, st), "clear");
-            basalt::kernels::copy_i32_from_mapped(a0, m0, t, st);
-            basalt::kernels::copy_i32_from_mapped(a1, m1, (int64_t) t * 4, st);
-            basalt::kernels::copy_i32_from_mapped(a2, m2, NPOS, st);
-            basalt::kernels::copy_i32x3_from_mapped(b0, m0, t, b1, m1, (int64_t) t * 4, b2, m2, NPOS, st);
+            granite::kernels::copy_i32_from_mapped(a0, m0, t, st);
+            granite::kernels::copy_i32_from_mapped(a1, m1, (int64_t) t * 4, st);
+            granite::kernels::copy_i32_from_mapped(a2, m2, NPOS, st);
+            granite::kernels::copy_i32x3_from_mapped(b0, m0, t, b1, m1, (int64_t) t * 4, b2, m2, NPOS, st);
             check(cudaStreamSynchronize(st), "copies");
             std::vector<int32_t> got((size_t) 2 * (MT + MT * 4 + NPOS));
             check(cudaMemcpy(got.data(), d, got.size() * 4, cudaMemcpyDeviceToHost), "down");
@@ -483,15 +483,15 @@ int main(int argc, char** argv) {
         const int reps = 200;
         cudaEventRecord(e0, st);
         for (int r = 0; r < reps; ++r) {
-            basalt::kernels::copy_i32_from_mapped(a0, m0, 3, st);
-            basalt::kernels::copy_i32_from_mapped(a1, m1, 12, st);
-            basalt::kernels::copy_i32_from_mapped(a2, m2, NPOS, st);
+            granite::kernels::copy_i32_from_mapped(a0, m0, 3, st);
+            granite::kernels::copy_i32_from_mapped(a1, m1, 12, st);
+            granite::kernels::copy_i32_from_mapped(a2, m2, NPOS, st);
         }
         cudaEventRecord(e1, st);
         cudaEventSynchronize(e1);
         cudaEventElapsedTime(&ms3, e0, e1);
         cudaEventRecord(e0, st);
-        for (int r = 0; r < reps; ++r) basalt::kernels::copy_i32x3_from_mapped(b0, m0, 3, b1, m1, 12, b2, m2, NPOS, st);
+        for (int r = 0; r < reps; ++r) granite::kernels::copy_i32x3_from_mapped(b0, m0, 3, b1, m1, 12, b2, m2, NPOS, st);
         cudaEventRecord(e1, st);
         cudaEventSynchronize(e1);
         cudaEventElapsedTime(&ms1, e0, e1);

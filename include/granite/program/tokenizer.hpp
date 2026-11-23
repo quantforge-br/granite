@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace basalt::program {
+namespace granite::program {
 
 class Tokenizer {
 public:
@@ -93,4 +93,4 @@ private:
     std::vector<uint32_t> rank_;
 };
 
-}  // namespace basalt::program
+}  // namespace granite::program

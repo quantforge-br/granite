@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace cpu = basalt::kernels::cpu;
+namespace cpu = granite::kernels::cpu;
 
 namespace {
 enum class Mode { Avx2Base, Avx2Vnni, Avx2Disp, Avx512 };

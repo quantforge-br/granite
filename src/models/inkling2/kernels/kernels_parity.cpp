@@ -25,8 +25,8 @@
 #include <random>
 #include <vector>
 
-using namespace basalt::models::inkling2;
-namespace bk = basalt::kernels;
+using namespace granite::models::inkling2;
+namespace bk = granite::kernels;
 
 namespace {
 

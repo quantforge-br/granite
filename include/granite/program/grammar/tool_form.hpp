@@ -3,7 +3,7 @@
 
 #include <string>
 
-namespace basalt::program::grammar {
+namespace granite::program::grammar {
 
 struct ToolForm {
     std::string call_open, call_close;
@@ -24,4 +24,4 @@ struct ToolForm {
 void set_tool_form(const ToolForm& form);
 const ToolForm& tool_form();
 
-}  // namespace basalt::program::grammar
+}  // namespace granite::program::grammar

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace basalt::core {
+namespace granite::core {
 
 /// What a pin got.  A range the driver refuses is pinned slice by slice when it has slice bounds, below the shared-memory
 /// budget; what stays unpinned is locked in the working set.
@@ -136,4 +136,4 @@ uint8_t* alloc_ram(uint64_t bytes);
 /// Pins each span, stopping the driver at the shared-memory budget; the rest are locked.
 std::vector<RamPin> pin_ram_spans(const std::vector<uint8_t*>& spans, const std::vector<uint64_t>& bytes, bool mapped);
 
-}  // namespace basalt::core
+}  // namespace granite::core

@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace basalt::kernels::cpu {
+namespace granite::kernels::cpu {
 
 /// ggml's quantize_row_q8_K for `k` floats (a multiple of 256), bit for bit.
 void quantize_q8_K_avx512(const float* x, void* dst, int64_t k);
@@ -36,4 +36,4 @@ void iq_exact_512_gu_rows(int ggml_type, const uint8_t* blob, size_t gu_row, siz
 void iq_exact_512_rows(int ggml_type, const uint8_t* w, size_t row_bytes, int n, const void* const* act, int nt,
                        float* const* out, int r0, int r1);
 
-}  // namespace basalt::kernels::cpu
+}  // namespace granite::kernels::cpu
