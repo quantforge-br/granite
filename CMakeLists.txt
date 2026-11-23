@@ -371,8 +371,8 @@ add_custom_target(git_stamp
 execute_process(COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${_git_stamp}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_stamp.cmake)
 # the engine driven as a child process and the report logic, shared by basalt-bench and basalt-probe
-add_library(engine_session STATIC src/program/engine_session.cpp src/program/load_summary.cpp src/program/probe_report.cpp src/program/probe_derive.cpp src/program/auto_plan.cpp src/program/community_row.cpp src/program/host_rates.cpp
-            src/program/gpu_select.cpp src/program/multi_gpu_plan.cpp src/program/image_loan.cpp)
+add_library(engine_session STATIC src/program/engine_session.cpp src/program/load_summary.cpp src/program/probe_report.cpp src/program/probe_derive.cpp src/program/community_row.cpp src/program/host_rates.cpp
+            src/program/gpu_select.cpp src/program/multi_gpu_plan.cpp)
 target_include_directories(engine_session PUBLIC include)
 find_package(Threads REQUIRED)
 target_link_libraries(engine_session PUBLIC platform kernels_cpu Threads::Threads)   # the pool's sizing rule (auto_pool_workers)
@@ -747,12 +747,6 @@ basalt_embed_manifest(probe_derive_test)
 basalt_cpu_test(NAME probe_derive_test COMMAND probe_derive_test)
 set_tests_properties(probe_derive_test PROPERTIES TIMEOUT 60)
 
-# the start-up picks for settings left out: the rules and the printed line (CPU only)
-add_executable(image_loan_test tests/program/image_loan_test.cpp)
-target_link_libraries(image_loan_test PRIVATE engine_session warnings)
-basalt_embed_manifest(image_loan_test)
-basalt_cpu_test(NAME image_loan_test COMMAND image_loan_test)
-set_tests_properties(image_loan_test PROPERTIES TIMEOUT 60)
 # the rows a verify window keeps when it ends the reply or not (CPU only)
 add_executable(reply_rows_test tests/program/reply_rows_test.cpp)
 target_include_directories(reply_rows_test PRIVATE src/program/serve)
@@ -781,11 +775,6 @@ target_link_libraries(protocol_lines_test PRIVATE warnings)
 basalt_embed_manifest(protocol_lines_test)
 basalt_cpu_test(NAME protocol_lines_test COMMAND protocol_lines_test)
 set_tests_properties(protocol_lines_test PROPERTIES TIMEOUT 60)
-add_executable(auto_plan_test tests/program/auto_plan_test.cpp)
-target_link_libraries(auto_plan_test PRIVATE engine_session warnings)
-basalt_embed_manifest(auto_plan_test)
-basalt_cpu_test(NAME auto_plan_test COMMAND auto_plan_test)
-set_tests_properties(auto_plan_test PROPERTIES TIMEOUT 60)
 
 # the grammar engine: parse, accept/reject, UTF-8 across tokens, clone, lazy triggers and the vocabulary mask (CPU only)
 add_executable(grammar_test tests/program/grammar_test.cpp)
