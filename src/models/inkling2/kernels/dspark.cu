@@ -510,7 +510,9 @@ __global__ void __launch_bounds__(512) head_final_kernel(DsHead h, const Q81* __
     __syncthreads();
     px::pick_block<false>(f, n, n_tiles, nullptr, part, prev, conf + i);
     __syncthreads();
-    const int pick = *prev;
+    // pick_block's thread 0 stored the pick before the barrier: read it from memory after it. In the sm_86 build a plain load
+    // of the __restrict__ prev gave the draft before's pick (the compiler may move it above the barriers).
+    const int pick = *reinterpret_cast<volatile const int32_t*>(prev);
     if (tid == 0) ids[i] = pick;
     for (int c = warp; c < n; c += 16)
         if (f.list[c] == pick) reinterpret_cast<uint4*>(w1_row)[lane] = wr[c][lane];
