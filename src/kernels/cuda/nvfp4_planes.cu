@@ -78,9 +78,10 @@ __global__ void q8_amax_kernel(const uint8_t* __restrict__ blocks, int64_t n, un
     for (int o = 16; o > 0; o >>= 1) m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, o));
     if ((threadIdx.x & 31) == 0) atomicMax(amax, __float_as_uint(m));
 }
-__global__ void q8_gs_kernel(const unsigned* __restrict__ amax, float* __restrict__ scale) {
-    const float a = __uint_as_float(*amax);
-    *scale = a > 0.0f ? a / (6.0f * 448.0f) : 1.0f;
+// The tensor scale from the maximum, both in one word: the maximum's bits read, then the scale's written over them.
+__global__ void q8_gs_kernel(unsigned* word) {
+    const float a = __uint_as_float(*word);
+    *word = __float_as_uint(a > 0.0f ? a / (6.0f * 448.0f) : 1.0f);
 }
 __global__ void q8_to_planes_kernel(const uint8_t* __restrict__ blocks, int64_t rows, int64_t K, const float* __restrict__ scale,
                                     uint8_t* __restrict__ dst) {
@@ -154,7 +155,7 @@ void from_q8(const void* q8_blocks, int64_t rows, int64_t K, void* planes, float
     unsigned* amax = reinterpret_cast<unsigned*>(scale);   // the scale's word holds the maximum first
     cudaMemsetAsync(amax, 0, sizeof(unsigned), s);
     q8_amax_kernel<<<1024, 256, 0, s>>>((const uint8_t*) q8_blocks, rows * K, amax);
-    q8_gs_kernel<<<1, 1, 0, s>>>(amax, scale);
+    q8_gs_kernel<<<1, 1, 0, s>>>(amax);
     const int64_t n = rows * (K / 16);
     q8_to_planes_kernel<<<(unsigned) ((n + 255) / 256), 256, 0, s>>>((const uint8_t*) q8_blocks, rows, K, scale, (uint8_t*) planes);
 }
