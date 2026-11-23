@@ -5,12 +5,14 @@ RTX 3090 (Ampere, sm_86) with peer-to-peer access over PCIe, on Linux. It is a f
 [Basalt](https://github.com/jesdga95/basalt) (upstream main `34f4c3bb`, v0.5.6), cut down to one model and one GPU
 generation. The server speaks the OpenAI and Anthropic APIs.
 
-Status: the fork is in progress. The plan, in order:
+Status:
 
-1. Build for sm_86 only and run Inkling 2 Mini on one RTX 3090.
-2. Remove the other upstream models and the Blackwell-only code they need.
-3. Run each decode window on both cards at once (tensor parallel over P2P): each card holds half of every expert (and
-   later half of the attention heads), and the two partial sums are exchanged once per layer visit.
+- The build targets sm_86 only, and Inkling 2 Mini runs on one RTX 3090, its least routed experts in RAM when the context
+  leaves no room for them.
+- The other upstream models (Qwen3.8-Flash-Next, Qwen3.8-27B, DeepSeek-V4.1-Flash, Hy4-flash, qwen4exp) are removed.
+- Two alike cards run each window tensor parallel over P2P: each holds every dense weight and half of every expert, and
+  each writes its partial sums into the other's memory ([GPUs](docs/configuration/gpus.md#two-cards)). The attention is not
+  split.
 
 ## Hardware target
 
@@ -27,7 +29,7 @@ The default pack is `Inkling-2-Mini-NVFP4-DQ8.basalt` from
 - Routed experts of layers 0 to 19 in NVFP4, bit for bit the release's own: the model ships its experts in NVFP4 and
   MXFP8, and no BF16 checkpoint exists.
 - Experts of layers 20 to 23, the attention projections and the head in Q8_0.
-- Mean KLD 0.00305 and top-1 97.76% against the release with its experts dequantized to BF16
+- Mean KLD 0.00289 and top-1 97.76% on one RTX 3090 against the release with its experts dequantized to BF16
   ([precision](docs/precision/inkling2.md)).
 
 On Ampere, NVFP4 decodes like any 4-bit GGUF type (a 16-entry table to int8, then `dp4a` against 8-bit activations), so
@@ -49,8 +51,8 @@ bin/granite serve models/Inkling-2-Mini-NVFP4-DQ8.basalt --gpu 0
 The server listens on 127.0.0.1. The model guide: [Inkling 2 Mini](docs/models/inkling2.md). Every setting:
 [configuration](docs/configuration/index.md).
 
-Names kept from Basalt: the C++ namespaces (`basalt::`), the headers under `include/basalt`, the `.basalt` pack format and
-the engine's log tags, so upstream packs load unchanged and upstream fixes can be cherry-picked.
+Names kept from Basalt: the C++ namespaces (`basalt::`), the headers under `include/basalt` and the `.basalt` pack format,
+so upstream packs load unchanged and upstream fixes can be cherry-picked.
 
 ## Credits
 
