@@ -7,8 +7,7 @@
 // and TEMPERATURE AFTER THE TRUNCATION FILTERS.  Every order produces a valid token, so only a comparison at the
 // distribution level can tell them apart; the parity test does that against an independently computed distribution.
 //
-// `sampler_greedy_kernel` is the plain argmax, one block per token over the vocabulary (with thread-block clusters and without penalties,
-// `sampler_greedy_cluster_kernel`: the same token from a cluster of 8 CTAs per row).  The sampled chain has these
+// `sampler_greedy_kernel` is the plain argmax, one block per token over the vocabulary.  The sampled chain has these
 // implementations, which pick the same token, bit for bit:
 //   - the SORTED SPLIT (top_k <= 32, the engine's): `sampler_sort_kernel` cuts each row into 4,096-logit blocks over
 //     the whole GPU, each finds its first k with bitonic networks, and the row's last block merges the lists and runs
@@ -138,174 +137,6 @@ __global__ void sampler_greedy_kernel(const float* __restrict__ logits, int n_vo
         // A tie between two `-inf` candidates leaves `wi == n_vocab`, and the serial version answered 0.
         if (lane == 0) out[t] = (wi < n_vocab) ? wi : 0;
     }
-}
-
-/// /// **THE SAME ARGMAX ON A THREAD-BLOCK CLUSTER, FOR THE CALLS WITHOUT PENALTIES.**  One block per token
-/// /// reading a long row on one SM with one load in flight per thread is latency-bound, for every verify window and
-/// /// every draft step.  Here a cluster of `kAmCtas` CTAs shares the row, each thread keeps four loads in flight, and
-/// /// the CTAs' results meet in CTA 0's shared memory (distributed shared memory).
-/// ///
-/// /// The answer is a function of the row alone, so it is the one-block kernel's bit for bit: the LOWEST index whose value
-/// /// is the largest non-NaN value above -inf (each thread walks its elements in ascending order with a strict `>`, and
-/// /// every merge takes the larger value or, on equality, the smaller index - an order-free rule), and 0 when there is
-/// /// none (all -inf / NaN), as there.  NaN never wins a `>`.
-/// ///
-/// /// Barriers: a relaxed cluster arrive at entry, waited before the remote store (CTA 0 must be running); each CTA's
-/// /// result goes to slot `rank` of CTA 0, released by the next arrive; CTAs 1.. then exit (a cluster wait counts the
-/// /// threads that have not exited) and CTA 0 waits, reads its own slots, and writes the token.
-constexpr int kAmCtas = 8;      // CTAs per token (the portable cluster size)
-constexpr int kAmThreads = 1024;
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
-#define AM_CLUSTER 1
-#else
-#define AM_CLUSTER 0     // older targets: a trap, never launched (sample_greedy_cluster checks)
-#endif
-#if AM_CLUSTER
-__device__ __forceinline__ void am_take(float s, int v, float& bv, int& best) {
-    if (s > bv) { bv = s; best = v; }
-}
-__device__ __forceinline__ void am_merge(float ov, int oi, float& bv, int& best) {
-    if (ov > bv || (ov == bv && oi < best)) { bv = ov; best = oi; }
-}
-#endif
-// grid (kAmCtas, n_tokens), cluster (kAmCtas, 1, 1), kAmThreads threads
-__global__ void __launch_bounds__(kAmThreads) sampler_greedy_cluster_kernel(const float* __restrict__ logits,
-                                                                            int n_vocab, int* __restrict__ out) {
-#if AM_CLUSTER
-    __shared__ float sv[32];
-    __shared__ int si[32];
-    __shared__ float cv[kAmCtas];    // on CTA 0: each CTA's result
-    __shared__ int ci[kAmCtas];
-    unsigned rank;
-    asm volatile("mov.u32 %0, %%cluster_ctarank;\n" : "=r"(rank));
-    asm volatile("barrier.cluster.arrive.relaxed.aligned;\n" ::: "memory");
-    const float* l = logits + (size_t) blockIdx.y * n_vocab;
-    float bv = __int_as_float(0xff800000);   // -inf; `n_vocab` is "no candidate", as in sampler_greedy_kernel
-    int best = n_vocab;
-    constexpr int S = kAmCtas * kAmThreads;
-    int v = (int) rank * kAmThreads + (int) threadIdx.x;
-    for (; v + 3 * S < n_vocab; v += 4 * S) {   // four independent loads, then taken in ascending order
-        const float x0 = l[v], x1 = l[v + S], x2 = l[v + 2 * S], x3 = l[v + 3 * S];
-        am_take(x0, v, bv, best);
-        am_take(x1, v + S, bv, best);
-        am_take(x2, v + 2 * S, bv, best);
-        am_take(x3, v + 3 * S, bv, best);
-    }
-    for (; v < n_vocab; v += S) am_take(l[v], v, bv, best);
-    for (int off = 16; off > 0; off >>= 1)
-        am_merge(__shfl_down_sync(0xFFFFFFFFu, bv, off), __shfl_down_sync(0xFFFFFFFFu, best, off), bv, best);
-    const int warp = (int) (threadIdx.x >> 5), lane = (int) (threadIdx.x & 31);
-    if (lane == 0) { sv[warp] = bv; si[warp] = best; }
-    __syncthreads();
-    if (warp == 0) {
-        bv = sv[lane];
-        best = si[lane];
-        for (int off = 16; off > 0; off >>= 1)
-            am_merge(__shfl_down_sync(0xFFFFFFFFu, bv, off), __shfl_down_sync(0xFFFFFFFFu, best, off), bv, best);
-    }
-    asm volatile("barrier.cluster.wait.acquire.aligned;\n" ::: "memory");   // CTA 0 runs
-    if (threadIdx.x == 0) {
-        uint64_t a;
-        asm volatile("mapa.u64 %0, %1, %2;\n" : "=l"(a) : "l"((uint64_t) &cv[rank]), "r"(0u));
-        *reinterpret_cast<float*>(a) = bv;
-        asm volatile("mapa.u64 %0, %1, %2;\n" : "=l"(a) : "l"((uint64_t) &ci[rank]), "r"(0u));
-        *reinterpret_cast<int*>(a) = best;
-    }
-    asm volatile("barrier.cluster.arrive.release.aligned;\n" ::: "memory");
-    if (rank != 0) return;
-    asm volatile("barrier.cluster.wait.acquire.aligned;\n" ::: "memory");
-    if (warp == 0) {
-        bv = lane < kAmCtas ? cv[lane] : __int_as_float(0xff800000);
-        best = lane < kAmCtas ? ci[lane] : n_vocab;
-        for (int off = 16; off > 0; off >>= 1)
-            am_merge(__shfl_down_sync(0xFFFFFFFFu, bv, off), __shfl_down_sync(0xFFFFFFFFu, best, off), bv, best);
-        if (lane == 0) out[blockIdx.y] = (best < n_vocab) ? best : 0;
-    }
-#else
-    (void) logits; (void) n_vocab; (void) out;
-    __trap();
-#endif
-}
-
-/// The cluster argmax above, then on CTA 0 the pick's probability with row_top_prob_kernel's arithmetic in its order
-/// (kAmThreads threads, the same strided sums, warp tree and serial finish), then the subset map: one launch for what
-/// was three, every output bitwise the same.  grid (kAmCtas, n_tokens), cluster (kAmCtas, 1, 1), kAmThreads threads.
-__global__ void __launch_bounds__(kAmThreads) sampler_greedy_top_prob_cluster_kernel(const float* __restrict__ logits,
-                                                                                     int n_vocab,
-                                                                                     const int32_t* __restrict__ map,
-                                                                                     int* __restrict__ out,
-                                                                                     float* __restrict__ probs) {
-#if AM_CLUSTER
-    __shared__ float sv[32];
-    __shared__ int si[32];
-    __shared__ float cv[kAmCtas];
-    __shared__ int ci[kAmCtas];
-    __shared__ float part[32];
-    __shared__ int pick;
-    unsigned rank;
-    asm volatile("mov.u32 %0, %%cluster_ctarank;\n" : "=r"(rank));
-    asm volatile("barrier.cluster.arrive.relaxed.aligned;\n" ::: "memory");
-    const float* l = logits + (size_t) blockIdx.y * n_vocab;
-    float bv = __int_as_float(0xff800000);
-    int best = n_vocab;
-    constexpr int S = kAmCtas * kAmThreads;
-    int v = (int) rank * kAmThreads + (int) threadIdx.x;
-    for (; v + 3 * S < n_vocab; v += 4 * S) {
-        const float x0 = l[v], x1 = l[v + S], x2 = l[v + 2 * S], x3 = l[v + 3 * S];
-        am_take(x0, v, bv, best);
-        am_take(x1, v + S, bv, best);
-        am_take(x2, v + 2 * S, bv, best);
-        am_take(x3, v + 3 * S, bv, best);
-    }
-    for (; v < n_vocab; v += S) am_take(l[v], v, bv, best);
-    for (int off = 16; off > 0; off >>= 1)
-        am_merge(__shfl_down_sync(0xFFFFFFFFu, bv, off), __shfl_down_sync(0xFFFFFFFFu, best, off), bv, best);
-    const int warp = (int) (threadIdx.x >> 5), lane = (int) (threadIdx.x & 31);
-    if (lane == 0) { sv[warp] = bv; si[warp] = best; }
-    __syncthreads();
-    if (warp == 0) {
-        bv = sv[lane];
-        best = si[lane];
-        for (int off = 16; off > 0; off >>= 1)
-            am_merge(__shfl_down_sync(0xFFFFFFFFu, bv, off), __shfl_down_sync(0xFFFFFFFFu, best, off), bv, best);
-    }
-    asm volatile("barrier.cluster.wait.acquire.aligned;\n" ::: "memory");
-    if (threadIdx.x == 0) {
-        uint64_t a;
-        asm volatile("mapa.u64 %0, %1, %2;\n" : "=l"(a) : "l"((uint64_t) &cv[rank]), "r"(0u));
-        *reinterpret_cast<float*>(a) = bv;
-        asm volatile("mapa.u64 %0, %1, %2;\n" : "=l"(a) : "l"((uint64_t) &ci[rank]), "r"(0u));
-        *reinterpret_cast<int*>(a) = best;
-    }
-    asm volatile("barrier.cluster.arrive.release.aligned;\n" ::: "memory");
-    if (rank != 0) return;
-    asm volatile("barrier.cluster.wait.acquire.aligned;\n" ::: "memory");
-    if (warp == 0) {
-        bv = lane < kAmCtas ? cv[lane] : __int_as_float(0xff800000);
-        best = lane < kAmCtas ? ci[lane] : n_vocab;
-        for (int off = 16; off > 0; off >>= 1)
-            am_merge(__shfl_down_sync(0xFFFFFFFFu, bv, off), __shfl_down_sync(0xFFFFFFFFu, best, off), bv, best);
-        if (lane == 0) pick = (best < n_vocab) ? best : 0;
-    }
-    __syncthreads();
-    const int id = pick;
-    // row_top_prob_kernel's loop and reductions, unchanged
-    const float m = l[id];
-    float s = 0.0f;
-    for (int i = threadIdx.x; i < n_vocab; i += blockDim.x) s += __expf(l[i] - m);
-    for (int o = 16; o > 0; o >>= 1) s += __shfl_xor_sync(0xffffffffu, s, o);
-    if ((threadIdx.x & 31) == 0) part[threadIdx.x >> 5] = s;
-    __syncthreads();
-    if (threadIdx.x == 0) {
-        float tot = 0.0f;
-        for (int w = 0; w < (int) (blockDim.x >> 5); ++w) tot += part[w];
-        probs[blockIdx.y] = 1.0f / tot;
-        out[blockIdx.y] = map != nullptr ? map[id] : id;
-    }
-#else
-    (void) logits; (void) n_vocab; (void) map; (void) out; (void) probs;
-    __trap();
-#endif
 }
 
 // ---- the sampled list, in selection order ----
@@ -1613,93 +1444,6 @@ bool sampler_wide_reserve(int n_vocab, void* stream) {
     return n_vocab > 0 && wide_buffers(stream, n_vocab, w);
 }
 
-bool sample_greedy_cluster(const float* logits, int n_tokens, int n_vocab, int* out, void* stream) {
-    if (n_tokens <= 0 || n_vocab <= 0) return true;
-    if (n_tokens > 65535) return false;
-    // Per device (a layer split runs on several): 1 the cluster kernel runs here, 2 it does not - thread-block clusters, code built
-    // for it (an older build's PTX holds a trap: the PTX version says which), and room for one cluster of kAmCtas CTAs.
-    static int ok[64] = {};
-    int dev = 0;
-    if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) { cudaGetLastError(); return false; }
-    cudaLaunchConfig_t cfg{};
-    cudaLaunchAttribute at[1];
-    at[0].id = cudaLaunchAttributeClusterDimension;
-    at[0].val.clusterDim.x = kAmCtas;
-    at[0].val.clusterDim.y = 1;
-    at[0].val.clusterDim.z = 1;
-    cfg.gridDim = dim3(kAmCtas, 1, 1);
-    cfg.blockDim = dim3(kAmThreads, 1, 1);
-    cfg.dynamicSmemBytes = 0;
-    cfg.stream = (cudaStream_t) stream;
-    cfg.attrs = at;
-    cfg.numAttrs = 1;
-    if (ok[dev] == 0) {
-        int major = 0, clusters = 0;
-        cudaFuncAttributes fa{};
-        const bool runs = cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev) == cudaSuccess &&
-                          major >= 9 &&
-                          cudaFuncGetAttributes(&fa, sampler_greedy_cluster_kernel) == cudaSuccess &&
-                          fa.ptxVersion >= 90 && fa.binaryVersion >= 90 &&
-                          cudaOccupancyMaxActiveClusters(&clusters, sampler_greedy_cluster_kernel, &cfg) ==
-                              cudaSuccess &&
-                          clusters >= 1;
-        cudaGetLastError();
-        ok[dev] = runs ? 1 : 2;
-    }
-    if (ok[dev] != 1) return false;
-    cfg.gridDim = dim3(kAmCtas, (unsigned) n_tokens, 1);
-    const cudaError_t e = cudaLaunchKernelEx(&cfg, sampler_greedy_cluster_kernel, logits, n_vocab, out);
-    if (e != cudaSuccess) {
-        basalt::log::error("granite", "sample_tokens cluster launch: %s", cudaGetErrorString(e));
-        std::exit(1);
-    }
-    return true;
-}
-
-bool sample_greedy_top_prob(const float* logits, int n_tokens, int n_vocab, const int32_t* map, int* out, float* probs,
-                            void* stream) {
-    if (n_tokens <= 0 || n_vocab <= 0) return true;
-    if (n_tokens > 65535) return false;
-    // per device, as in sample_greedy_cluster: 1 runs here, 2 does not
-    static int ok[64] = {};
-    int dev = 0;
-    if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) { cudaGetLastError(); return false; }
-    cudaLaunchConfig_t cfg{};
-    cudaLaunchAttribute at[1];
-    at[0].id = cudaLaunchAttributeClusterDimension;
-    at[0].val.clusterDim.x = kAmCtas;
-    at[0].val.clusterDim.y = 1;
-    at[0].val.clusterDim.z = 1;
-    cfg.gridDim = dim3(kAmCtas, 1, 1);
-    cfg.blockDim = dim3(kAmThreads, 1, 1);
-    cfg.dynamicSmemBytes = 0;
-    cfg.stream = (cudaStream_t) stream;
-    cfg.attrs = at;
-    cfg.numAttrs = 1;
-    if (ok[dev] == 0) {
-        int major = 0, clusters = 0;
-        cudaFuncAttributes fa{};
-        const bool runs = cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev) == cudaSuccess &&
-                          major >= 9 &&
-                          cudaFuncGetAttributes(&fa, sampler_greedy_top_prob_cluster_kernel) == cudaSuccess &&
-                          fa.ptxVersion >= 90 && fa.binaryVersion >= 90 &&
-                          cudaOccupancyMaxActiveClusters(&clusters, sampler_greedy_top_prob_cluster_kernel, &cfg) ==
-                              cudaSuccess &&
-                          clusters >= 1;
-        cudaGetLastError();
-        ok[dev] = runs ? 1 : 2;
-    }
-    if (ok[dev] != 1) return false;
-    cfg.gridDim = dim3(kAmCtas, (unsigned) n_tokens, 1);
-    const cudaError_t e = cudaLaunchKernelEx(&cfg, sampler_greedy_top_prob_cluster_kernel, logits, n_vocab, map, out,
-                                             probs);
-    if (e != cudaSuccess) {
-        basalt::log::error("granite", "sample_greedy_top_prob launch: %s", cudaGetErrorString(e));
-        std::exit(1);
-    }
-    return true;
-}
-
 void sample_tokens(const float* logits, int n_tokens, int n_vocab, const int* history, int history_len,
                    const SamplerParams& p, int* out, void* stream) {
     sample_tokens_probe(logits, n_tokens, n_vocab, history, history_len, p, out, nullptr, 0, nullptr, stream);
@@ -1727,13 +1471,10 @@ void sample_tokens_impl(int split, const float* logits, int n_tokens, int n_voca
                                : 0;
     const cudaStream_t cs = (cudaStream_t) stream;
     if (p.greedy || p.temperature <= 0.0f) {
-        // Without penalties (shmem == 0: no window) with cluster support, a cluster of CTAs per token - the same token; see
-        // `sampler_greedy_cluster_kernel`.
         // One block per token, 1,024 threads over the vocabulary.  See `sampler_greedy_kernel`.
         const int gthreads = 1024;
-        if (!(shmem == 0 && p.logit_bias == nullptr && sample_greedy_cluster(logits, n_tokens, n_vocab, out, stream)))
-            sampler_greedy_kernel<<<(unsigned) n_tokens, gthreads, shmem, cs>>>(
-                logits, n_vocab, history, history_len, p, p.penalty_last_n, p.penalty_last_n, out);
+        sampler_greedy_kernel<<<(unsigned) n_tokens, gthreads, shmem, cs>>>(
+            logits, n_vocab, history, history_len, p, p.penalty_last_n, p.penalty_last_n, out);
     } else {
         // The split top_k over 4,096-logit blocks (61 per row for 248,320 logits).  The one-block kernel when the
         // split cannot run: a wider vocabulary than the merge holds, more than `kSplitMaxRows` rows (the engine
