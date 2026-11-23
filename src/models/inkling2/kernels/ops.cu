@@ -510,7 +510,7 @@ __global__ void __launch_bounds__(32) expert_read_ahead_kernel(const unsigned lo
 }
 
 // Every block loads its share of the experts' first `bytes`, 16 bytes a thread at a time, four loads in flight.
-constexpr int kPrefetchBlocks = 170, kPrefetchThreads = 256, kPrefetchMax = 16;
+constexpr int kPrefetchThreads = 256, kPrefetchMax = 16;   // a block an SM
 __global__ void __launch_bounds__(kPrefetchThreads) expert_prefetch_kernel(const int32_t* __restrict__ ids, int n,
                                                                             const unsigned long long* __restrict__ blobs, uint64_t bytes,
                                                                             uint32_t* __restrict__ sink) {
@@ -633,7 +633,11 @@ void expert_read_ahead(const unsigned long long* blobs, const int32_t* n, uint64
 void expert_prefetch(const int32_t* ids, int n, const unsigned long long* blobs, uint64_t bytes, uint32_t* sink, void* stream) {
     if (n <= 0) return;
     if (n > kPrefetchMax || bytes == 0 || bytes % 16) throw std::runtime_error("inkling2 expert_prefetch: experts or bytes");
-    expert_prefetch_kernel<<<kPrefetchBlocks, kPrefetchThreads, 0, (cudaStream_t) stream>>>(ids, n, blobs, bytes, sink);
+    static int sms[kOptInDevices] = {};   // per device: a layer split launches it on two cards
+    const int dev = opt_in_device();
+    int& blocks = sms[dev];
+    if (!blocks) cudaDeviceGetAttribute(&blocks, cudaDevAttrMultiProcessorCount, dev);
+    expert_prefetch_kernel<<<blocks, kPrefetchThreads, 0, (cudaStream_t) stream>>>(ids, n, blobs, bytes, sink);
     check("expert_prefetch");
 }
 
