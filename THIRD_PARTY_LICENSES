@@ -1,4 +1,31 @@
-Basalt includes or is derived from the following projects.
+granite includes or is derived from the following projects.
+
+================================================================================
+Basalt (https://github.com/jesdga95/basalt), forked at upstream main 34f4c3bb (v0.5.6)
+granite is a fork of Basalt: its engine, server, tools, tests and docs derive from it.
+================================================================================
+
+MIT License
+
+Copyright (c) 2026 Jesús Gulfo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ================================================================================
 Strata (https://github.com/Niko1221/Strata)
@@ -130,7 +157,7 @@ warps owning 16 query rows of one head for the whole sweep, raw int8 K/V tiles w
 partial guard, longest-first issue, and the block-shape and key-split plan with its merge.
 The decode-window products in src/kernels/cuda/window_gemm*.cu adapt the launch protocol of Infernix's decode products
 (src/core/pdl.cuh, src/ops/linear/nvfp4/nvfp4_a16_gemv.cuh): weights staged before the programmatic-launch wait,
-dependents started once the weights are read, and the slice-ordered split-K reduction; Basalt fixes the split by the
+dependents started once the weights are read, and the slice-ordered split-K reduction; the adaptation fixes the split by the
 matrix shape so a row's bits do not depend on the window.
 
 Licensed under the Apache License, Version 2.0, reproduced below.
@@ -357,7 +384,7 @@ Licensed under the Apache License, Version 2.0, reproduced above.
 FFmpeg (https://ffmpeg.org), declarations in include/granite/vision/ffmpeg_abi.hpp
 ================================================================================
 
-Basalt neither ships nor links FFmpeg. When video input is used, it loads the
+granite neither ships nor links FFmpeg. When video input is used, it loads the
 FFmpeg shared libraries installed on the machine at run time. The declarations
 in include/granite/vision/ffmpeg_abi.hpp (function signatures, constants and
 structure field offsets) are derived from FFmpeg's public headers, releases 6.0
