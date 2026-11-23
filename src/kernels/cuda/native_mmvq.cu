@@ -1486,6 +1486,10 @@ template<int N> __device__ __forceinline__ void mv_cp(void* dst, const void* src
     asm volatile("cp.async.ca.shared.global [%0], [%1], %2;\n" ::"r"((unsigned) __cvta_generic_to_shared(dst)),
                  "l"(src), "n"(N) : "memory");
 }
+__device__ __forceinline__ void qm_cp_cg(void* dst, const void* src) {   // 16 bytes, past L1
+    asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" ::"r"((unsigned) __cvta_generic_to_shared(dst)),
+                 "l"(src) : "memory");
+}
 __device__ __forceinline__ void mv_commit() { asm volatile("cp.async.commit_group;\n" ::: "memory"); }
 template<int N> __device__ __forceinline__ void mv_wait() {
     asm volatile("cp.async.wait_group %0;\n" ::"n"(N) : "memory");
@@ -1735,87 +1739,130 @@ void launch_iq4_xs_mma(const void* weights, const void* x_q8_1, float* y, int n_
 // (four mmas a block).  Here warp w takes the chains c = kbx % 32 with c % 8 == w, i.e. reference lanes L = 4 w + grp of
 // the four reference warps y = c / 8; it adds a chain's terms in ascending kbx exactly as the reference thread does,
 // folds the four y in order, and the block replays the butterfly over L for every (row, column).  So every column is
-// BITWISE a one-column call's (mmvq_multi_parity checks it).  A block owns 16 rows; the first chain's weights are read
-// before pdl_wait.
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
-__device__ __forceinline__ void qm_mma(int (&d)[4], uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t b0,
-                                       uint32_t b1) {
-    asm("mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%10,%10,%10,%10};\n"
-        : "=r"(d[0]), "=r"(d[1]), "=r"(d[2]), "=r"(d[3])
-        : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1), "r"(0));
-}
-#endif
-struct QmA { int a0, a1, a2, a3; float da, db; };   // rows g and g + 8: ints t and 4 + t of a block, and the scales
+// BITWISE a one-column call's (mmvq_multi_parity checks it).
+//
+// A block owns 16 rows.  Blocks 8 G .. 8 G + 7 of those rows (272 bytes, 16-byte aligned when the rows are) and the
+// columns' eight q8_1 blocks there are one ring slot, and warp w takes block 8 G + w of it: the slots go G = y, y + 4,
+// ... for y = 0..3, which is every warp's chain y in order, cp.async'd kQmStages - 1 slots ahead.
+constexpr int kQmStages = 4;
+constexpr int kQmRowBytes = 8 * 34;   // a staged row: 68 words, so rows g = 0..7 of an A load hit 32 banks
+constexpr int kQmWBytes = 16 * kQmRowBytes;
+constexpr int kQmSlot = kQmWBytes + MAX_NCOLS * kMvColWords * 4;
+static_assert(sizeof(Q80Block) == 34 && kQmRowBytes % 16 == 0 && kQmSlot % 16 == 0, "the slots stay 16-byte aligned");
+static_assert(MAX_NCOLS * 16 * 33 * 4 <= kQmStages * kQmSlot, "the partial sums reuse the ring");
+
+// The next slot in chain order: G + 4 in the same chains, else the next chains' first.
+__device__ __forceinline__ int qm_next(int G, int ng) { return G + 4 < ng ? G + 4 : (G & 3) + 1; }
 
 __device__ __forceinline__ void q80_mma_body(const Q80Block* __restrict__ w, const Q81Block* __restrict__ x,
                                              float* __restrict__ y, int n_in, int n_out, int ncols, int bx) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
-    __shared__ float s_part[8 * 16 * 33];
-    const int wp = threadIdx.x >> 5, lane = threadIdx.x & 31, g = lane >> 2, t = lane & 3;
-    const int row0 = bx * 16, nb = n_in / 32;
-    const Q80Block* wa = w + (size_t) min(row0 + g, n_out - 1) * nb;
-    const Q80Block* wb = w + (size_t) min(row0 + g + 8, n_out - 1) * nb;
-    auto load_a = [&](int kbx) {
-        QmA r;
-        r.a0 = load_int_b2(wa[kbx].qs, t);
-        r.a2 = load_int_b2(wa[kbx].qs, 4 + t);
-        r.a1 = load_int_b2(wb[kbx].qs, t);
-        r.a3 = load_int_b2(wb[kbx].qs, 4 + t);
-        r.da = wa[kbx].d;
-        r.db = wb[kbx].d;
-        return r;
+    __shared__ __align__(16) uint8_t s_qm[kQmStages * kQmSlot];
+    const int tid = threadIdx.x, wp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
+    const int row0 = bx * 16, nb = n_in / 32, ng = nb / 8;
+    // this thread's 16-byte pieces of a slot, the same in every slot (slot G's are 272 G or 288 G bytes on): piece tid
+    // of the weights (row tid / 17), pieces 256.. for the first 16 threads (row 15's 1..16), and of activation column
+    // tid / 18 piece tid % 18.  Rows past n_out stage a valid row, never stored.
+    static_assert(16 * 17 == 256 + 16 && 15 * 17 == 255, "the weight pieces past 256 are row 15's");
+    const size_t row_bytes = (size_t) nb * 34, col_bytes = (size_t) nb * 36;
+    const uint8_t* wb = reinterpret_cast<const uint8_t*>(w);
+    const int wr0 = tid / 17, wc0 = tid - 17 * wr0, wc1 = tid + 1;
+    const bool w1 = tid < 16;
+    const uint8_t* ws0 = wb + (size_t) min(row0 + wr0, n_out - 1) * row_bytes + 16 * wc0;
+    const uint8_t* ws1 = wb + (size_t) min(row0 + 15, n_out - 1) * row_bytes + 16 * wc1;
+    const int wo0 = wr0 * kQmRowBytes + 16 * wc0, wo1 = 15 * kQmRowBytes + 16 * wc1;
+    const int xc = tid / 18, xp = tid - 18 * xc;
+    const bool xm = xc < ncols;
+    const uint8_t* xs = reinterpret_cast<const uint8_t*>(x) + (size_t) min(xc, ncols - 1) * col_bytes + 16 * xp;
+    const int xo = kQmWBytes + xc * (kMvColWords * 4) + 16 * xp;
+    auto issue_w = [&](int gs, int sl) {
+        uint8_t* d = s_qm + sl * kQmSlot;
+        qm_cp_cg(d + wo0, ws0 + gs * kQmRowBytes);
+        if (w1) qm_cp_cg(d + wo1, ws1 + gs * kQmRowBytes);
     };
-    QmA pre[3];   // chain y = 0: kbx = wp, wp + 32, wp + 64
+    auto issue_x = [&](int gs, int sl) {
+        if (xm) mv_cp<16>(s_qm + sl * kQmSlot + xo, xs + gs * 8 * 36);
+    };
+    // weights (constant) before pdl_wait, activations after it; group 0 holds all of the first weights
+    int G = 0;
 #pragma unroll
-    for (int j = 0; j < 3; ++j)
-        if (wp + 32 * j < nb) pre[j] = load_a(wp + 32 * j);
+    for (int p = 0; p < kQmStages - 1; ++p) {
+        if (p < ng) issue_w(G, p);
+        G = qm_next(G, ng);
+    }
     pdl_launch_dependents();
     pdl_wait();
-    const Q81Block* xg = x + (size_t) min(g, ncols - 1) * nb;
-    const Q81Block* xc0 = x + (size_t) min(2 * t, ncols - 1) * nb;
-    const Q81Block* xc1 = x + (size_t) min(2 * t + 1, ncols - 1) * nb;
-    float v[4][4];
+    G = 0;
+#pragma unroll
+    for (int p = 0; p < kQmStages - 1; ++p) {
+        if (p < ng) issue_x(G, p);
+        G = qm_next(G, ng);
+        mv_commit();
+    }
+    int i = 0;   // slots consumed; G is the slot i + kQmStages - 1's
     // grp 0: k 0-7 (ints 0, 1: lanes t < 2, a0 a1); 1: k 8-15 (t >= 2, a0 a1); 2: k 16-23 (t < 2, a2 a3); 3: t >= 2, a2 a3
     const bool lo = t < 2;
-    auto block = [&](const QmA& A, int kbx, float (&acc)[4][4]) {
-        const uint32_t b0 = g < ncols ? (uint32_t) reinterpret_cast<const int*>(xg[kbx].qs)[t] : 0u;
-        const uint32_t b1 = g < ncols ? (uint32_t) reinterpret_cast<const int*>(xg[kbx].qs)[4 + t] : 0u;
-        const float dx0 = __low2float(xc0[kbx].ds), dx1 = __low2float(xc1[kbx].ds);
+    auto block = [&](const uint8_t* slot, float (&acc)[4][4]) {
+        const uint8_t* ra = slot + g * kQmRowBytes + 34 * wp;   // row g's block 8 G + wp, then row g + 8's
+        const uint8_t* rb = ra + 8 * kQmRowBytes;
+        const int a0 = load_int_b2(ra + 2, t), a2 = load_int_b2(ra + 2, 4 + t);
+        const int a1 = load_int_b2(rb + 2, t), a3 = load_int_b2(rb + 2, 4 + t);
+        const float da = __half2float(*reinterpret_cast<const half*>(ra));
+        const float db = __half2float(*reinterpret_cast<const half*>(rb));
+        const uint32_t* sx = reinterpret_cast<const uint32_t*>(slot + kQmWBytes);
+        uint32_t b0 = 0, b1 = 0;
+        if (g < ncols) {
+            const uint32_t* xp = sx + g * kMvColWords + 9 * wp;
+            b0 = xp[1 + t];
+            b1 = xp[5 + t];
+        }
+        const float dx0 =
+            2 * t < ncols ? __low2float(*reinterpret_cast<const half2*>(sx + (2 * t) * kMvColWords + 9 * wp)) : 0.0f;
+        const float dx1 = 2 * t + 1 < ncols
+                              ? __low2float(*reinterpret_cast<const half2*>(sx + (2 * t + 1) * kMvColWords + 9 * wp))
+                              : 0.0f;
 #pragma unroll
         for (int grp = 0; grp < 4; ++grp) {
             const bool mine = (grp & 1) ? !lo : lo, hi = grp >= 2;
-            const uint32_t m0 = mine && !hi ? (uint32_t) A.a0 : 0u, m1 = mine && !hi ? (uint32_t) A.a1 : 0u;
-            const uint32_t m2 = mine && hi ? (uint32_t) A.a2 : 0u, m3 = mine && hi ? (uint32_t) A.a3 : 0u;
+            const uint32_t m[4] = {mine && !hi ? (uint32_t) a0 : 0u, mine && !hi ? (uint32_t) a1 : 0u,
+                                   mine && hi ? (uint32_t) a2 : 0u, mine && hi ? (uint32_t) a3 : 0u};
             int si[4];
-            qm_mma(si, m0, m1, m2, m3, b0, b1);
-            acc[grp][0] += A.da * dx0 * float(si[0]);
-            acc[grp][1] += A.da * dx1 * float(si[1]);
-            acc[grp][2] += A.db * dx0 * float(si[2]);
-            acc[grp][3] += A.db * dx1 * float(si[3]);
+            mv_mma(si, m, b0, b1);
+            acc[grp][0] += da * dx0 * float(si[0]);
+            acc[grp][1] += da * dx1 * float(si[1]);
+            acc[grp][2] += db * dx0 * float(si[2]);
+            acc[grp][3] += db * dx1 * float(si[3]);
         }
     };
+    float v[4][4];
 #pragma unroll
-    for (int yy = 0; yy < 4; ++yy) {   // chain c = 8 yy + wp
+    for (int yy = 0; yy < 4; ++yy) {   // chain c = 8 yy + wp: its blocks in slots G = yy, yy + 4, ...
         float acc[4][4];
 #pragma unroll
         for (int a = 0; a < 4; ++a)
 #pragma unroll
             for (int q = 0; q < 4; ++q) acc[a][q] = 0.0f;
-        const int c = 8 * yy + wp;
-        if (yy == 0) {
-#pragma unroll
-            for (int j = 0; j < 3; ++j)
-                if (c + 32 * j < nb) block(pre[j], c + 32 * j, acc);
-            for (int kbx = c + 96; kbx < nb; kbx += 32) block(load_a(kbx), kbx, acc);
-        } else {
-            for (int kbx = c; kbx < nb; kbx += 32) block(load_a(kbx), kbx, acc);
+        for (int gg = yy; gg < ng; gg += 4) {
+            mv_wait<kQmStages - 2>();   // slot i is here (this thread's copies) ...
+            __syncthreads();            // ... and everyone's; slot (i - 1) % kQmStages is free again
+            if (i + kQmStages - 1 < ng) {
+                const int sl = (i + kQmStages - 1) % kQmStages;
+                issue_w(G, sl);
+                issue_x(G, sl);
+                G = qm_next(G, ng);
+            }
+            mv_commit();
+            block(s_qm + (i % kQmStages) * kQmSlot, acc);
+            ++i;
         }
 #pragma unroll
         for (int a = 0; a < 4; ++a)
 #pragma unroll
             for (int q = 0; q < 4; ++q) v[a][q] = yy == 0 ? acc[a][q] : v[a][q] + acc[a][q];
     }
-    // lane L = 4 wp + grp's sums, [column][row][L]
+    mv_wait<0>();
+    __syncthreads();
+    float* s_part = reinterpret_cast<float*>(s_qm);   // lane L = 4 wp + grp's sums, [column][row][L]
 #pragma unroll
     for (int grp = 0; grp < 4; ++grp)
 #pragma unroll
@@ -1824,8 +1871,8 @@ __device__ __forceinline__ void q80_mma_body(const Q80Block* __restrict__ w, con
             s_part[(col * 16 + row) * 33 + 4 * wp + grp] = v[grp][q];
         }
     __syncthreads();
-    if ((int) threadIdx.x < 16 * ncols) {   // warp_sum's butterfly (16, 8, 4, 2, 1) as lane 0 sees it
-        const int row = threadIdx.x % 16, col = threadIdx.x / 16;
+    if (tid < 16 * ncols) {   // warp_sum's butterfly (16, 8, 4, 2, 1) as lane 0 sees it
+        const int row = tid % 16, col = tid / 16;
         const float* p = s_part + (col * 16 + row) * 33;
         float r16[16], r8[8], r4[4];
 #pragma unroll
@@ -1857,9 +1904,14 @@ __global__ void __launch_bounds__(256) native_q80_mma_seg_kernel(const Q80Block*
 // The columns from which a Q8_0 product runs on the tensor cores: a head-sized one (many blocks of 16 rows) from 4,
 // others from 5 (a narrow product ties the dp4a multi-column kernel at 4 and loses to the one-row layout at 2-3).
 int q80_mma_min_cols(int n_out) { return n_out >= 65536 ? 4 : 5; }
+// The slots are 16-byte copies: rows of a multiple of 8 blocks, and weights and activations 16-byte aligned.
+bool q80_mma_fits(const void* weights, const void* x_q8_1, int n_in) {
+    return n_in % 256 == 0 && (reinterpret_cast<std::uintptr_t>(weights) & 15) == 0 &&
+           (reinterpret_cast<std::uintptr_t>(x_q8_1) & 15) == 0;
+}
 
 bool launch_q80_mma(const void* weights, const void* x_q8_1, float* y, int n_in, int n_out, int ncols, cudaStream_t s) {
-    if (mmvq_mma_sms() == 0 || ncols < q80_mma_min_cols(n_out)) return false;
+    if (mmvq_mma_sms() == 0 || ncols < q80_mma_min_cols(n_out) || !q80_mma_fits(weights, x_q8_1, n_in)) return false;
     launch_pdl(native_q80_mma_kernel, dim3(unsigned((n_out + 15) / 16)), dim3(256), 0, s,
                static_cast<const Q80Block*>(weights), static_cast<const Q81Block*>(x_q8_1), y, n_in, n_out, ncols);
     return true;
@@ -2225,7 +2277,8 @@ void native_q8_0_mmvq_segments(const void* weights, const Q80Segments& seg, int 
         validate_pointer(seg.x[i]);
         validate_pointer(seg.y[i]);
         if (seg.n_out[i] <= 0) throw std::invalid_argument("native MMVQ requires n_out > 0");
-        const bool m = mmvq_mma_sms() != 0 && ncols >= q80_mma_min_cols(seg.n_out[i]);
+        const bool m = mmvq_mma_sms() != 0 && ncols >= q80_mma_min_cols(seg.n_out[i]) &&
+                       q80_mma_fits(static_cast<const uint8_t*>(weights) + seg.row0[i] * row_bytes, seg.x[i], n_in);
         if (i == 0) mma = m;
         else if (m != mma) return separate();
     }
