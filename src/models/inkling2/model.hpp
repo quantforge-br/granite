@@ -71,7 +71,10 @@ public:
     /// window's head runs there.
     const uint8_t* head(int card = 0) const { return head_[card]; }
     int head_first(int card) const { return card == 0 ? 0 : head_lo_; }
-    const uint16_t* embedding() const { return embd_dev_; }    ///< BF16 [n_vocab][n_embd], mapped host memory
+    /// The token embedding, [n_vocab] rows of embed_row_bytes() in type embed_type() (BF16 or Q8_0), mapped host memory.
+    const void* embedding() const { return embd_dev_; }
+    int embed_type() const { return embd_type_; }
+    size_t embed_row_bytes() const { return embd_row_; }
     const float* embed_norm(int card = 0) const { return embed_norm_[card]; }
     const float* output_norm(int card = 0) const { return output_norm_[card]; }
     const float* output_query(int card = 0) const { return output_query_[card]; }
@@ -163,8 +166,10 @@ private:
     std::vector<void*> dev_;                 ///< every device allocation, freed with the model
     uint8_t* head_[2] = {};
     int head_lo_ = 0;                        ///< the first head row the second card holds
-    uint16_t* embd_host_ = nullptr;          ///< pinned, mapped
-    uint16_t* embd_dev_ = nullptr;           ///< its device address
+    uint8_t* embd_host_ = nullptr;           ///< pinned, mapped
+    uint8_t* embd_dev_ = nullptr;            ///< its device address
+    int embd_type_ = 0;
+    size_t embd_row_ = 0;
     const float* embed_norm_[2] = {};
     const float* output_norm_[2] = {};
     const float* output_query_[2] = {};

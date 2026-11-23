@@ -36,7 +36,6 @@ namespace bk = granite::kernels;
 namespace mmq = granite::prefill::mmq;
 
 constexpr int kChunk = kPromptChunk;       // rows of one chunk forward
-constexpr int kTypeBF16 = 30;
 constexpr int kTypeNvfp4 = 40;
 constexpr int kOut = kHeads * kHeadDim;    // the attention output's width
 constexpr uint64_t kMmqSpare = 32ull << 20;   // MMQ's stream-k fixup pool
@@ -298,7 +297,7 @@ private:
                 cudaMemcpyAsync(x0, emb, (size_t) rows * E * 4, cudaMemcpyHostToDevice, strm(c));
             } else {
                 cudaMemcpyAsync(b(c).tokd, tokens, (size_t) rows * 4, cudaMemcpyHostToDevice, strm(c));
-                bk::iq_embed_rows(kTypeBF16, m_.embedding(), (size_t) E * 2, b(c).tokd, rows, E, b(c).mix, strm(c));
+                bk::iq_embed_rows(m_.embed_type(), m_.embedding(), m_.embed_row_bytes(), b(c).tokd, rows, E, b(c).mix, strm(c));
                 bk::rms_norm_rows(b(c).mix, m_.embed_norm(c), rows, E, g_.rms_eps, x0, strm(c));
             }
         }

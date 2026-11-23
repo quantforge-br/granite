@@ -2,6 +2,7 @@
 // memory, then the context sized from what the weights leave.
 #include "models/inkling2/model.hpp"
 
+#include "granite/artifact/gguf_reader.hpp"
 #include "granite/core/elastic_kv.hpp"
 #include "granite/core/expert_cache.hpp"
 #include "granite/core/loader.hpp"
@@ -71,6 +72,13 @@ void read_expert(const Pack& pack, int l, int e, uint64_t at, uint64_t n, int fi
     pack.expert_spans(l, e, at, n, spans);
     uint64_t done = 0;
     for (const BlobSpan& s : spans) {
+        // bytes the pack holds (a GGUF's NVFP4 tails) are there already: RAM takes them now, before a step of the plan
+        // reads it (place_down_halves); the loader's copies from memory come after the steps
+        if (s.mem && !dev) {
+            std::memcpy(host + done, s.mem, s.bytes);
+            done += s.bytes;
+            continue;
+        }
         core::LoadItem it;
         if (s.mem) {
             it.from = s.mem;
@@ -128,23 +136,16 @@ InklingModel::~InklingModel() {
 
 float* InklingModel::small(const std::string& name, uint64_t floats, core::LoadPlan& reads, int file, std::string& err,
                            float* dst) {
-    const TensorRef* t = pack_.find(name);
-    if (!t || t->type != kTypeF32 || t->bytes != floats * 4) {
-        err = name + (t ? " is not F32 of the expected size" : " is missing");
-        return nullptr;
-    }
+    core::LoadItem it;
+    if (!pack_.source(name, Form::F32, floats, file, it, err)) return nullptr;
     void* p = dst;
     if (!p) {
-        if (cudaMalloc(&p, t->bytes) != cudaSuccess) {
+        if (cudaMalloc(&p, floats * 4) != cudaSuccess) {
             err = "out of device memory loading " + name;
             return nullptr;
         }
         dev_.push_back(p);
     }
-    core::LoadItem it;
-    it.file = file;
-    it.off = t->offset;
-    it.bytes = t->bytes;
     it.dev = p;
     it.device = ldev_;
     reads.add(it);
@@ -153,23 +154,16 @@ float* InklingModel::small(const std::string& name, uint64_t floats, core::LoadP
 
 uint16_t* InklingModel::small_bf16(const std::string& name, uint64_t values, core::LoadPlan& reads, int file, std::string& err,
                                    uint16_t* dst) {
-    const TensorRef* t = pack_.find(name);
-    if (!t || t->type != kTypeBF16 || t->bytes != values * 2) {
-        err = name + (t ? " is not BF16 of the expected size" : " is missing");
-        return nullptr;
-    }
+    core::LoadItem it;
+    if (!pack_.source(name, Form::Bf16, values, file, it, err)) return nullptr;
     void* p = dst;
     if (!p) {
-        if (cudaMalloc(&p, t->bytes) != cudaSuccess) {
+        if (cudaMalloc(&p, values * 2) != cudaSuccess) {
             err = "out of device memory loading " + name;
             return nullptr;
         }
         dev_.push_back(p);
     }
-    core::LoadItem it;
-    it.file = file;
-    it.off = t->offset;
-    it.bytes = t->bytes;
     it.dev = p;
     it.device = ldev_;
     reads.add(it);
@@ -211,32 +205,29 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
     };
     const uint64_t n_embd = (uint64_t) g.n_embd, n_vocab = (uint64_t) g.n_vocab;
 
-    // the token embedding: BF16 rows in mapped host memory, gathered by the card
+    // the token embedding: BF16 or Q8_0 rows in mapped host memory, gathered by the card
     {
         const TensorRef* t = pack_.find("token_embd.weight");
-        if (!t || t->type != kTypeBF16 || t->bytes != n_vocab * n_embd * 2) return fail("token_embd.weight is not BF16 [n_embd][n_vocab]");
+        if (!t || !((t->type == kTypeBF16 && t->bytes == n_vocab * n_embd * 2) || (t->type == kTypeQ8_0 && t->bytes == n_vocab * kQ8Row)))
+            return fail(t ? "token_embd.weight is " + std::string(ggml_type_name((uint32_t) t->type)) + ", not BF16 or Q8_0 [n_embd][n_vocab]"
+                          : "token_embd.weight is missing");
+        embd_type_ = t->type;
+        embd_row_ = (size_t) (t->bytes / n_vocab);
         if (cudaHostAlloc((void**) &embd_host_, t->bytes, cudaHostAllocMapped | cudaHostAllocPortable) != cudaSuccess)
             return fail("cannot pin the token embedding's host memory");
         if (cudaHostGetDevicePointer((void**) &embd_dev_, embd_host_, 0) != cudaSuccess) return fail("cannot map the token embedding");
         core::LoadItem it;
-        it.file = file;
-        it.off = t->offset;
-        it.bytes = t->bytes;
-        it.host = reinterpret_cast<uint8_t*>(embd_host_);
+        t->source(file, it);
+        it.host = embd_host_;
         reads.add(it);
     }
-    // the head: the pack's BF16 rows rounded to Q8_0 as they load
+    // the head in Q8_0: the file's, or its BF16 rows rounded as they load
     {
-        const TensorRef* t = pack_.find("output.weight");
-        if (!t || t->type != kTypeBF16 || t->bytes != n_vocab * n_embd * 2) return fail("output.weight is not BF16 [n_embd][n_vocab]");
-        if (!(head_[0] = device_buf(n_vocab * kQ8Row))) return fail("out of device memory loading the head");
         core::LoadItem it;
-        it.file = file;
-        it.off = t->offset;
-        it.bytes = t->bytes;
+        if (!pack_.source("output.weight", Form::Q8_0, n_vocab * n_embd, file, it, err)) return fail(err);
+        if (!(head_[0] = device_buf(n_vocab * kQ8Row))) return fail("out of device memory loading the head");
         it.dev = head_[0];
         it.device = device_;
-        it.conv = core::Conv::Bf16ToQ8_0;
         reads.add(it);
     }
     if (!(embed_norm_[0] = small("token_embd_norm.weight", n_embd, reads, file, err)) ||
@@ -376,7 +367,7 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
     }
     granite::log::info("granite inkling2", "weights on the GPU: dense %.2f GiB%s, experts %.2f GiB%s; the embedding in host memory (%.2f GiB)",
                       (double) dense / (double) kGiB, cards() > 1 ? " on each card" : "", (double) experts / (double) kGiB,
-                      cards() > 1 ? " between the two" : "", (double) (n_vocab * n_embd * 2) / (double) kGiB);
+                      cards() > 1 ? " between the two" : "", (double) (n_vocab * embd_row_) / (double) kGiB);
     model::Result r;
     for (int i = 0; r.ok() && i < std::max(req.sessions, 1); ++i) {
         std::unique_ptr<model::ModelSession> s = make_session(*this, err);
@@ -430,26 +421,17 @@ model::Result InklingModel::plan_layers(int card, core::LoadPlan& to, int file, 
         cudaMemset(w.proj, 0, (size_t) kProj * kQ8Row);
         for (const ProjPart& part : kProjParts) {
             if (part.full_only && !full) continue;
-            const TensorRef* t = pack_.find(b + part.suffix);
-            if (!t || t->type != kTypeQ8_0 || t->bytes != (uint64_t) part.rows * kQ8Row)
-                return fail(b + part.suffix + (t ? " is not Q8_0 of the expected rows" : " is missing"));
             core::LoadItem it;
-            it.file = file;
-            it.off = t->offset;
-            it.bytes = t->bytes;
+            if (!pack_.source(b + part.suffix, Form::Q8_0, (uint64_t) part.rows * n_embd, file, it, err)) return fail(err);
             it.dev = w.proj + (uint64_t) part.row0 * kQ8Row;
             it.device = ldev_;
             to.add(it);
         }
         {
-            const TensorRef* t = pack_.find(b + "attn_output.weight");
             const uint64_t want = n_embd * (3072 / 32 * 34);
-            if (!t || t->type != kTypeQ8_0 || t->bytes != want) return fail(b + "attn_output.weight is not Q8_0 [3072][n_embd]");
-            if (!(w.out = device_buf(want))) return fail("out of device memory loading layer " + std::to_string(l));
             core::LoadItem it;
-            it.file = file;
-            it.off = t->offset;
-            it.bytes = t->bytes;
+            if (!pack_.source(b + "attn_output.weight", Form::Q8_0, n_embd * 3072, file, it, err)) return fail(err);
+            if (!(w.out = device_buf(want))) return fail("out of device memory loading layer " + std::to_string(l));
             it.dev = w.out;
             it.device = ldev_;
             to.add(it);
@@ -496,6 +478,12 @@ model::Result InklingModel::plan_layers(int card, core::LoadPlan& to, int file, 
         w.gu_type = el.gu_type;
         w.d_type = el.d_type;
         w.n_ff = g.n_ff_exp / cards();
+        if (!bk::native_expert_supported(el.gu_type, el.d_type, g.n_embd, w.n_ff) || !prefill::mmq::supported(el.gu_type) ||
+            !prefill::mmq::supported(el.d_type))
+            return fail("layer " + std::to_string(l) + "'s experts are " + ggml_type_name((uint32_t) el.gu_type) + " gate/up and " +
+                        ggml_type_name((uint32_t) el.d_type) + " down, which the decode or the prompt kernels do not run");
+        if (bk::native_expert_layout(el.gu_type, el.d_type, g.n_embd, g.n_ff_exp).bytes != el.blob_bytes)
+            return fail("layer " + std::to_string(l) + "'s expert blobs are not in the kernels' layout");
         w.blob_bytes = cards() > 1 ? bk::native_expert_layout(el.gu_type, el.d_type, g.n_embd, w.n_ff).bytes : el.blob_bytes;
         w.expert_stride = expert_stride(el.gu_type, w.blob_bytes);
     }
@@ -779,8 +767,11 @@ model::Result InklingModel::attach(const model::LoadRequest&, std::vector<std::u
         }
         cudaSetDevice(device_);
     }
-    if (dspark_)   // DSPARK HOOK: the drafter's head folds, once the reads have landed
-        if (model::Result r = dspark_->finish(head_[0], embd_dev_, embed_norm_[0], nullptr); !r.ok()) return r;
+    if (dspark_) {   // DSPARK HOOK: the drafter's head folds, once the reads have landed
+        if (embd_type_ != kTypeBF16) return {model::Status::Error, "inkling2: the drafter reads a BF16 token embedding"};
+        if (model::Result r = dspark_->finish(head_[0], reinterpret_cast<const uint16_t*>(embd_dev_), embed_norm_[0], nullptr); !r.ok())
+            return r;
+    }
     for (auto& s : sessions)
         if (model::Result r = s->prepare(); !r.ok()) return r;
     if (elastic_) {   // the caches back only their base yet: the RAM experts come back while the card has room

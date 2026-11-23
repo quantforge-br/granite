@@ -56,7 +56,6 @@ namespace {
 namespace bk = granite::kernels;
 
 constexpr int kMaxRows = kDecodeRows;    // rows of one forward call (a decode window, a step of a prompt)
-constexpr int kTypeBF16 = 30;
 constexpr int kOutRows = 3072;           // the attention output's width (heads x head width)
 constexpr int kStage = 64;               // windows whose tokens and positions are in flight from the pinned ring at once
 constexpr int kHeadChunks = 4;           // tensor parallelism: the second card's head rows in this many products (split_head)
@@ -1230,7 +1229,7 @@ private:
             if (emb) {
                 cudaMemcpyAsync(x0, emb, RE * 4, cudaMemcpyHostToDevice, k.stream);
             } else {
-                bk::iq_embed_rows(kTypeBF16, m_.embedding(), (size_t) E * 2, k.x->tok_d_, rows, E, k.x->emb_, k.stream);
+                bk::iq_embed_rows(m_.embed_type(), m_.embedding(), m_.embed_row_bytes(), k.x->tok_d_, rows, E, k.x->emb_, k.stream);
                 bk::rms_norm_rows(k.x->emb_, m_.embed_norm(card), rows, E, g_.rms_eps, x0, k.stream);
             }
             if (card > 0) {

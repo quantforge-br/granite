@@ -4,14 +4,11 @@
 
 #include "granite/artifact/gguf_reader.hpp"
 #include "granite/model/adapter.hpp"
+#include "models/inkling2/pack.hpp"
 
 #include <string>
 
 namespace granite::models::inkling2 {
-
-inline constexpr const char* kArch = "inkling2";
-/// llama.cpp's name for the model: its GGUFs' general.architecture and key prefix.
-inline constexpr const char* kGgufArch = "inkling2_loop";
 
 /// The prefix of the file's model keys: the GGUF's architecture name, or the pack's.
 inline std::string key_prefix(const GgufFile& g) {

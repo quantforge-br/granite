@@ -789,7 +789,7 @@ void dspark_finish_flags(program::CommonOptions& o) {
     // the pack's drafter offers a whole block (the window policy takes the rows that pay) unless --spec caps it
     if (!o.spec_given) o.spec = present ? kDsBlock : 0;
     if (o.spec >= 2 && !present) {
-        granite::log::warn("granite inkling2", "--spec %d off: the pack has no drafter", o.spec);
+        granite::log::warn("granite inkling2", "--spec %d off: the model file has no drafter", o.spec);
         o.spec = 0;
     }
 }

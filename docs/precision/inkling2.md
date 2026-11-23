@@ -72,6 +72,7 @@ The base: the official release with its routed experts dequantized to BF16 (llam
 | --- | ---: | ---: | ---: |
 | 100 chunks, one RTX 3090, against a base made the same way on that machine | 0.00289 | 97.76% | 7.0758 (base 7.0655) |
 | the same, tensor parallel on two RTX 3090s | 0.00286 | 97.79% | 7.0719 (base 7.0655) |
+| the same, Unsloth's UD-Q4_K_XL GGUF ([GGUF](../models/inkling2.md#gguf)): the pack's bytes with a Q8_0 token embedding | 0.00309 | 97.68% | 7.0762 (base 7.0655) |
 | upstream, 100 chunks, `--kv fp16` | 0.00305 | 97.76% | 7.0695 (base 7.0633 over the scored rows) |
 | upstream, 20 chunks (the quick gate) | 0.00264 | 97.80% | 7.6642 (base 7.6534) |
 | upstream, 90 chunks, RTX 5060 Ti alone, 1,047 experts in RAM on the CPU | 0.00298 | 97.70% | |
