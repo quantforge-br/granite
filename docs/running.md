@@ -67,7 +67,7 @@ The server's address serves a page, updated every second from `/metrics`, `/slot
 - Experts: where the last request's expert lookups were served (VRAM, CPU and RAM), as a legend, and a map of 640 experts sampled
   evenly from every layer (`experts_map`): its brightness is how often decode looked it up lately. Inkling 2 Mini marks every
   sampled expert as in VRAM, also when some are in RAM.
-- With no model loaded, a slow field of basalt columns on its own (8 frames a second, paused while the tab is hidden, one still
+- With no model loaded, a slow field of hexagonal columns on its own (8 frames a second, paused while the tab is hidden, one still
   frame under reduced motion).
 
 Under it, four tabs (keys `1` to `4`, `L` for the logs, or `#tab=req|slots|hw|logs` in the address):

@@ -50,7 +50,7 @@ granite is a local inference engine for NVIDIA RTX 30-series Ampere GPUs (sm_86)
 - Ported or adapted work keeps its original authors as `Co-Authored-By` lines.
 - Never amend or force-push shared branches; add new commits.
 - No notes, scratch files or generated reports in the repo.
-- Docs: no file over 300 lines; split a longer topic into a folder of files; keep docs short, stateless and free of duplication. Web UI text uses proper casing ("Basalt") and no em dashes.
+- Docs: no file over 300 lines; split a longer topic into a folder of files; keep docs short, stateless and free of duplication. Web UI text uses proper casing ("Granite") and no em dashes.
 - A PR description lists: what changed, the parity results, the microbench and `granite-bench` before/after (with the power limit), and the quality-check result.
 
 ## Other ways to help

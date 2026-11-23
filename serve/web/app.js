@@ -68,7 +68,7 @@ function sbChart(a, lo, hi, accent, limit) {
   const segs = lines(a, v => clamp(100 - (v - lo) / (hi - lo) * 100, 1, 99));
   return `<div class="sb-ch"><svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">`
     + `<stop offset="0" stop-color="rgba(${tint},.16)"/><stop offset="1" stop-color="rgba(${tint},.02)"/></linearGradient></defs>${baseLine}`
-    + (limit ? `<line x1="0" y1="1" x2="100" y2="1" stroke="var(--basalt-500)" stroke-width="1" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"/>` : "")
+    + (limit ? `<line x1="0" y1="1" x2="100" y2="1" stroke="var(--granite-500)" stroke-width="1" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"/>` : "")
     + segs.map(p => area(p, `url(#${id})`) + poly(p, `stroke="${accent ? "var(--accent)" : "var(--fg-2)"}" stroke-width="1.5"`)).join("")
     + `</svg></div>`;
 }
@@ -416,7 +416,7 @@ function cellBlock(parts) {
 function slotStrip(s, series, max) {
   const A = tail(s.accept_hist || []).map(v => v > 0 ? v : null), amax = Math.max(1, ...A.filter(num));
   const y = v => 100 - 6 - Math.min(v, max) / max * 90;
-  const ticks = A.map((v, i) => v == null ? "" : `<line x1="${(i / (A.length - 1) * 100).toFixed(2)}" x2="${(i / (A.length - 1) * 100).toFixed(2)}" y1="100" y2="${(100 - v / amax * 22).toFixed(1)}" stroke="var(--basalt-500)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join("");
+  const ticks = A.map((v, i) => v == null ? "" : `<line x1="${(i / (A.length - 1) * 100).toFixed(2)}" x2="${(i / (A.length - 1) * 100).toFixed(2)}" y1="100" y2="${(100 - v / amax * 22).toFixed(1)}" stroke="var(--granite-500)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join("");
   const run = s.is_processing, line = lines(series, y).map(p => poly(p, `stroke="${run ? "var(--accent)" : "var(--fg-3)"}" stroke-width="1.4"`)).join("");
   const a = stats(A);
   return `<div class="strip"><div class="sh"><span>Decode · last 60 s · ${tick(max)} max</span><span>${a ? `${a.avg.toFixed(2)} tok / window` : ""}</span></div>`
@@ -582,7 +582,7 @@ const VP = [["experts", "Experts", "var(--t-vram)"], ["kv", "KV", "var(--t-peer)
 function vramSplit(g, px) {
   const v = g.vram_parts, T = g.mem_total || 1;
   if (!v) return bar(g.mem_used / T);
-  const parts = VP.filter(p => v[p[0]] > 0).map(p => [p[1], p[2], v[p[0]]]).concat([["Free", "var(--basalt-800)", Math.max(0, T - g.mem_used)]]);
+  const parts = VP.filter(p => v[p[0]] > 0).map(p => [p[1], p[2], v[p[0]]]).concat([["Free", "var(--granite-800)", Math.max(0, T - g.mem_used)]]);
   return labelledBar(parts, T, px);
 }
 const mb = v => num(v) ? v >= 1000 ? `${(v / 1000).toFixed(1)} GB/s` : `${Math.round(v)} MB/s` : "-";
@@ -618,7 +618,7 @@ function drawHw(hw, st, hist, eng) {
   const R = hw.ram_parts, T = hw.ram_total || 1, dh = hw.disk_hist, bw = ahead(hw, "ram_bw_gbs"), commit = eng.commit;
   const ccd = (hw.cpu_ccd || []).map((v, i) => `<div class="ccd"><span>CCD ${i}</span>${bar(v / 100)}<b>${Math.round(v)}%</b></div>`).join("");
   const ram = R ? labelledBar([["Experts", "var(--t-cpu)", R.experts], ["Cache", "var(--fg-3)", R.page_cache], ["Other", "var(--raised)", R.other],
-    ["Free", "var(--basalt-800)", Math.max(0, T - hw.ram_used - R.page_cache)]], T, 340) : bar(num(hw.ram_total) ? hw.ram_used / T : 0);
+    ["Free", "var(--granite-800)", Math.max(0, T - hw.ram_used - R.page_cache)]], T, 340) : bar(num(hw.ram_total) ? hw.ram_used / T : 0);
   const disk = dh ? `<div class="dsk">${spark(tail(dh), nice(Math.max(10, ...dh.filter(num))))}</div>` : "<span></span>";
   const held = num(eng.expert_slots) && num(eng.expert_total) && eng.expert_total > 0 ? `${fmt(eng.expert_slots)} <span class="u">of ${fmt(eng.expert_total)}</span>` : null;
   // four blocks spread over the column's height, so a block without its pending rows leaves no hole
@@ -627,7 +627,7 @@ function drawHw(hw, st, hist, eng) {
     + `<div class="blk"><div class="srow"><span>Read</span>${disk}<b>${num(hw.disk_read_mb) ? hw.disk_read_mb.toFixed(1) : "-"} <span class="u">MB/s</span></b></div></div>`
     + cells([when(bw, ["RAM bandwidth", `${bw} <span class="u">GB/s</span>`]), held ? ["Experts in VRAM", held, "Experts held in VRAM slots"] : null, ["Uptime", uptime()],
       ["Driver", st.driver ? `${esc(st.driver)} <span class="u">CUDA ${esc(st.cuda || "-")}</span>` : "-"],
-      eng.version ? ["Basalt", `${esc(eng.version)}${commit ? ` <span class="u">${esc(commit)}</span>` : ""}`] : null]);
+      eng.version ? ["Granite", `${esc(eng.version)}${commit ? ` <span class="u">${esc(commit)}</span>` : ""}`] : null]);
   html($("#p-hw"), `<div class="hw"><div class="hw-g">${gpus}</div><div class="hw-s">${sys}</div></div>`);
 }
 
@@ -728,11 +728,10 @@ function drawUnload(models, live) {
 }
 $("#unload").addEventListener("click", e => control("v1/unload", e.currentTarget.dataset.v));
 
-/* ---- the no-model screen saver: a field of basalt column tops seen from above, on its own. A soft band of light crosses it every ~40 s,
-   and now and then one column flares ember and cools back to stone over ~9 s. The mark's seven columns sit at the centre, its
-   middle one ember. Canvas at 8 frames a second, skipped while the tab is hidden and stopped when a model loads;
-   prefers-reduced-motion draws one still frame. ---- */
-const SS = { on: false, timer: 0, cells: [], hot: [], mark: [], W: 0, H: 0, R: 19, t0: 0 };
+/* ---- the no-model screen saver: a field of hexagonal column tops seen from above, on its own. A soft band of light crosses it
+   every ~40 s, and now and then one column flares ember and cools back to stone over ~9 s. Canvas at 8 frames a second,
+   skipped while the tab is hidden and stopped when a model loads; prefers-reduced-motion draws one still frame. ---- */
+const SS = { on: false, timer: 0, cells: [], hot: [], W: 0, H: 0, R: 19, t0: 0 };
 const STONE = [[26, 32, 37], [34, 42, 49], [40, 49, 58], [44, 53, 62], [31, 38, 44]];
 const mix = (a, b, f) => a.map((x, k) => Math.round(x + (b[k] - x) * f));
 function saverLayout() {
@@ -743,11 +742,6 @@ function saverLayout() {
   SS.cells = [];
   for (let y = 0, row = 0; y < SS.H + R; y += sy, row++)
     for (let x = row % 2 ? w / 2 : 0; x < SS.W + w; x += w) SS.cells.push({ x, y, base: STONE[(row * 7 + Math.round(x / w) * 13) % STONE.length] });
-  if (!SS.cells.length) return;
-  // the mark: the cell nearest the centre and its six neighbours
-  const near = (px, py) => SS.cells.reduce((b, c, i) => Math.hypot(c.x - px, c.y - py) < Math.hypot(SS.cells[b].x - px, SS.cells[b].y - py) ? i : b, 0);
-  const m = SS.cells[near(SS.W / 2, SS.H * .44)];
-  SS.mark = [near(m.x, m.y)].concat([0, 1, 2, 3, 4, 5].map(k => near(m.x + Math.cos(Math.PI / 3 * k) * w, m.y + Math.sin(Math.PI / 3 * k) * w)));
 }
 function hexPath(g, x, y, R) {
   g.beginPath();
@@ -760,18 +754,15 @@ function saverFrame(still) {
   // the light band: along the diagonal, one crossing every 40 s
   const span = SS.W + SS.H, pos = still ? span * .35 : ((t / 40 + .3) % 1) * (span + 600) - 300;
   if (!still && SS.cells.length && Math.random() < .08 && SS.hot.length < 5) {
-    const i = Math.floor(Math.random() * SS.cells.length);
-    if (!SS.mark.includes(i)) SS.hot.push({ i, t });
+    SS.hot.push({ i: Math.floor(Math.random() * SS.cells.length), t });
   }
   SS.hot = SS.hot.filter(h => t - h.t < 9);
   const heat = new Map(SS.hot.map(h => [h.i, 1 - (t - h.t) / 9]));
   SS.cells.forEach((c, i) => {
     const d = (c.x + c.y) - pos, band = Math.exp(-(d * d) / (2 * 200 * 200));
     let col = mix(c.base, [92, 104, 116], band * .7);
-    if (SS.mark.includes(i)) col = mix(col, [70, 82, 94], .75);
     const h = heat.get(i);
     if (h != null) col = h > .7 ? mix([242, 102, 43], [255, 181, 71], (h - .7) / .3) : mix(col, h > .35 ? [242, 102, 43] : [184, 64, 26], Math.min(1, h / .35));
-    if (i === SS.mark[0]) col = [242, 102, 43];
     hexPath(g, c.x, c.y, SS.R); g.fillStyle = `rgb(${col})`; g.fill();
   });
 }

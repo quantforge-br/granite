@@ -2,7 +2,7 @@
 @font-face { font-family: "Geist Mono"; font-weight: 100 900; font-display: swap; src: url(../fonts/geist-mono-latin-wght.woff2) format("woff2"); }
 
 :root {
-  --basalt-950: #0E1114; --basalt-900: #151A1F; --basalt-800: #1D242B; --basalt-700: #2A333C; --basalt-500: #56616C; --basalt-300: #9AA4AD;
+  --granite-950: #0E1114; --granite-900: #151A1F; --granite-800: #1D242B; --granite-700: #2A333C; --granite-500: #56616C; --granite-300: #9AA4AD;
   --ember: #F2662B; --ember-hot: #FFB547; --ember-deep: #B8401A;
   --olivine: #A3B84B; --sulfur: #E9C341; --garnet: #D93A5B; --glass: #6E9CC9;
   --heat: linear-gradient(90deg, #2A333C 0%, #5A2A1E 30%, #B8401A 48%, #F2662B 64%, #FFB547 82%, #FFF1D6 100%);
@@ -10,13 +10,13 @@
   --font-sans: "Geist", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --bg: var(--basalt-950);
-  --surface: var(--basalt-900);
-  --raised: var(--basalt-700);
+  --bg: var(--granite-950);
+  --surface: var(--granite-900);
+  --raised: var(--granite-700);
   --line: #262E36;
   --line-soft: #1C2329;
   --fg: #E9ECEE;
-  --fg-2: #A7B0B8;          /* basalt-300, lifted a touch for small text on 950 */
+  --fg-2: #A7B0B8;          /* granite-300, lifted a touch for small text on 950 */
   --fg-3: #7E8993;          /* the dimmest text: 5.3:1 on the ground */
   --accent: #FF7A3D;
   --accent-line: rgba(255, 122, 61, .45);   /* the landing page's .btn border */
@@ -68,7 +68,7 @@ td, th, .v, .num { font-family: var(--font-mono); font-variant-numeric: tabular-
 .ms .opt > span { flex: none; font-size: 12px; color: var(--fg-3); }
 .ms .opt[aria-checked="true"] { color: var(--fg); }
 .ms .opt[aria-checked="true"] > span { color: var(--ok); }
-.ms .opt:hover:not(:disabled), .ms .opt:focus-visible { background: var(--basalt-800); outline: none; }
+.ms .opt:hover:not(:disabled), .ms .opt:focus-visible { background: var(--granite-800); outline: none; }
 .ms .opt.go > span { color: var(--fg-2); }
 .ms .opt.go:hover > span { color: var(--accent); }
 .ms .opt:disabled { cursor: default; opacity: .5; }
@@ -116,7 +116,7 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; width: 100
 .ch.big { height: auto; min-height: 120px; margin-top: 26px; }
 .ch svg { position: absolute; left: 0; top: 0; width: calc(100% - 34px); height: 100%; overflow: visible; }
 .ch .tk { position: absolute; right: 0; top: 0; font: 11px/1 var(--font-mono); color: var(--fg-3); }
-.bar4 { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--basalt-800); overflow: hidden; }
+.bar4 { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--granite-800); overflow: hidden; }
 .bar4 i { display: block; height: 100%; border-radius: 2px; background: var(--fg-2); transition: width .6s ease; }
 .exp .k { margin-bottom: 16px; }
 .exp .leg { margin-top: 0; }
@@ -331,7 +331,7 @@ tr.live td { color: var(--accent); }
 table.mini { width: 100%; }
 table.mini th { padding: 0 8px 5px 0; font-size: 11px; }
 table.mini td.r, table.mini th.r { padding-right: 0; }
-.sbar { flex: none; display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--basalt-800); }
+.sbar { flex: none; display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--granite-800); }
 .sbar i { display: block; height: 100%; transition: width .6s ease; }
 table.mini td { padding: 4px 8px 4px 0; font-size: 12px; line-height: 16px; border-top: 1px solid var(--line-soft); }
 
