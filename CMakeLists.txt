@@ -287,8 +287,7 @@ add_library(kernels STATIC src/kernels/cuda/sampler.cu
                         src/kernels/cuda/gqa_attn.cu
                         src/kernels/cuda/nvfp4_planes.cu
                         src/kernels/cuda/router.cu
-                        src/kernels/cuda/row_norm.cu
-                        src/ngram/ple_reader.cpp)
+                        src/kernels/cuda/row_norm.cu)
 target_link_libraries(kernels PUBLIC core artifact)
 # Match the pinned llama.cpp CUDA arithmetic contract for these kernels only.
 set_source_files_properties(src/kernels/cuda/native_mmvq.cu src/kernels/cuda/native_bf16.cu
