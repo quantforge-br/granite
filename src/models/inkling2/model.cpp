@@ -52,16 +52,22 @@ constexpr ProjPart kProjParts[] = {
     {"attn_v.weight", kRowV, 1024, false},       {"attn_v_conv_proj.weight", kRowV + kOffTaps, 32, true},
 };
 const char* const kStreamNames[kStreams] = {"q", "k", "v", "ffn"};
-// A blob's stride on the card: whole blocks of its type and 16 bytes, so a kernel can read each expert's blocks in place.
-uint64_t expert_stride(int type, uint64_t blob) {
-    const uint64_t block = type == kTypeQ8_0 ? 34 : type == kTypeNvfp4 ? 36 : 1;
-    uint64_t a = block, b = 16;
-    while (b) {
-        const uint64_t t = a % b;
-        a = b;
-        b = t;
-    }
-    const uint64_t unit = block / a * 16;
+// A blob's stride on the card: whole blocks of its gate/up type, of its down type and 16 bytes, so the prompt's MMQ
+// products can step from expert to expert in whole blocks of either (and a kernel read each expert's blocks in place).
+uint64_t expert_stride(int gu_type, int d_type, uint64_t blob) {
+    const auto lcm = [](uint64_t x, uint64_t y) {
+        uint64_t a = x, b = y;
+        while (b) {
+            const uint64_t t = a % b;
+            a = b;
+            b = t;
+        }
+        return x / a * y;
+    };
+    int ge = 0, gb = 1, de = 0, db = 1;
+    block_geometry((uint32_t) gu_type, ge, gb);
+    block_geometry((uint32_t) d_type, de, db);
+    const uint64_t unit = lcm(lcm((uint64_t) gb, (uint64_t) db), 16);
     return (blob + unit - 1) / unit * unit;
 }
 
@@ -489,7 +495,7 @@ model::Result InklingModel::plan_layers(int card, core::LoadPlan& to, int file, 
         if (bk::native_expert_layout(el.gu_type, el.d_type, g.n_embd, g.n_ff_exp).bytes != el.blob_bytes)
             return fail("layer " + std::to_string(l) + "'s expert blobs are not in the kernels' layout");
         w.blob_bytes = cards() > 1 ? bk::native_expert_layout(el.gu_type, el.d_type, g.n_embd, w.n_ff).bytes : el.blob_bytes;
-        w.expert_stride = expert_stride(el.gu_type, w.blob_bytes);
+        w.expert_stride = expert_stride(el.gu_type, el.d_type, w.blob_bytes);
     }
     return {};
 }
