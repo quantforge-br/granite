@@ -256,7 +256,7 @@ std::string fixture_vocab_refusal(int64_t max_id, int64_t n_vocab, const std::st
 std::string default_engine(const std::string& self, const std::string& built) {
     if (!self.empty()) {
         const std::filesystem::path p(self);
-        const std::string beside = (p.parent_path() / ("basalt" + p.extension().string())).string();
+        const std::string beside = (p.parent_path() / ("granite" + p.extension().string())).string();
         if (basalt::platform::path_executable(beside)) return beside;
     }
     return built;

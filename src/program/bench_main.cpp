@@ -252,9 +252,9 @@ struct Options {
 
 void usage(const std::string& engine) {
     std::printf(
-        "basalt-bench - the standard benchmark: decode fixtures, prefill depths, optional quality gate\n"
+        "granite-bench - the standard benchmark: decode fixtures, prefill depths, optional quality gate\n"
         "\n"
-        "usage: basalt-bench --model FILE.basalt [options] [-- ENGINE ARGS...]\n"
+        "usage: granite-bench --model FILE.basalt [options] [-- ENGINE ARGS...]\n"
         "\n"
         "what to run (default: -p 16384 -t conv,struct,prose; giving one of -p / -t runs only what is given)\n"
         "  -t LIST            decode fixtures, any of conv,struct,prose; they always run in that order, because\n"

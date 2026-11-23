@@ -52,9 +52,9 @@ std::string fixtures_default() { return default_fixtures(basalt::platform::insta
 
 void usage() {
     std::printf(
-        "basalt-probe - measures this machine and prints its rates, decode speeds and suggested values\n"
+        "granite-probe - measures this machine and prints its rates, decode speeds and suggested values\n"
         "\n"
-        "usage: basalt-probe --model FILE.basalt [-- ENGINE ARGS...]\n"
+        "usage: granite-probe --model FILE.basalt [-- ENGINE ARGS...]\n"
         "\n"
         "  --model FILE          a .basalt model file\n"
         "  --engine BIN          engine binary (default: basalt beside this program, else the build's)\n"

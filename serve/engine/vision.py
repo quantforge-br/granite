@@ -91,13 +91,13 @@ def video_rows(line: str) -> VideoRows:
 
 
 class Vision:
-    """The resident `basalt-vision` encoder: `ENC <image> <out>` and `ENCV <video> <out>` lines in, embeddings out,
+    """The resident `granite-vision` encoder: `ENC <image> <out>` and `ENCV <video> <out>` lines in, embeddings out,
     cached by content hash."""
 
     def __init__(self, cfg: dict, log=None, env: dict | None = None, start: bool = True):
         """`start` false: down until the service restarts it, as an unloaded encoder is."""
         args = [cfg["vision_bin"], "--model", cfg["model"]] + (["--gpu"] if cfg.get("gpu") else [])
-        self.dir = Path(tempfile.mkdtemp(prefix="basalt-vision-"))
+        self.dir = Path(tempfile.mkdtemp(prefix="granite-vision-"))
         self.spawn = (args, log, env)                   # to start again
         self.stopped = False
         self.ready_s = 0.0                              # last start's time to READY
@@ -422,7 +422,7 @@ class EngineVision(Vision):
     in_engine = True
 
     def __init__(self, cfg: dict):
-        self.dir = Path(tempfile.mkdtemp(prefix="basalt-vision-"))
+        self.dir = Path(tempfile.mkdtemp(prefix="granite-vision-"))
         self.engine = None                              # set by attach() once the engine exists
         self.stopped = False
         self.ready_s = 0.0

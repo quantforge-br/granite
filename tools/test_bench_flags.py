@@ -1,6 +1,6 @@
-"""Every flag the engine lists in its help reaches the engine through basalt-bench.
+"""Every flag the engine lists in its help reaches the engine through granite-bench.
 
-    BASALT_BIN=bin/basalt BASALT_BENCH_BIN=bin/basalt-bench python3 -m unittest tools.test_bench_flags
+    BASALT_BIN=bin/granite BASALT_BENCH_BIN=bin/granite-bench python3 -m unittest tools.test_bench_flags
 """
 import json
 import os
@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ENGINE = Path(os.environ.get("BASALT_BIN", ROOT / "bin" / "basalt"))
-BENCH = Path(os.environ.get("BASALT_BENCH_BIN", ROOT / "bin" / "basalt-bench"))
+ENGINE = Path(os.environ.get("BASALT_BIN", ROOT / "bin" / "granite"))
+BENCH = Path(os.environ.get("BASALT_BENCH_BIN", ROOT / "bin" / "granite-bench"))
 # bench's own options that share an engine flag's name
 BENCH_OWNED = {"--help", "--model", "--engine", "--spec", "--set", "--seed", "--gpu"}
 
@@ -22,7 +22,7 @@ def engine_flags() -> list[str]:
     return sorted(set(re.findall(r"^\s+(--[a-z0-9][a-z0-9-]*)", out, re.M)))
 
 
-@unittest.skipUnless(ENGINE.is_file() and BENCH.is_file(), "build bin/basalt and bin/basalt-bench first")
+@unittest.skipUnless(ENGINE.is_file() and BENCH.is_file(), "build bin/granite and bin/granite-bench first")
 class BenchFlags(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

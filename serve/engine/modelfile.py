@@ -15,7 +15,7 @@ from model_file import ModelFile  # noqa: E402
 from serve.models import dialect_for  # noqa: E402
 from serve.engine.flags import flag_value  # noqa: E402
 
-VISION_EXE = "basalt-vision"
+VISION_EXE = "granite-vision"
 # llama.cpp's sampling keys in the GGUF metadata -> the request field each one defaults
 GGUF_SAMPLING = {"general.sampling.temp": "temperature", "general.sampling.top_p": "top_p",
                  "general.sampling.top_k": "top_k", "general.sampling.min_p": "min_p",
@@ -24,7 +24,7 @@ GGUF_SAMPLING = {"general.sampling.temp": "temperature", "general.sampling.top_p
 
 
 def cache_root() -> Path:
-    return Path.home() / ".cache" / "basalt"
+    return Path.home() / ".cache" / "granite"
 
 
 def cache_dir(mf: ModelFile) -> Path:
@@ -73,7 +73,7 @@ def vision_config(mf: ModelFile, engine_bin: str, sidecar: bool = True) -> dict:
     """The vision sidecar's config, which names the model file (the sidecar opens `vision/mmproj` inside it);
     ValueError names what is missing."""
     engine = Path(engine_bin).resolve()
-    side = engine.parent / (VISION_EXE + engine.suffix)   # with the engine's suffix: basalt-vision.exe on Windows
+    side = engine.parent / (VISION_EXE + engine.suffix)   # with the engine's suffix: granite-vision.exe on Windows
     if "vision/mmproj" not in mf.sections:
         raise ValueError("this model file has no vision projector (vision/mmproj); drop --vision")
     if sidecar and not side.is_file():

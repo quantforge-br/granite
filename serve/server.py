@@ -1,7 +1,7 @@
 """OpenAI, Anthropic and Responses endpoints over engines that map token ids to tokens, one model loaded at a time.
 
-    basalt serve --model FILE.basalt [--alias NAME] [--host H] [--port P] [--gpu 0,1] [--api-key KEY] ...
-    python -m serve.server --model FILE.basalt --engine-bin bin/basalt ...
+    granite serve --model FILE.basalt [--alias NAME] [--host H] [--port P] [--gpu 0,1] [--api-key KEY] ...
+    python -m serve.server --model FILE.basalt --engine-bin bin/granite ...
     python -m serve.server --config config.json          (each entry of its "models" is one model)
     python -m serve.server --mock-engine --port 8080
 
@@ -132,7 +132,7 @@ def check_model(a, file_engine: list[str], cli_engine: list[str], used_argv: lis
     except ValueError:
         fail(f"--gpu {gpu_text(a.gpu)}: expected numbers like 0 or 0,1, or auto")
     if not a.mock_engine and not (a.model and a.engine_bin):
-        fail("the server needs --model and the engine binary: run it as basalt serve --config FILE (or --mock-engine)")
+        fail("the server needs --model and the engine binary: run it as granite serve --config FILE (or --mock-engine)")
     if (file_engine or cli_engine) and not a.model:
         fail("engine flags need --model")
     pack = bool(a.model) and not (a.mock_engine and a.config)   # the scripted engine of a config file reads no model files

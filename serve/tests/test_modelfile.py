@@ -28,7 +28,7 @@ class Tmp(unittest.TestCase):
         patch = mock.patch.object(modelfile, "cache_root", lambda: self.dir / "cache")
         patch.start()
         self.addCleanup(patch.stop)
-        self.engine_bin = self.dir / "bin" / "basalt"
+        self.engine_bin = self.dir / "bin" / "granite"
         self.engine_bin.parent.mkdir()
         self.engine_bin.write_text("")
 
@@ -105,7 +105,7 @@ class Peer(Tmp):
 
     def test_vision_tells_the_engine(self):
         path = self.build(vision=True)
-        (self.engine_bin.parent / "basalt-vision").write_text("")
+        (self.engine_bin.parent / "granite-vision").write_text("")
         cfg = modelfile.model_config(modelfile.ModelSpec(path, vision=True), str(self.engine_bin))
         self.assertIn("vision", cfg)
         self.assertIn("--vision-external", cfg["args"])     # the sidecar's embeddings; the engine encodes nothing
@@ -136,7 +136,7 @@ class Peer(Tmp):
 class Vision(Tmp):
     def test_sidecar_beside_the_engine_bin_opens_the_model_file(self):
         path = self.build(vision=True)
-        side = self.engine_bin.parent / "basalt-vision"
+        side = self.engine_bin.parent / "granite-vision"
         side.write_text("")
         v = modelfile.model_config(modelfile.ModelSpec(path, vision=True), str(self.engine_bin))["vision"]
         self.assertEqual(v["vision_bin"], str(side.resolve()))
@@ -145,16 +145,16 @@ class Vision(Tmp):
 
     def test_sidecar_takes_the_engine_bins_suffix(self):
         path = self.build(vision=True)
-        exe = self.engine_bin.with_name("basalt.exe")
+        exe = self.engine_bin.with_name("granite.exe")
         exe.write_text("")
-        side = self.engine_bin.parent / "basalt-vision.exe"
+        side = self.engine_bin.parent / "granite-vision.exe"
         side.write_text("")
         v = modelfile.model_config(modelfile.ModelSpec(path, vision="cpu"), str(exe))["vision"]
         self.assertEqual(v["vision_bin"], str(side.resolve()))
 
     def test_off_by_default(self):
         path = self.build(vision=True)
-        (self.engine_bin.parent / "basalt-vision").write_text("")
+        (self.engine_bin.parent / "granite-vision").write_text("")
         cfg = modelfile.model_config(modelfile.ModelSpec(path), str(self.engine_bin))
         self.assertNotIn("vision", cfg)
         self.assertNotIn("--vision", cfg["args"])
@@ -162,32 +162,32 @@ class Vision(Tmp):
 
     def test_gpu_or_cpu_encoder(self):
         path = self.build(vision=True)
-        (self.engine_bin.parent / "basalt-vision").write_text("")
+        (self.engine_bin.parent / "granite-vision").write_text("")
         self.assertTrue(modelfile.model_config(modelfile.ModelSpec(path, vision="1"), str(self.engine_bin))["vision"]["gpu"])
         self.assertFalse(modelfile.model_config(modelfile.ModelSpec(path, vision="cpu"), str(self.engine_bin))["vision"]["gpu"])
 
     def test_modes_name_the_encoder(self):
         path = self.build(vision=True)
-        (self.engine_bin.parent / "basalt-vision").write_text("")
+        (self.engine_bin.parent / "granite-vision").write_text("")
         for mode, name in (("1", "1"), ("0", "0"), ("cpu", "cpu"), ("dynamic", "dynamic")):
             self.assertEqual(modelfile.model_config(modelfile.ModelSpec(path, vision=mode), str(self.engine_bin))["vision"]["mode"], name)
 
     def test_dynamic_has_the_engine_open_the_projector_and_needs_no_sidecar(self):
-        path = self.build(vision=True)                      # no basalt-vision next to the engine
+        path = self.build(vision=True)                      # no granite-vision next to the engine
         cfg = modelfile.model_config(modelfile.ModelSpec(path, vision="dynamic"), str(self.engine_bin))
         self.assertEqual(cfg["args"], ["--model", path, "--vision"])
         self.assertNotIn("--vision", modelfile.model_config(modelfile.ModelSpec(path), str(self.engine_bin))["args"])
-        with self.assertRaisesRegex(ValueError, "basalt-vision"):
+        with self.assertRaisesRegex(ValueError, "granite-vision"):
             modelfile.model_config(modelfile.ModelSpec(path, vision="1"), str(self.engine_bin))
 
     def test_error_when_the_sidecar_is_missing(self):
         path = self.build(vision=True)
-        with self.assertRaisesRegex(ValueError, "basalt-vision"):
+        with self.assertRaisesRegex(ValueError, "granite-vision"):
             modelfile.model_config(modelfile.ModelSpec(path, vision="1"), str(self.engine_bin))
 
     def test_error_when_the_model_has_no_projector(self):
         path = self.build(vision=False)
-        (self.engine_bin.parent / "basalt-vision").write_text("")
+        (self.engine_bin.parent / "granite-vision").write_text("")
         with self.assertRaisesRegex(ValueError, "projector"):
             modelfile.model_config(modelfile.ModelSpec(path, vision="cpu"), str(self.engine_bin))
 
@@ -230,11 +230,11 @@ class Cli(Tmp):
         with mock.patch("serve.server.gpu_card_name", return_value="GeForce RTX 4090"), mock.patch("sys.stderr", err):
             e = self.run_main("--model", path, "--engine-bin", str(self.engine_bin), "--gpu", "0", "--vision", "1")
         self.assertEqual(getattr(e, "code", None), 2)
-        self.assertIn("basalt-vision", err.getvalue())
+        self.assertIn("granite-vision", err.getvalue())
 
     def test_vision_numbered_card_needs_only_to_exist(self):
         path = self.build(vision=True)
-        (self.engine_bin.parent / "basalt-vision").write_text("")
+        (self.engine_bin.parent / "granite-vision").write_text("")
         base = ["--model", path, "--engine-bin", str(self.engine_bin), "--gpu", "0"]
 
         def plan(engine_bin, path, value, words):        # the engine's own choice for --gpu 0

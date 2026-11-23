@@ -41,7 +41,7 @@ int serve_subcommand(int argc, char** argv) {
         else extra.push_back(a);
     }
     if (extra.empty()) {
-        basalt::log::error("basalt", "usage: basalt serve --config FILE | MODEL.basalt [--python PY] [server args...]");
+        basalt::log::error("basalt", "usage: granite serve --config FILE | MODEL.basalt [--python PY] [server args...]");
         return 2;
     }
     const std::string exe = basalt::platform::module_path();

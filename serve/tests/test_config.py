@@ -202,7 +202,7 @@ class ConfigFile(unittest.TestCase):
                          ({"models": [{"model": "b", "slot-full-context": 1}]}, "true or false"),
                          ({"models": [entry], "server": {"nope": 1}}, "not a server option"),
                          ({"models": [entry], "server": {"spec": 7}}, "not a server option \\(engine flags go under"),
-                         ({"models": [entry], "server": {"engine-bin": "/x/basalt"}}, "engine-bin is set by basalt serve"),
+                         ({"models": [entry], "server": {"engine-bin": "/x/basalt"}}, "engine-bin is set by granite serve"),
                          ({"models": [entry], "server": {"parallel": 2}}, "a model setting"),
                          ({"models": [entry], "server": {"model": "m"}}, "a model setting"),
                          ({"models": [entry], "server": {"port": [1]}}, "one value"),
@@ -571,9 +571,9 @@ class EveryOption(unittest.TestCase):
             check_engine_flags(file_words, known, "config")
 
     def test_the_built_engine_accepts_every_flag(self):
-        engine_bin = ROOT / "bin/basalt"
+        engine_bin = ROOT / "bin/granite"
         if not engine_bin.exists():
-            self.skipTest("no built bin/basalt")
+            self.skipTest("no built bin/granite")
         missing = set(engine_parser_flags()) - (engine_flags_of(str(engine_bin)) or set())
         self.assertEqual(missing, set())
 

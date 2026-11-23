@@ -98,12 +98,12 @@ int main(int argc, char** argv) {
         const fs::path top = fs::path(dir) / "engine_session_test_install";
         fs::remove_all(top);
         fs::create_directories(top / "bin");
-        const std::string bench = (top / "bin" / "basalt-bench.exe").string(), built = "/build/bin/basalt";
+        const std::string bench = (top / "bin" / "granite-bench.exe").string(), built = "/build/bin/granite";
         check(basalt::program::default_engine(bench, built) == built, "no engine beside the program: the build's");
-        std::ofstream((top / "bin" / "basalt.exe").string()) << "x";
-        fs::permissions(top / "bin" / "basalt.exe", fs::perms::owner_all);
+        std::ofstream((top / "bin" / "granite.exe").string()) << "x";
+        fs::permissions(top / "bin" / "granite.exe", fs::perms::owner_all);
         const std::string got = basalt::program::default_engine(bench, built);
-        check(got == (top / "bin" / "basalt.exe").string(), "the engine beside the program, with its suffix", got);
+        check(got == (top / "bin" / "granite.exe").string(), "the engine beside the program, with its suffix", got);
         check(basalt::program::default_engine("", built) == built, "a program that cannot name itself: the build's");
         check(basalt::program::default_fixtures(top.string(), "/build/data/bench") == "/build/data/bench",
               "no data/bench in the install: the build's fixtures");

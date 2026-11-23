@@ -23,7 +23,7 @@ import sys
 import time
 from pathlib import Path
 
-ENGINE_BIN = Path(__file__).resolve().parents[1] / "bin" / "basalt"
+ENGINE_BIN = Path(__file__).resolve().parents[1] / "bin" / "granite"
 
 
 def read_base(path: str):
@@ -182,7 +182,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--model", help="the .basalt file")
     ap.add_argument("--engine-bin", default=str(ENGINE_BIN) if ENGINE_BIN.is_file() else None,
-                    help="the engine binary (default: bin/basalt in the repo)")
+                    help="the engine binary (default: bin/granite in the repo)")
     ap.add_argument("--base")
     ap.add_argument("--out")
     ap.add_argument("--chunks", type=int, default=0, help="the first N chunks (0: all)")
