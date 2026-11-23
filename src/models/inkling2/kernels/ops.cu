@@ -1,6 +1,7 @@
 // src/models/inkling2/kernels/ops.cu - Inkling 2's block-residual mixes, loop-controller glue, attention preparation
 // (short convolutions, clips, cache writes), output gate, post-sublayer convolutions, expert plan and sum, and softcap.
 #include "basalt/kernels/pdl.hpp"
+#include "basalt/kernels/prefetch_l2.cuh"
 #include "basalt/models/inkling2/kernels.hpp"
 
 #include <cuda_fp16.h>
@@ -498,7 +499,7 @@ __global__ void __launch_bounds__(32) expert_read_ahead_kernel(const unsigned lo
             const uint64_t i = o / bytes, ro = o - i * bytes;
             const uint64_t take = min(min(o1 - o, bytes - ro), (uint64_t) 32768);
             const char* src = (const char*) blobs[i] + ro;
-            asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;" ::"l"(src), "r"((unsigned) take) : "memory");
+            bk::prefetch_l2(src, take);
             last = src + take - 16;
             o += take;
         }

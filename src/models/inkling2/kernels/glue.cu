@@ -8,6 +8,7 @@
 // window and the ring for the positions before the window, and each row writes its own ring slot: a window of at most
 // kDecodeRows rows touches distinct slots (kDecodeRows + kConv - 1 <= kConvRing).
 #include "basalt/kernels/pdl.hpp"
+#include "basalt/kernels/prefetch_l2.cuh"
 #include "basalt/kernels/q8_1_finite.hpp"
 #include "basalt/models/inkling2/kernels.hpp"
 #include "prep.cuh"
@@ -208,9 +209,9 @@ using prep::conv_in;
 
 // Block (row, output q): the mix scored by query q (or the last state), then its norm into q8_1, or the mix as it is.
 // The older key/value cells of a visit's attention into L2 (MixNorm's kv_*), by a block of its own after the rows' that
-// exits before the wait (so the rows' blocks reach their wait at once): its threads request 32 KiB pieces of the one or
-// two runs (the ring may wrap) of the keys and of the values. Up to kKvAheadCells positions: a longer run does
-// not stay in L2 through the projections and is read twice.
+// exits before the wait (so the rows' blocks reach their wait at once): its threads request the 128-byte lines of the one
+// or two runs (the ring may wrap) of the keys and of the values. Up to kKvAheadCells positions: a longer run does not stay
+// in L2 through the projections and is read twice.
 constexpr int kKvAheadCells = 256;
 __device__ __forceinline__ void kv_read_ahead(const MixNorm& a) {
     const int p0 = a.kv_pos[0];
@@ -220,8 +221,7 @@ __device__ __forceinline__ void kv_read_ahead(const MixNorm& a) {
         if (pj >= 0) {
             const int w = which == 2 ? kWidth : kKvHeads * kHeadDim;
             const float* ring = which == 0 ? a.ring_k : which == 1 ? a.ring_v : a.ring_a;
-            asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;" ::"l"(ring + (size_t) (pj % kConvRing) * w), "r"((unsigned) (w * 4))
-                         : "memory");
+            bk::prefetch_l2(ring + (size_t) (pj % kConvRing) * w, (uint64_t) w * 4);
         }
     }
     const int lo = a.kv_window > 0 ? max(0, p0 - a.kv_window + 1) : 0;
@@ -229,15 +229,14 @@ __device__ __forceinline__ void kv_read_ahead(const MixNorm& a) {
     if (n <= 0 || n > kKvAheadCells) return;
     const int64_t c0 = lo % a.kv_cap, run1 = min((int64_t) n, a.kv_cap - c0), run2 = n - run1;
     const uint64_t b1 = (uint64_t) run1 * a.kv_cell, b2 = (uint64_t) run2 * a.kv_cell;
-    constexpr uint64_t kPiece = 32768;
+    constexpr uint64_t kPiece = 128;
     const uint64_t n1 = (b1 + kPiece - 1) / kPiece, n2 = (b2 + kPiece - 1) / kPiece;
     for (uint64_t j = threadIdx.x; j < 2 * (n1 + n2); j += blockDim.x) {
         const char* base = (const char*) (j < n1 + n2 ? a.kv_k : a.kv_v);
         const uint64_t i = j % (n1 + n2);
         const uint64_t start = i < n1 ? (uint64_t) c0 * a.kv_cell + i * kPiece : (i - n1) * kPiece;
         const uint64_t end = i < n1 ? (uint64_t) c0 * a.kv_cell + b1 : b2;
-        const uint64_t take = min(kPiece, end - start);
-        asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;" ::"l"(base + start), "r"((unsigned) take) : "memory");
+        bk::prefetch_l2(base + start, min(kPiece, end - start));
     }
 }
 
@@ -585,8 +584,7 @@ __global__ void __launch_bounds__(256) moe_finish_kernel(MoeFinish a) {
     if (threadIdx.x < kConv - 1) {   // the block's ring entries of the three positions before this row into L2
         const int pj = a.pos[r] - 1 - (int) threadIdx.x;
         if (pj >= 0)
-            asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;" ::"l"(ring + (size_t) (pj % kConvRing) * kWidth + blockIdx.y * 256),
-                         "r"(256u * 4u) : "memory");
+            bk::prefetch_l2(ring + (size_t) (pj % kConvRing) * kWidth + blockIdx.y * 256, 256 * 4);
     }
     bk::pdl_wait();
     bk::pdl_launch_dependents();
