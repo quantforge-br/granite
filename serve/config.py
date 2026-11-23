@@ -20,7 +20,7 @@ MIN_SLOT_CONTEXT = 256          # the least context a slot is given when --max-c
 CONFIG_VERSION = 2                          # the config file's "version"; a file without one is this format's first
 PARALLEL_MAX = 8                            # the engine's batch slots
 CONFIG_PATHS = ("model", "tokenizer", "image-dir")       # relative to the config file
-ENGINE_PATHS = ("drafter",)                               # engine flags that name a file: relative to the config file too
+ENGINE_PATHS = ("drafter", "mmproj")                     # engine flags that name a file: relative to the config file too
 # a model entry's own, and what it may also inherit from the top-level "engine"; other server options are the server's
 ENTRY_OPTIONS = frozenset({"model", "alias"})
 MODEL_OPTIONS = frozenset({

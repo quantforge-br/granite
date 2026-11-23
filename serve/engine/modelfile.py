@@ -132,8 +132,8 @@ class ModelSpec:
 
 def model_config(spec: ModelSpec, engine_bin: str) -> dict:
     """The engine settings a model implies; its `engine_words` follow its arguments as given (the engine's parser lets
-    a later flag win), its `vision` adds the sidecar or, "dynamic", the in-engine encoder (ValueError if it cannot be
-    set up)."""
+    a later flag win), its `vision` adds the sidecar or, "dynamic", the in-engine encoder, which reads the model file's
+    projector or the --mmproj file (ValueError if it cannot be set up)."""
     path, vision = spec.path, spec.vision
     inputs = read_inputs(path)
     meta = inputs.meta
@@ -150,8 +150,8 @@ def model_config(spec: ModelSpec, engine_bin: str) -> dict:
     if vision and dialect_for(cfg["arch"]).in_engine_vision:
         if vision != "dynamic":
             raise ValueError(f"this model's images are encoded in the engine: --vision dynamic, not {vision}")
-        if not inputs.projector:
-            raise ValueError("this model file has no vision projector (vision/mmproj); drop --vision")
+        if not inputs.projector and flag_value(words, "--mmproj") is None:
+            raise ValueError("this model file has no vision projector (vision/mmproj): --mmproj FILE gives one, or drop --vision")
         args.append("--vision")
         cfg["vision"] = {"mode": "dynamic", "gpu": True}
         return cfg

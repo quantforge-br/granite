@@ -133,7 +133,8 @@ Output is exactly plain decoding's.
 
 | Setting | Where | Type, values | Default | What it does |
 | --- | --- | --- | --- | --- |
-| `vision` | entry | `off`, `dynamic` | `off` | Image input, encoded inside the engine on the main card. Needs a model file with a vision projector. 32 MiB and 64 megapixels per image. [running](../running.md#vision---vision) |
+| `vision` | entry | `off`, `dynamic` | `off` | Image input, encoded inside the engine on the main card. Needs a vision projector: the model file's or `mmproj`. 32 MiB and 64 megapixels per image. [running](../running.md#vision---vision) |
+| `mmproj` | engine | path | the model file's projector | The vision projector GGUF from this file instead, as llama.cpp's releases of the model ship it. Relative to the config file. [GGUF](../models/inkling2.md#gguf) |
 | `image-url-host` | server | `HOST` or `HOST:PORT`, repeatable | none | Allow `http(s)` image URLs on this host from other machines. [image sources](image-sources.md) |
 | `image-dir` | server | directory, repeatable | none | Allow image files under this directory from other machines. [image sources](image-sources.md) |
 | `image-remote-only` | server | switch | off | Treat this machine's requests as remote too. [image sources](image-sources.md) |

@@ -136,7 +136,8 @@ the queued one).
 ## Vision: `--vision`
 
 `--vision off | dynamic` (config: `"vision"` in a model entry). Inkling 2 Mini's own encoder runs inside the engine on the main
-card and reads the projector in place from the model file's `vision/mmproj` section; the server refuses the other modes. It keeps
+card and reads the projector in place from the model file's `vision/mmproj` section, or from `--mmproj FILE` (config:
+`"mmproj"`, for a GGUF model, which has none); the server refuses the other modes. It keeps
 no card memory at rest: a request's pictures borrow the encoder's region from the experts and give it back
 ([Inkling 2 Mini](models/inkling2.md#images)).
 

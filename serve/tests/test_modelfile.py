@@ -154,8 +154,15 @@ class Gguf(Tmp):
         cut.write_bytes(Path(self.build_gguf()).read_bytes()[:60])
         with self.assertRaisesRegex(ValueError, "cut.gguf"):
             modelfile.model_config(modelfile.ModelSpec(str(cut)), str(self.engine_bin))
-        with self.assertRaisesRegex(ValueError, "projector"):
+        with self.assertRaisesRegex(ValueError, "--mmproj FILE gives one"):
             modelfile.model_config(modelfile.ModelSpec(self.build_gguf(), vision="dynamic"), str(self.engine_bin))
+
+    def test_the_projector_from_mmproj(self):
+        path = self.build_gguf()
+        spec = modelfile.ModelSpec(path, vision="dynamic", engine_words=("--mmproj", "/m/mmproj-BF16.gguf"))
+        cfg = modelfile.model_config(spec, str(self.engine_bin))
+        self.assertEqual(cfg["args"][-3:], ["--mmproj", "/m/mmproj-BF16.gguf", "--vision"])
+        self.assertEqual(cfg["vision"]["mode"], "dynamic")
 
 
 class Peer(Tmp):

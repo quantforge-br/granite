@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from serve.config import (  # noqa: E402
     CONFIG_VERSION,
+    ENGINE_PATHS,
     ENGINE_VALUE_FORMS,
     ENTRY_OPTIONS,
     MODEL_OPTIONS,
@@ -102,14 +103,14 @@ class ConfigFile(unittest.TestCase):
 
     def test_paths_are_relative_to_the_file(self):
         p = conf({"server": {"tokenizer": "tok"}, "engine": {"drafter": "d/a.gguf"},
-                  "models": [{"model": "m/x.granite", "drafter": "/abs/b.gguf"}]})
+                  "models": [{"model": "m/x.granite", "drafter": "/abs/b.gguf", "mmproj": "~/p.gguf"}]})
         cfg = load_config_file(p, build_parser())
         here = Path(p).resolve().parent
         self.assertEqual(cfg.server_argv, ["--tokenizer", str(here / "tok")])
         self.assertEqual(cfg.models[0].argv, ["--model", str(here / "m" / "x.granite")])
         self.assertEqual(cfg.models[0].path, str(here / "m" / "x.granite"))
         self.assertEqual(cfg.models[0].shared_words, ["--drafter", str(here / "d" / "a.gguf")])
-        self.assertEqual(cfg.models[0].own_words, ["--drafter", "/abs/b.gguf"])
+        self.assertEqual(cfg.models[0].own_words, ["--drafter", "/abs/b.gguf", "--mmproj", str(Path.home() / "p.gguf")])
 
     def test_the_exact_shape(self):
         p = conf({"engine": {"conversation-cache-disk-mib": 32768, "idle-sleep": 300, "pool-workers": 8, "vram-reserve-mib": 500},
@@ -569,7 +570,11 @@ class EveryOption(unittest.TestCase):
             _, _, file_words, _ = parse([], {"engine": {flag: cfgv}})
             self.assertEqual(cli_words[:1], [flag], flag)
             self.assertEqual(cli_words[1:], ["5"] * takes_value, flag)
-            self.assertEqual(file_words, [flag, "5"] if takes_value else [flag], flag)
+            if flag[2:] in ENGINE_PATHS:                   # a file it names is relative to the config file
+                self.assertEqual(file_words[0], flag, flag)
+                self.assertTrue(Path(file_words[1]).is_absolute() and Path(file_words[1]).name == "5", flag)
+            else:
+                self.assertEqual(file_words, [flag, "5"] if takes_value else [flag], flag)
             check_engine_flags(cli_words, known, "cli")
             check_engine_flags(file_words, known, "config")
 
