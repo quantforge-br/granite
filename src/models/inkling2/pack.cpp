@@ -40,6 +40,7 @@ int uniform(const Json* j) {
 
 constexpr int kTypeF32 = 0;
 constexpr int kTypeQ8_0 = 8;
+constexpr int kTypeQ6_K = 14;
 constexpr int kTypeBF16 = 30;
 constexpr int kTypeNvfp4 = 40;
 constexpr uint64_t kTail = 16;   // an NVFP4 expert's {s_gate, s_up, s_down, 0}
@@ -453,13 +454,17 @@ bool Pack::source(const std::string& name, Form form, uint64_t values, int file,
     const bool f32 = t->type == kTypeF32 && t->bytes == values * 4;
     const bool bf16 = t->type == kTypeBF16 && t->bytes == values * 2;
     const bool q8 = t->type == kTypeQ8_0 && values % 32 == 0 && t->bytes == values / 32 * 34;
+    const bool q6k = t->type == kTypeQ6_K && values % 256 == 0 && t->bytes == values / 256 * 210;
     core::Conv conv = core::Conv::Copy;
     bool ok = false;
     const char* want = "";
     switch (form) {
         case Form::F32: ok = f32, want = "F32"; break;
         case Form::Bf16: ok = bf16 || f32, want = "BF16 or F32"; conv = f32 ? core::Conv::Bf16High : conv; break;
-        case Form::Q8_0: ok = q8 || bf16, want = "Q8_0 or BF16"; conv = bf16 ? core::Conv::Bf16ToQ8_0 : conv; break;
+        case Form::Q8_0:
+            ok = q8 || bf16 || q6k || (f32 && values % 32 == 0), want = "Q8_0, BF16, Q6_K or F32";
+            conv = bf16 ? core::Conv::Bf16ToQ8_0 : q6k ? core::Conv::Q6KToQ8_0 : f32 ? core::Conv::F32ToQ8_0 : conv;
+            break;
     }
     if (!ok) {
         err = name + " is " + type_name(t->type) + " of " + std::to_string(t->bytes) + " bytes, not " + want + " of " +

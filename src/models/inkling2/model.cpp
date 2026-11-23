@@ -29,6 +29,7 @@ constexpr uint64_t kGiB = 1ull << 30;
 constexpr uint64_t kMiB = 1ull << 20;
 constexpr int kTypeF32 = 0;
 constexpr int kTypeQ8_0 = 8;
+constexpr int kTypeQ6_K = 14;
 constexpr int kTypeBF16 = 30;
 constexpr int kTypeNvfp4 = 40;
 constexpr uint64_t kQ8Row = (uint64_t) kWidth / 32 * 34;   // bytes of a Q8_0 row of the hidden width
@@ -212,23 +213,30 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
     };
     const uint64_t n_embd = (uint64_t) g.n_embd, n_vocab = (uint64_t) g.n_vocab;
 
-    // the token embedding: BF16 or Q8_0 rows in mapped host memory, gathered by the card
+    // the token embedding: BF16 or Q8_0 rows in mapped host memory, gathered by the card (Q6_K rows rounded to Q8_0 as
+    // they load)
     {
         const TensorRef* t = pack_.find("token_embd.weight");
-        if (!t || !((t->type == kTypeBF16 && t->bytes == n_vocab * n_embd * 2) || (t->type == kTypeQ8_0 && t->bytes == n_vocab * kQ8Row)))
-            return fail(t ? "token_embd.weight is " + std::string(ggml_type_name((uint32_t) t->type)) + ", not BF16 or Q8_0 [n_embd][n_vocab]"
+        const bool q6k = t && t->type == kTypeQ6_K && t->bytes == n_vocab * n_embd / 256 * 210;
+        if (!t || !((t->type == kTypeBF16 && t->bytes == n_vocab * n_embd * 2) || (t->type == kTypeQ8_0 && t->bytes == n_vocab * kQ8Row) || q6k))
+            return fail(t ? "token_embd.weight is " + std::string(ggml_type_name((uint32_t) t->type)) + ", not BF16, Q8_0 or Q6_K [n_embd][n_vocab]"
                           : "token_embd.weight is missing");
-        embd_type_ = t->type;
-        embd_row_ = (size_t) (t->bytes / n_vocab);
-        if (cudaHostAlloc((void**) &embd_host_, t->bytes, cudaHostAllocMapped | cudaHostAllocPortable) != cudaSuccess)
+        core::LoadItem it;
+        if (q6k) {
+            if (!pack_.source("token_embd.weight", Form::Q8_0, n_vocab * n_embd, file, it, err)) return fail(err);
+        } else {
+            t->source(file, it);
+        }
+        embd_type_ = q6k ? kTypeQ8_0 : t->type;
+        const uint64_t bytes = q6k ? n_vocab * kQ8Row : t->bytes;
+        embd_row_ = (size_t) (bytes / n_vocab);
+        if (cudaHostAlloc((void**) &embd_host_, bytes, cudaHostAllocMapped | cudaHostAllocPortable) != cudaSuccess)
             return fail("cannot pin the token embedding's host memory");
         if (cudaHostGetDevicePointer((void**) &embd_dev_, embd_host_, 0) != cudaSuccess) return fail("cannot map the token embedding");
-        core::LoadItem it;
-        t->source(file, it);
         it.host = embd_host_;
         reads.add(it);
     }
-    // the head in Q8_0: the file's, or its BF16 rows rounded as they load
+    // the head in Q8_0: the file's, or its BF16 or Q6_K rows rounded as they load
     {
         core::LoadItem it;
         if (!pack_.source("output.weight", Form::Q8_0, n_vocab * n_embd, file, it, err)) return fail(err);
