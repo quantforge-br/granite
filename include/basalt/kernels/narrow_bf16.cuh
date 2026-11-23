@@ -29,7 +29,7 @@ __device__ __forceinline__ unsigned e4m3x2_bf16x2(unsigned x) {
 }
 
 /// the four bytes of w, each two E2M1 codes (the low nibble the lower half), as bf16x2 times the bf16x2 scale sc (exact:
-/// a code times a UE4M3 scale has at most five significant bits)
+/// a code times a UE4M3 scale has at most six significant bits)
 __device__ __forceinline__ void e2m1x8_bf16x2_scaled(unsigned w, unsigned sc, unsigned (&h)[4]) {
 #pragma unroll
     for (int i = 0; i < 4; ++i) {
