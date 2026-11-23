@@ -841,15 +841,12 @@ endif()
 #     worse opt-out.  `cpu_require_expert_support()` therefore refuses at startup on a CPU without the
 #     features, and the fallback exists for tests.
 # speculation components that need no GPU.
-add_library(spec STATIC src/spec/suffix_drafter.cpp src/spec/controller.cpp src/spec/draft_policy.cpp)
+add_library(spec STATIC src/spec/suffix_drafter.cpp src/spec/draft_policy.cpp)
 target_include_directories(spec PUBLIC include)
 if(BUILD_TESTING)
   add_executable(suffix_drafter_test tests/spec/suffix_drafter_test.cpp)
   target_link_libraries(suffix_drafter_test PRIVATE spec)
   basalt_cpu_test(NAME suffix_drafter_test COMMAND suffix_drafter_test)
-  add_executable(controller_test tests/spec/controller_test.cpp)
-  target_link_libraries(controller_test PRIVATE spec)
-  basalt_cpu_test(NAME controller_test COMMAND controller_test)
   add_executable(draft_policy_test tests/spec/draft_policy_test.cpp)
   target_link_libraries(draft_policy_test PRIVATE spec)
   basalt_cpu_test(NAME draft_policy_test COMMAND draft_policy_test)
