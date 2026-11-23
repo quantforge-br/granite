@@ -1,5 +1,5 @@
 // include/basalt/kernels/route_lossy.hpp - the opt-in routing changes that trade accuracy for fewer missed experts
-// (--route-tail-skip, --route-prior; basalt/model/route_flags.hpp): which experts the GPUs hold.
+// (the router's held-expert prior): which experts the GPUs hold.
 //
 // Both change the output, so a model applies them to its decode windows only.
 #pragma once

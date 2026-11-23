@@ -363,8 +363,6 @@ int run_session_model(basalt::program::CommonOptions& o, const basalt::model::Mo
         lreq.vram_reserve_mib = o.vram_reserve_given ? o.vram_reserve_mib : 0;
         lreq.spec = o.spec;
         lreq.kv = o.kv;
-        lreq.rope = o.rope;
-        lreq.route = o.route;
         lreq.diag_tp_check = o.diag_tp_check;
         const basalt::model::Result r = adapter->start(lreq, started);
         if (!r.ok() || started.sessions.empty()) return fatal_start_error(r.message);

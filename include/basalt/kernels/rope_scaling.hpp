@@ -21,8 +21,8 @@
 // over the same pair index there too (as ggml's rope_multi and transformers' Qwen3.5 rotary do).
 //
 // FIXED FOR A RUN.  The K in a cache is stored POST-RoPE, so one cache must never mix two scalings:
-// a model resolves its scaling once at start (basalt/model/rope_flags.hpp) and every rotation of
-// the run reads that one configuration.
+// a model resolves its scaling once at start and every rotation of the run reads that one
+// configuration.
 #pragma once
 
 #include <cmath>

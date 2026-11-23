@@ -62,7 +62,6 @@ public:
         if (o.conversation_cache_disk_mib > 0) {
             const auto t0 = Clock::now();
             std::string text = "basalt conversation state " + model_.desc().arch + " vision_in_engine " + (o.vision_in_engine ? "1" : "0");
-            if (const std::string rope = basalt::model::rope_flag_words(o.rope); !rope.empty()) text += " " + rope;
             const uint64_t identity = basalt::core::conversation_store_hash_file(
                 o.model, basalt::core::conversation_store_hash(text.data(), text.size(), 1));
             std::string de;

@@ -7,8 +7,6 @@
 #include <vector>
 
 #include "basalt/kernels/cpu/pool.hpp"
-#include "basalt/model/rope_flags.hpp"
-#include "basalt/model/route_flags.hpp"
 #include "basalt/platform/memory.hpp"
 
 namespace basalt::program {
@@ -36,10 +34,6 @@ struct CommonOptions {
     /// every card after the main one, the first one peer_device
     std::vector<int> peer_devices;
     std::string kv;               ///< --kv: the KV storage, as each model names it (empty: the model's default)
-    /// --rope-scaling, --rope-scale, --yarn-* ...: taken by the models that extend their context (basalt/model/rope_flags.hpp)
-    basalt::model::RopeFlags rope;
-    /// --route-tail-skip, --route-prior: taken by the mixture-of-experts models (basalt/model/route_flags.hpp)
-    basalt::model::RouteFlags route;
     /// The engine's expert profile for the model (--expert-profile, else data/profiles/<key>.prof, cli::profile_key),
     /// or the --expert-profile-save file a start places from; empty means none.  A profile decides residency by routing
     /// frequency instead of by first use.

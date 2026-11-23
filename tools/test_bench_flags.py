@@ -45,7 +45,7 @@ class BenchFlags(unittest.TestCase):
         # Every flag the help lists is one the engine parser accepts; an empty or cut-short list would make the
         # per-flag test vacuous.
         flags = engine_flags()
-        sources = [ROOT / "src/program/cli/arguments.cpp", ROOT / "src/model/rope_flags.cpp",
+        sources = [ROOT / "src/program/cli/arguments.cpp",
                    *sorted((ROOT / "src/models").glob("*/flags.cpp")),
                    *sorted((ROOT / "src/models").glob("*/adapter.cpp")),
                    *sorted((ROOT / "src/models").glob("*/dspark.cpp"))]
