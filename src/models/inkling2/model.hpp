@@ -26,6 +26,9 @@ constexpr int kStreams = 4;
 struct LayerWeights {
     uint8_t* proj = nullptr;                 ///< Q8_0 [kProj][n_embd]: q, r, gate, sink, k, k taps, v, v taps
     uint8_t* out = nullptr;                  ///< Q8_0 [n_embd][3072]
+    /// tensor parallelism: Q8_0 [n_embd][3072 / cards()], the input columns of the card's decode heads (its key/value
+    /// groups'), copied from `out` once it has landed (attach)
+    uint8_t* out_part = nullptr;
     const float* attn_norm = nullptr;        ///< sliding-window layers
     const float* q_norm = nullptr, *k_norm = nullptr, *v_norm = nullptr;   ///< full layers
     const float* q_clip = nullptr, *r_clip = nullptr, *rel_table = nullptr;

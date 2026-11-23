@@ -355,13 +355,13 @@ __global__ void __launch_bounds__(kThreads, 2) attn_split_kernel(AttnArgs a, int
 }
 
 // A block per (row, head), a thread a channel: the row's slices merged with the sink, gated, written in fp32 and/or as
-// q8_1 (a warp a block of 32 channels; also into the other card's, then counted as sent).
+// q8_1 (a warp a block of 32 channels, the range's heads' blocks only).
 __global__ void __launch_bounds__(kHeadDim) attn_combine_kernel(AttnArgs a, int z, const float* __restrict__ part_ml,
                                                                 const float* __restrict__ part_acc, float* __restrict__ out) {
     bk::pdl_wait();
     bk::pdl_launch_dependents();
     const int r = blockIdx.x, h = a.g0 * kGroup + blockIdx.y, d = threadIdx.x;
-    if (a.sent && blockIdx.x == 0 && blockIdx.y == 0 && d == 0) *a.sent += 1;   // read by attn_exchange, the kernel after
+    if (a.sent && blockIdx.x == 0 && blockIdx.y == 0 && d == 0) *a.sent += 1;   // read after the output projection
     int p, lo, n;
     row_keys(a, r, p, lo, n);
     const int span = span_of(n), splits = (n + span - 1) / span;
@@ -383,17 +383,10 @@ __global__ void __launch_bounds__(kHeadDim) attn_combine_kernel(AttnArgs a, int 
         const float amax = warp_max(fabsf(o));
         const float sum = warp_sum(o);
         const float dq = bk::q8_1_finite(amax / 127.0f);
-        const size_t at = (size_t) r * (kHeads * kHeadDim / 32) + c / 32;
-        const auto q = bk::q8_1_quant(o, dq, amax);
-        const auto ds = bk::q8_1_ds(dq, sum);
-        Q81& b = reinterpret_cast<Q81*>(a.q8)[at];
-        b.qs[c % 32] = q;
-        if ((c & 31) == 0) b.ds = ds;
-        if (a.q8_peer) {
-            Q81& pb = reinterpret_cast<Q81*>(a.q8_peer)[at];
-            pb.qs[c % 32] = q;
-            if ((c & 31) == 0) pb.ds = ds;
-        }
+        const int rc = c - a.g0 * kGroup * kHeadDim;   // the channel in the range's heads
+        Q81& b = reinterpret_cast<Q81*>(a.q8)[(size_t) r * (kGroup * a.ng * kHeadDim / 32) + rc / 32];
+        b.qs[rc % 32] = bk::q8_1_quant(o, dq, amax);
+        if ((rc & 31) == 0) b.ds = bk::q8_1_ds(dq, sum);
     }
 }
 

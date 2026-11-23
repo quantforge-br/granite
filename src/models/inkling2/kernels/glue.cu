@@ -726,16 +726,6 @@ __global__ void __launch_bounds__(kThreads) post_attn_kernel(PostAttn a) {
 
 // ---- experts -----------------------------------------------------------------------------------------------------------
 
-// One thread: this card's count of the attention's exchange to the other card, then the wait for the other's.
-__global__ void attn_exchange_kernel(Exchange x) {
-    bk::pdl_wait();
-    bk::pdl_launch_dependents();
-    if (threadIdx.x != 0) return;
-    const uint32_t want = *x.sent;
-    st_release_sys(x.peer_box, want);
-    exchange_wait(x, want);
-}
-
 // Block (row, 256 channels), a thread a channel: the experts' weighted sums of this row and the rows before it in the
 // window that its convolution reads, the ring for the positions before the window, plus the residual; the ring takes this
 // row's sum.
@@ -849,12 +839,6 @@ void post_attn(const PostAttn& a, int rows, void* stream) {
         throw std::runtime_error("inkling2 post_attn: the exchange's words");
     bk::launch_pdl(post_attn_kernel, dim3((unsigned) rows), dim3(kThreads), 0, (cudaStream_t) stream, a);
     check("post_attn");
-}
-
-void attn_exchange(const Exchange& x, void* stream) {
-    if (!x.sent || !x.box || !x.peer_box || !x.abort) throw std::runtime_error("inkling2 attn_exchange: words");
-    bk::launch_pdl(attn_exchange_kernel, dim3(1), dim3(32), 0, (cudaStream_t) stream, x);
-    check("attn_exchange");
 }
 
 void moe_finish(const MoeFinish& a, int rows, void* stream) {

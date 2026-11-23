@@ -94,6 +94,7 @@ struct Scratch {
     int32_t *io_d_ = nullptr, *tok_d_ = nullptr, *pos_d_ = nullptr;   // a call's tokens, then its positions
     float* part_ = nullptr;                     // tensor parallelism: the card's experts' sum [rows][E]
     float* recv_[2] = {};                       // and the other card's, by the exchange's parity
+    float* o_recv_ = nullptr;                   // and the other card's heads' output projection [rows][E]
     uint32_t* xch_ = nullptr;                   // and the exchange's words: [0] the sums sent, [1] the box (Exchange)
     float* hlog_ = nullptr;                     // and the card's head rows of a window, [rows][its rows] (split_head)
     static constexpr int kGuessExperts = 8;     // the experts a window's guess requests a visit (rows x kGuessExperts / rows)
@@ -201,6 +202,7 @@ struct Shared {
         if (m.cards() > 1) {
             x.part_ = f(R * E);
             for (float*& p : x.recv_) p = f(R * E);
+            x.o_recv_ = f(R * E);
             x.xch_ = (uint32_t*) alloc(2 * 4);   // the counts start at 0, as the controllers' counters
             if (ok && (cudaMemset(x.xch_, 0, 2 * 4) != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess)) ok = false;
             x.hlog_ = f(R * (g.n_vocab - m.head_first(first ? 0 : 1)));
@@ -1033,15 +1035,21 @@ private:
         aa.q8 = x.xo_;
         ap.g0 = aa.g0 = g0;
         ap.ng = aa.ng = ng;
-        if (m_.cards() > 1) {   // the card's heads into the other card's rows too, then each card waits for the other's
-            aa.q8_peer = lane_[1 - card].x->xo_;
-            aa.sent = x.xch_;
-        }
+        if (m_.cards() > 1) aa.sent = x.xch_;   // the output projection below sends the card's share
         const Segments seg = segments(card, v.slot);   // a batch window's: each conversation's caches of this visit
         ap.seg = aa.seg = seg;
         attention_window(ap, aa, rows, c.ring ? (int64_t) g_.window : full_keys, x.att_scr_, k.stream);
-        if (m_.cards() > 1) attn_exchange(exchange_of(card), k.stream);
-        bk::native_q8_0_mmvq(w.out, x.xo_, x.o_, kOutRows, E, rows, k.stream);
+        if (m_.cards() > 1) {   // the card's heads' columns: its sum here and in the other card's rows (post_attn adds them)
+            bk::Q80Segments op;
+            op.n = 1;
+            op.n_out[0] = E;
+            op.x[0] = x.xo_;
+            op.y[0] = x.o_;
+            op.y2[0] = lane_[1 - card].x->o_recv_;
+            bk::native_q8_0_mmvq_segments(w.out_part, op, kOutRows / m_.cards(), rows, k.stream);
+        } else {
+            bk::native_q8_0_mmvq(w.out, x.xo_, x.o_, kOutRows, E, rows, k.stream);
+        }
         // a wider window: the experts this visit took in the window before into L2 on the side stream, while the glue
         // before the experts runs (it starts once the output projection is done)
         if (ahead && !guess) {
@@ -1054,6 +1062,11 @@ private:
         // the attention's convolution and the residual (a block's first layer starts a new sum), then the MLP's input
         PostAttn pa;
         pa.o = x.o_;
+        if (m_.cards() > 1) {   // card 0's heads' sum, then card 1's, on both cards
+            pa.part[card] = x.o_;
+            pa.part[1 - card] = x.o_recv_;
+            pa.xch = exchange_of(card);
+        }
         pa.pos = x.pos_d_;
         pa.taps = w.attn_post_conv;
         pa.ring = c.a_ring;

@@ -457,23 +457,27 @@ void test_attention() {
         std::vector<double> wd(want.begin(), want.end());
         report("  gated", gg, wd, 1e-6);
         check_q8("  gated, its q8_1 blocks", gq.q8, gg, R, kHeads * kHeadDim);
-        // tensor parallelism: each half of the key/value groups alone, its heads' blocks into both cards' rows
+        // tensor parallelism: each half of the key/value groups alone, its heads' blocks as rows of their own
         {
-            const size_t q8b = (size_t) R * kHeads * kHeadDim / 32 * 36;
-            uint8_t *qa = zeros<uint8_t>(q8b), *qb = zeros<uint8_t>(q8b);
+            const size_t row = (size_t) kHeads * kHeadDim / 32 * 36, half_row = row / 2, q8b = (size_t) R * half_row;
+            uint8_t* qh[2] = {zeros<uint8_t>(q8b), zeros<uint8_t>(q8b)};
             uint32_t* sent = zeros<uint32_t>(2);
             for (int half = 0; half < 2; ++half) {
                 AttnArgs t = gq;
                 t.g0 = half * kKvHeads / 2;
                 t.ng = kKvHeads / 2;
-                t.q8 = half ? qb : qa;
-                t.q8_peer = half ? qa : qb;
+                t.q8 = qh[half];
                 t.sent = sent + half;
                 attention_decode(t, R, max_keys, scr, nullptr, nullptr);
             }
-            const std::vector<uint8_t> whole = host(static_cast<const uint8_t*>(gq.q8), q8b);
-            same_bits("  halves of the groups, card 0", host(qa, q8b).data(), whole.data(), q8b);
-            same_bits("  halves of the groups, card 1", host(qb, q8b).data(), whole.data(), q8b);
+            const std::vector<uint8_t> whole = host(static_cast<const uint8_t*>(gq.q8), (size_t) R * row);
+            for (int half = 0; half < 2; ++half) {
+                std::vector<uint8_t> want_h(q8b);
+                for (int r = 0; r < R; ++r)
+                    std::memcpy(&want_h[(size_t) r * half_row], &whole[(size_t) r * row + half * half_row], half_row);
+                same_bits(half ? "  halves of the groups, card 1" : "  halves of the groups, card 0", host(qh[half], q8b).data(),
+                          want_h.data(), q8b);
+            }
             const std::vector<uint32_t> n = host(sent, 2);
             const bool counted = n[0] == 1 && n[1] == 1;
             std::printf("%-34s %s\n", "  halves counted as sent", counted ? "ok" : "FAIL");

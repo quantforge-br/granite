@@ -427,8 +427,10 @@ model::Result InklingModel::plan_layers(int card, core::LoadPlan& to, int file, 
             it.dev = w.out;
             it.device = ldev_;
             to.add(it);
+            if (cards() > 1 && !(w.out_part = device_buf(want / cards())))
+                return fail("out of device memory loading layer " + std::to_string(l));
         }
-        if (card == 0) dense += (uint64_t) kProj * kQ8Row + n_embd * (3072 / 32 * 34);
+        if (card == 0) dense += (uint64_t) kProj * kQ8Row + n_embd * (3072 / 32 * 34) * (cards() > 1 ? 3 : 2) / 2;
         auto S = [&](const char* suffix, uint64_t floats) { return small(b + suffix, floats, to, file, err); };
         if (full) {
             if (!(w.q_norm = S("attn_q_inp_norm.weight", n_embd)) || !(w.k_norm = S("attn_k_inp_norm.weight", n_embd)) ||
@@ -755,6 +757,25 @@ void InklingModel::plan_cards(const model::LoadRequest& req) {
 }
 
 model::Result InklingModel::attach(const model::LoadRequest&, std::vector<std::unique_ptr<model::ModelSession>>& sessions) {
+    if (cards() > 1) {   // each card's columns of the output projections, from the rows that have landed
+        const size_t row = 3072 / 32 * 34, part = row / 2;
+        for (int c = 0; c < 2; ++c) {
+            cudaSetDevice(card_device(c));
+            for (const LayerWeights& w : layers_[c])
+                if (cudaMemcpy2D(w.out_part, part, w.out + c * part, row, part, (size_t) geo().n_embd, cudaMemcpyDeviceToDevice) !=
+                    cudaSuccess) {
+                    cudaGetLastError();
+                    cudaSetDevice(device_);
+                    return {model::Status::Error, "inkling2: cannot split the output projections between the cards"};
+                }
+            if (cudaDeviceSynchronize() != cudaSuccess) {
+                cudaGetLastError();
+                cudaSetDevice(device_);
+                return {model::Status::Error, "inkling2: cannot split the output projections between the cards"};
+            }
+        }
+        cudaSetDevice(device_);
+    }
     if (dspark_)   // DSPARK HOOK: the drafter's head folds, once the reads have landed
         if (model::Result r = dspark_->finish(head_[0], embd_dev_, embed_norm_[0], nullptr); !r.ok()) return r;
     for (auto& s : sessions)
