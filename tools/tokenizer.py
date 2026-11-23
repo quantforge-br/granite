@@ -287,6 +287,15 @@ def extract_metadata(md: dict, out_dir) -> dict:
     """`extract` from GGUF tokenizer metadata held in a dict."""
     out = pathlib.Path(out_dir) / "tokenizer"
     out.mkdir(parents=True, exist_ok=True)
+    files = metadata_files(md)
+    for name, data in files.items():
+        (out / name).write_bytes(data)
+    return json.loads(files["tokenizer.json"])
+
+
+def metadata_files(md: dict) -> dict[str, bytes]:
+    """The tokenizer/* files, by name, from GGUF tokenizer metadata held in a dict: what a pack carries and the server
+    reads."""
     tk = Tokenizer.from_metadata(md)
     cfg = {
         "model": "gpt2",
@@ -304,18 +313,17 @@ def extract_metadata(md: dict, out_dir) -> dict:
     else:
         cfg["pre_pattern"] = QWEN35_PATTERN
         cfg["pre_pattern_source"] = "llama.cpp src/llama-vocab.cpp (LLAMA_VOCAB_PRE_TYPE_QWEN35)"
-    (out / "vocab.json").write_text(json.dumps(tk.ids, ensure_ascii=False), encoding="utf-8")
-    (out / "merges.txt").write_text("\n".join("%s %s" % k for k, _ in
-                                              sorted(tk.ranks.items(), key=lambda kv: kv[1])), encoding="utf-8",
-                                    newline="\n")
-    (out / "token_type.json").write_text(json.dumps(tk.token_types), encoding="utf-8")
-    (out / "tokenizer.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=1), encoding="utf-8",
-                                        newline="\n")
+    files = {
+        "vocab.json": json.dumps(tk.ids, ensure_ascii=False).encode("utf-8"),
+        "merges.txt": "\n".join("%s %s" % k for k, _ in sorted(tk.ranks.items(), key=lambda kv: kv[1])).encode("utf-8"),
+        "token_type.json": json.dumps(tk.token_types).encode("utf-8"),
+        "tokenizer.json": json.dumps(cfg, ensure_ascii=False, indent=1).encode("utf-8"),
+    }
     # fine-tunes change the chat template, so the model's own is shipped
     tpl = md.get("tokenizer.chat_template")
     if tpl:
-        (out / "chat_template.jinja").write_text(tpl, encoding="utf-8", newline="\n")
-    return cfg
+        files["chat_template.jinja"] = tpl.encode("utf-8")
+    return files
 
 
 def main() -> int:
