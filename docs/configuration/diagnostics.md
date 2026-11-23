@@ -34,7 +34,7 @@ The one-shot run decodes greedily and prints one `T <id>` line per token.
 |---|---|---|---|
 | `--quality` | bench | 20 chunks | Run the PPL/KLD/top-1 gate through decode. [method](../precision/quality.md) |
 | `--kld-base FILE` | bench | | The llama.cpp KL-divergence base. |
-| `--quality-t N` | bench | 3 | Tokens per verify window in the gate. |
+| `--quality-t N` | bench | 3 | Tokens per verify window in the gate, capped at the model's widest: one for Inkling 2 Mini. |
 | `--ppl-base`, `--ppl-out` | serve | | Base file for `ppl=` requests, and where they write rows. |
 | `ppl=K`, `ppl_t=T` | request keys | | Score chunk K; window width T. |
 
