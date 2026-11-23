@@ -97,7 +97,7 @@ times the slots plus the shared scratch once, so more slots cost only their cach
 ## Models on the driver
 
 The goal is no separate batching paths: every model batches through the shared driver and the shared engine, for
-consistency. Qwen3.8-27B, Inkling 2 Mini, Hy4-flash and DeepSeek-V4.1-Flash are on it; Qwen3.8-Flash-Next moves last.
+consistency. Qwen3.8-27B, Inkling 2 Mini, Hy4-flash and DeepSeek-V4.1-Flash are on it.
 
 - **Qwen3.8-27B** (the dense stack, `src/dense`) is on the driver. A window holds up to 16 rows (`kBatch`); its kernels read
   their own segment tables (the attention's `GqaSeg` per segment, GDN's `BatchTable` through `dec_gdn_rec_seg_split`), which
@@ -108,11 +108,6 @@ consistency. Qwen3.8-27B, Inkling 2 Mini, Hy4-flash and DeepSeek-V4.1-Flash are 
   or MTP rows into its session (`batch_body`); `batch_take` its bookkeeping, `batch_draw` its sampler. The window scratch is the
   model's, shared by every session. A layer split runs its two cards' graphs itself (`batch_captured` false: `forward_batch`
   keeps each card's in its model's `BatchShared`). The block drafter's batched pass (`draft_batch`) stays the model's.
-- **Qwen3.8-Flash-Next** (`src/models/qwen4exp`) has its own runtime (`serve::Runtime`) and verifier: `Verifier::stage_batch`
-  takes per-row slot ids and lengths over its elastic KV arena. It is the most tuned path in the engine and already batches
-  slots x drafts in one pass. It moves onto the shared driver last, behind a hard gate: no speed loss at any slot count,
-  plain or drafted, ABBA against main, or it does not land. Until then new models copy the shared interface, not its
-  runtime.
 
 ## Retrofits
 

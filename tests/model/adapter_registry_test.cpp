@@ -18,7 +18,7 @@ void check(bool ok, const char* what) {
 int main() {
     using namespace basalt;
     test::register_meta_adapters();
-    check(model::find_adapter("qwen4exp") && model::find_adapter("deepseek41"), "both adapters registered");
+    check(model::find_adapter("inkling2") && model::find_adapter("deepseek41"), "both adapters registered");
     check(model::find_adapter("llama") == nullptr, "an unknown architecture has no adapter");
 
     const auto dir = std::filesystem::temp_directory_path() / "basalt_adapter_registry_test";
@@ -29,9 +29,9 @@ int main() {
     check(model::check_architecture(GgufFile((dir / "other.gguf").string())).find("no model adapter") != std::string::npos,
           "an unregistered architecture is refused by name");
 
-    write(dir / "qwen.gguf", {str("general.architecture", "qwen4exp")}, {});
-    check(model::check_architecture(GgufFile((dir / "qwen.gguf").string())).find("block_count") != std::string::npos,
-          "qwen4exp without its keys is refused");
+    write(dir / "inkling.gguf", {str("general.architecture", "inkling2")}, {});
+    check(model::check_architecture(GgufFile((dir / "inkling.gguf").string())).find("block_count") != std::string::npos,
+          "inkling2 without its keys is refused");
 
     const std::vector<Kv> ds = {str("general.architecture", "deepseek41"), u32("deepseek41.block_count", 43),
                                 u32("deepseek41.embedding_length", 5120), u32("deepseek41.expert_count", 384),

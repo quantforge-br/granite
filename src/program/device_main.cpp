@@ -1,10 +1,8 @@
-// src/models/qwen4exp/plan/device_main.cpp - `basalt-device`: report the GPU, the plan, and exercise the arena.
+// src/program/device_main.cpp - `basalt-device`: report the GPU and exercise the arena.
 //
-// This prints the memory plan against the actual cudaMemGetInfo, on its own so it can run
-// without the model.  It is also the run-time half of the architecture policy: CMake refuses to COMPILE for another
-// architecture, and this refuses to RUN on one.
+// It runs without a model.  It is also the run-time half of the architecture policy: CMake refuses to COMPILE for
+// another architecture, and this refuses to RUN on one.
 #include "basalt/core/device.hpp"
-#include "basalt/models/qwen4exp/plan/plan.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -71,14 +69,6 @@ int main(int argc, char** argv) {
         std::printf("  multiprocessors     %d\n", d.multi_processor_count);
         std::printf("  VRAM total / free   %s / %s\n", human(d.total_bytes).c_str(), human(d.free_bytes).c_str());
         std::printf("  driver / runtime    %d / %d\n", d.driver_version, d.runtime_version);
-
-        // The planner's view against the card's.  A plan that does not fit in what is actually FREE is the
-        // failure this print exists to make visible at startup rather than at token 4000.
-        const auto plan = basalt::plan::make_plan(20480, basalt::plan::Geometry{}, basalt::plan::Costs{});
-        std::printf("\n%s", basalt::plan::to_string(plan).c_str());
-        std::printf("  card free           %s\n", human(d.free_bytes).c_str());
-        std::printf("  plan + KV vs free   %s\n",
-                    plan.vram_budget <= d.free_bytes ? "FITS" : "*** DOES NOT FIT ***");
 
         if (selftest) {
             // Exercise the arena for real: allocate, write from the host, read back, and check the poison

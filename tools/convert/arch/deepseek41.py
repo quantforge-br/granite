@@ -65,8 +65,6 @@ class DeepSeek41(Arch):
     name = "deepseek41"
     not_in_dense = frozenset({ENGRAM_TENSOR})
     own_sections = {ENGRAM_TENSOR: ENGRAM_SECTION}
-    side_sections = False
-    mmproj_only = True
     dspark_ok = True
     projector_type = "deepseek41v"
     sampling_kv = {"general.sampling.temp": 1.0, "general.sampling.top_p": 1.0, "general.sampling.top_k": 0}
@@ -77,7 +75,7 @@ class DeepSeek41(Arch):
             lic["quantized_by"] = kv["general.quantized_by"]
         return lic
 
-    def default_name(self, first_gguf, kv, sections_from=False):
+    def default_name(self, first_gguf, kv):
         base = kv.get("general.name") or "DeepSeek-V4.1-Flash"
         stem = gguf_stem(first_gguf)
         rest = stem[len(base):] if stem.startswith(base) else ""

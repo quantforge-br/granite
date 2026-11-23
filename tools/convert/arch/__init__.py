@@ -1,8 +1,8 @@
 """Per-architecture conversion rules for tools/convert/convert.py, keyed by the GGUF's `general.architecture`.
 
 An architecture says how its source tensors are stored in the pack (the float form the engine reads, tensors that get
-a section of their own), which optional sections it carries, and the license, sampling defaults and extra `meta` keys.
-Everything else (tokenizer, dense/gguf, experts, container) is shared.
+a section of their own), which optional inputs it takes, and the license, sampling defaults and extra `meta` keys.
+Everything else (tokenizer, dense/gguf, experts, the vision projector section, container) is shared.
 """
 from __future__ import annotations
 
@@ -24,10 +24,7 @@ class Arch:
     not_in_dense: frozenset = frozenset()
     # tensor name -> section that holds it alone (2 MiB aligned); such tensors are left out of `gguf`
     own_sections: dict[str, str] = {}
-    # drafter, hc8 and vision sections
-    side_sections = True
-    # only the vision projector section (vision/mmproj), written when --mmproj is given
-    mmproj_only = False
+    # the projector_type an --mmproj GGUF must name; it is stored whole as vision/mmproj
     projector_type = ""
     # needs the model's Hugging Face directory (--hf-dir) for its license text and config.json
     needs_hf_dir = False
@@ -54,7 +51,7 @@ class Arch:
     def license(self, kv: dict) -> dict:
         raise NotImplementedError
 
-    def default_name(self, first_gguf, kv: dict, sections_from: bool = False) -> str:
+    def default_name(self, first_gguf, kv: dict) -> str:
         raise NotImplementedError
 
     def meta_extra(self, kv: dict, tensors: dict, own: dict) -> dict:
@@ -74,6 +71,6 @@ def register(arch: Arch, *names: str) -> None:
 
 
 def for_architecture(name) -> Arch:
-    """The rules for `general.architecture`; an architecture without its own entry is converted as Flash-Next."""
-    from . import qwen4exp, deepseek41, hy4flash  # noqa: F401  (register themselves)
-    return REGISTRY.get(name) or REGISTRY["qwen4exp"]
+    """The rules for `general.architecture`; KeyError for an architecture without them."""
+    from . import deepseek41, hy4flash  # noqa: F401  (register themselves)
+    return REGISTRY[name]

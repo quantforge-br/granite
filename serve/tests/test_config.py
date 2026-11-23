@@ -77,9 +77,9 @@ def parse(cli: list[str], cfg=None):
 
 def engine_parser_flags() -> dict:
     """{flag: takes a value} for every flag the engine's argument parser accepts."""
-    src = (ROOT / "src/program/cli/arguments.cpp").read_text() + (ROOT / "src/models/qwen4exp/flags.cpp").read_text()
+    src = (ROOT / "src/program/cli/arguments.cpp").read_text()
     body = src[src.index('if (a == "--help"'):]
-    body = body[:body.index("--gpu-stages")]
+    body = body[:body.index("// An unknown flag")]
     out = {}
     for chunk in re.split(r"\belse if \(|\bif \(", body):
         names = re.findall(r'a == "(--[a-z0-9-]+)"', chunk)

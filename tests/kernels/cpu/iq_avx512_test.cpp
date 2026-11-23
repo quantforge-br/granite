@@ -13,7 +13,6 @@
 // and glibc, so they are checked against the reference instead of a frozen bit pattern.  The fixture uses only the raw
 // generator output, so it is the same on every standard library.
 // `--print` prints the hashes, `--bench` one in-cache thread's rate per format and token count.
-#include "basalt/models/qwen4exp/geometry.hpp"
 #include "basalt/ggml/ggml.h"
 #include "basalt/kernels/cpu/expert.hpp"
 #include "basalt/kernels/cpu/expert_layout.hpp"
@@ -34,7 +33,8 @@ namespace cpu = basalt::kernels::cpu;
 
 namespace {
 
-constexpr int H = cpu::H, FF = cpu::FF, MAXT = 8, MODES = 4;
+// the row geometry the frozen hashes were taken at: 2560 inputs, 640 expert rows
+constexpr int H = 2560, FF = 640, MAXT = 8, MODES = 4;
 
 struct Frozen {
     int type;

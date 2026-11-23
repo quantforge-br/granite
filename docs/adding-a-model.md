@@ -40,7 +40,7 @@ The router then needs one config entry. Nothing in the server names a model.
 - Conversations: `save_cells` and `restore_cells` give the RAM and disk tiers what they need.
 - `--parallel` slots in one pass through the weights: derive the session from `model::BatchSession`, write its hooks and run
   the batch check, see [batched decoding](design/batching.md#adding-batching-to-a-model).
-- A model with its own fast path derives from `serve::Runtime` and `serve::Request`; see `src/models/qwen4exp/`.
+- A model with its own fast path derives from `serve::Runtime` and `serve::Request`.
 - A dense model of GDN and gated attention layers (the Qwen3.5 family) needs only its pack read into `dense::Geometry` and
   `dense::Weights` (`include/basalt/dense/model.hpp`): the shared dense stack runs the layers, the drafters (MTP layer or DFlash
   2 block drafter), images and video, and gives the session engine its sessions. See `src/models/qwen35/`.

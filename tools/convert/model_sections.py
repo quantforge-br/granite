@@ -2,7 +2,6 @@
 
   dense / dense.index       float tensors in the form the engine reads, and the table of every non-expert tensor
   experts / experts.layout  per layer, n_expert blobs of [gate | up | down] rows, and where each layer starts
-  mtp/dense, mtp/dense.index, mtp/experts  the draft layer from the BF16 `mtp.*` tensors (tools/convert/mtp_fetch.py)
 
 Sections are produced as byte-chunk iterators for ModelWriter.add_chunks. Needs numpy.
 """
@@ -24,7 +23,6 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 import ggufq  # noqa: E402
-from arch import for_architecture  # noqa: E402
 from gguf_reader import GGUFFile  # noqa: E402
 
 
@@ -37,11 +35,6 @@ ROLES = ("gate", "up", "down")
 ALIGN = 64                      # between the tensors of `dense`
 EXPERT_RE = re.compile(r"^blk\.\d+\.ffn_(gate|up|down|gate_up)_exps\.(weight|scale|input_scale)$")
 KIND = {"BF16": "4", "F16": "5", "F32": "2"}
-QWEN = for_architecture("qwen4exp")
-
-
-def form_of(name: str, arch=QWEN):
-    return arch.form_of(name)
 
 
 # ------------------------------------------------------------------ the source model
@@ -153,7 +146,7 @@ def f16_values(values: np.ndarray, name: str) -> np.ndarray:
     return h
 
 
-def convert_tensor(name: str, type_name: str, raw: np.ndarray, compat_bf16: bool, arch=QWEN):
+def convert_tensor(name: str, type_name: str, raw: np.ndarray, compat_bf16: bool, arch):
     """The dense form of one tensor: (index kind, stored bytes, destination bytes, record or None), or an error string.
         `record` describes a conversion for meta.conversions."""
     form = arch.form_of(name)
@@ -204,7 +197,7 @@ class Dense:
     """The `dense` section: `plan` validates every tensor first, `chunks` streams the pool and fills `rows` and `records`,
         `index_text` is the `dense.index`."""
 
-    def __init__(self, model: SourceModel, compat_bf16: bool = False, arch=QWEN, only=None):
+    def __init__(self, model: SourceModel, compat_bf16: bool, arch, only=None):
         """`only`: a predicate on tensor names; the tensors it rejects are not in this pool."""
         self.model = model
         self.arch = arch
@@ -341,42 +334,7 @@ def nvfp4_layout_text(n_expert: int, total: int, layout) -> bytes:
     return (head + "".join("%d %d %d %d %d\n" % x for x in layout)).encode("utf-8")
 
 
-# ------------------------------------------------------------------ the drafter
-MTP_H, MTP_FF, MTP_NE = 2560, 640, 512
-MTP_EXPERTS = ("mtp.layers.0.mlp.experts.gate_up_proj", "mtp.layers.0.mlp.experts.down_proj")
-MTP_Q8 = {"fc_embedding.weight", "fc_hidden.weight", "self_attn.q_proj.weight", "self_attn.k_proj.weight",
-          "self_attn.v_proj.weight", "self_attn.o_proj.weight", "self_attn.indexer.index_qk_proj.weight",
-          "mlp.shared_expert.gate_proj.weight", "mlp.shared_expert.up_proj.weight",
-          "mlp.shared_expert.down_proj.weight"}
-
-
-def q2_0(x: np.ndarray) -> np.ndarray:
-    """Float32 values in blocks of 64 -> Q2_0 blocks (fp16 d, 16 bytes of 2-bit codes, code = q + 1, four per byte).
-        The block scale minimizes squared error over {-1, 0, 1, 2} x d (the ggml reference uses d = max|w| and never the +2 level)."""
-    x = x.reshape(-1, 64).astype(np.float32)
-    amax = np.abs(x).max(axis=1, keepdims=True)
-    best_err = np.full((x.shape[0], 1), np.inf, dtype=np.float32)
-    best_d = np.zeros_like(amax)
-    for f in np.linspace(0.5, 1.0, 17, dtype=np.float32):      # scale search range: amax/2 .. amax
-        d = amax * f
-        inv = np.where(d > 0, 1.0 / np.where(d > 0, d, 1.0), 0.0)
-        q = np.clip(np.rint(x * inv), -1, 2)
-        err = ((q * d - x) ** 2).sum(axis=1, keepdims=True)
-        better = err < best_err
-        best_err = np.where(better, err, best_err)
-        best_d = np.where(better, d, best_d)
-    d16 = best_d.astype(np.float16)
-    d = d16.astype(np.float32)                                   # quantize against the stored (fp16) scale
-    inv = np.where(d > 0, 1.0 / np.where(d > 0, d, 1.0), 0.0)
-    codes = (np.clip(np.rint(x * inv), -1, 2) + 1).astype(np.uint8)
-    c = codes.reshape(-1, 16, 4)
-    packed = (c[:, :, 0] | (c[:, :, 1] << 2) | (c[:, :, 2] << 4) | (c[:, :, 3] << 6)).astype(np.uint8)
-    out = np.empty((x.shape[0], 18), dtype=np.uint8)
-    out[:, :2] = d16.view(np.uint8).reshape(-1, 2)
-    out[:, 2:] = packed
-    return out.reshape(-1)
-
-
+# ------------------------------------------------------------------ quantization and checkpoint files
 def q8_0(x: np.ndarray) -> bytes:
     """ggml's reference rounding over rows of a float32 array: blocks of 32, fp16 d = amax / 127."""
     b = x.reshape(-1, 32).astype(np.float32)
@@ -394,125 +352,6 @@ def _bf16_to_f32(u16: np.ndarray) -> np.ndarray:
     return (u16.astype(np.uint32) << 16).view(np.float32)
 
 
-def mtp_blob(gu: np.ndarray, dn: np.ndarray) -> bytes:
-    """One expert in the engine's blob layout: gu is its (1280, 40, 18) Q2_0 rows (gate 0..639, up 640..1279), dn its
-        (2560, 10, 18). Gate/up rows interleave (2r = gate r, 2r+1 = up r), then the down rows; codes of all rows in one
-        plane, fp16 scales in another."""
-    inter = np.empty_like(gu)
-    inter[0::2] = gu[:MTP_FF]
-    inter[1::2] = gu[MTP_FF:]
-    out = b"".join([inter[:, :, 2:].tobytes(), dn[:, :, 2:].tobytes(), inter[:, :, :2].tobytes(),
-                    dn[:, :, :2].tobytes()])
-    assert len(out) == 3 * (MTP_H * MTP_FF * 18 // 64), len(out)
-    return out
-
-
-class Mtp:
-    """The draft layer's sections, from a directory written by `mtp_fetch.py fetch`."""
-
-    def __init__(self, src, tuned_dense=None):
-        self.src = pathlib.Path(src)
-        self.tuned = pathlib.Path(tuned_dense) if tuned_dense else None
-        self.tuned_sha256 = None
-        if self.tuned is not None:
-            if not self.tuned.is_file():
-                raise ConvertError(f"missing input: {self.tuned}")
-            h = hashlib.sha256()
-            with open(self.tuned, "rb") as f:
-                for b in iter(lambda: f.read(1 << 24), b""):
-                    h.update(b)
-            self.tuned_sha256 = h.hexdigest()
-        mf = self.src / "mtp-manifest.json"
-        if not mf.is_file():
-            raise ConvertError(f"{mf} not found (run tools/convert/mtp_fetch.py fetch --out {self.src})")
-        self.manifest = {t["name"]: t for t in json.loads(mf.read_text())}
-        for n in MTP_EXPERTS:
-            if n not in self.manifest:
-                raise ConvertError(f"{mf}: tensor {n} is missing")
-        self.dense_lines: list[str] = []
-        self.dense_bytes = 0
-
-    def source_sha256(self) -> str:
-        return hashlib.sha256(json.dumps({n: t["sha256"] for n, t in self.manifest.items()},
-                                         sort_keys=True).encode()).hexdigest()
-
-    def dense_chunks(self):
-        """The dense section: the tuned file when given (its size must match the source layout), else the source."""
-        if self.tuned is None:
-            yield from self._source_dense_chunks()
-            return
-        for _ in self._source_dense_chunks():     # fills the index and the expected size
-            pass
-        size = self.tuned.stat().st_size
-        if size != self.dense_bytes:
-            raise ConvertError(f"{self.tuned}: {size} bytes, the source layout is {self.dense_bytes}")
-        with open(self.tuned, "rb") as f:
-            for b in iter(lambda: f.read(1 << 24), b""):
-                yield b
-
-    def _source_dense_chunks(self):
-        """Every tensor but the experts, by name, each starting at a multiple of 256; fills `dense_lines`."""
-        off = 0
-        for name in sorted(self.manifest):
-            if name in MTP_EXPERTS:
-                continue
-            t = self.manifest[name]
-            shape = t["shape"]
-            short = name[len("mtp."):] if name.startswith("mtp.") else name
-            short = short[len("layers.0."):] if short.startswith("layers.0.") else short
-            raw16 = np.fromfile(self.src / t["file"], dtype="<u2")
-            if raw16.size != int(np.prod(shape)):
-                raise ConvertError(f"{t['file']}: {raw16.size} values, expected shape {shape}")
-            if len(shape) == 1:      # norm weights: apply the Gemma RMSNorm "+1"
-                arr = _bf16_to_f32(raw16) + 1.0
-                raw, kind, rows, cols = arr.astype(np.float32).tobytes(), "f32", 1, arr.size
-            else:
-                u16 = raw16.reshape(shape[0], -1)
-                rows, cols = u16.shape
-                if short in MTP_Q8:
-                    raw, kind = q8_0(_bf16_to_f32(u16)), "q8_0"
-                else:
-                    raw, kind = u16.tobytes(), "bf16"
-            pad = (-off) % 256
-            if pad:
-                yield b"\0" * pad
-                off += pad
-            yield raw
-            self.dense_lines.append(f"{short} {kind} {rows} {cols} {off} {len(raw)}")
-            off += len(raw)
-        self.dense_bytes = off
-
-    def dense_index(self) -> bytes:
-        return ("\n".join(self.dense_lines) + "\n").encode("utf-8")
-
-    def expert_chunks(self):
-        """512 blobs, one per expert; each expert is quantized to Q2_0 on its own, so the memory stays small."""
-        gu_t, dn_t = (self.manifest[n] for n in MTP_EXPERTS)
-        if gu_t["shape"] != [MTP_NE, 2 * MTP_FF, MTP_H] or dn_t["shape"] != [MTP_NE, MTP_H, MTP_FF]:
-            raise ConvertError(f"unexpected drafter expert shapes {gu_t['shape']} {dn_t['shape']}")
-        gu = np.memmap(self.src / gu_t["file"], dtype="<u2", mode="r", shape=tuple(gu_t["shape"]))
-        dn = np.memmap(self.src / dn_t["file"], dtype="<u2", mode="r", shape=tuple(dn_t["shape"]))
-        for e in range(MTP_NE):
-            g = q2_0(_bf16_to_f32(np.asarray(gu[e]))).reshape(2 * MTP_FF, MTP_H // 64, 18)
-            d = q2_0(_bf16_to_f32(np.asarray(dn[e]))).reshape(MTP_H, MTP_FF // 64, 18)
-            yield mtp_blob(g, d)
-
-
-def draft_vocab_bytes(path, n_vocab: int | None = None) -> bytes:
-    """A draft vocabulary file: int32 token ids, none outside the vocabulary."""
-    data = pathlib.Path(path).read_bytes()
-    if len(data) % 4:
-        raise ConvertError(f"{path}: not a list of int32 ids ({len(data)} bytes)")
-    ids = np.frombuffer(data, dtype="<i4")
-    if ids.size == 0 or (ids < 0).any() or (n_vocab is not None and (ids >= n_vocab).any()):
-        raise ConvertError(f"{path}: an id lies outside the vocabulary" if ids.size else f"{path}: empty")
-    return data
-
-
-# ------------------------------------------------------------------ the n-gram table from a per-tensor FP8 checkpoint
-PLE_DIM = 160
-
-
 def fp8_e4m3_table() -> np.ndarray:
     """All 256 E4M3 (finite-only, bias 7) codes as float32; the two NaN codes are NaN."""
     b = np.arange(256)
@@ -521,20 +360,6 @@ def fp8_e4m3_table() -> np.ndarray:
     v = np.where(e == 0, m / 8.0 * 2.0 ** -6, (1 + m / 8.0) * 2.0 ** (e.astype(np.float64) - 7))
     v = np.where((e == 15) & (m == 7), np.nan, v)
     return (sign * v).astype(np.float32)
-
-
-def fp8_rows_to_q8_0(raw: np.ndarray, scale: float) -> bytes:
-    """Rows of PLE_DIM FP8 codes times the tensor's scale -> Q8_0 rows (5 blocks of 34 bytes each)."""
-    x = fp8_e4m3_table()[raw.reshape(-1)] * np.float32(scale)
-    if not np.isfinite(x).all():
-        raise ConvertError("the FP8 table holds a non-finite value")
-    return q8_0(x)
-
-
-def _ple_job(args):
-    path, off, rows, scale = args
-    raw = np.fromfile(path, dtype=np.uint8, count=rows * PLE_DIM, offset=off)
-    return fp8_rows_to_q8_0(raw, scale)
 
 
 def read_safetensors_header(path):
@@ -572,70 +397,7 @@ def bounded_imap(pool, fn, jobs, depth: int):
         yield q.popleft().get()
 
 
-class PleFp8:
-    """The PLE n-gram table of a checkpoint that stores it as FP8 shards (`...ngram_embedding.shard_K.weight`) with one
-    BF16 `...ngram_embedding.weight_scale`, as Q8_0 rows: values are code x scale, re-blocked per 32 values.  A release
-    that consolidates its weight files spreads the shards over several of them; they are gathered by their index."""
-
-    def __init__(self, paths, chunk_rows: int = 65536):
-        if isinstance(paths, (str, pathlib.Path)):
-            paths = [paths]
-        self.paths, self.chunk_rows = [pathlib.Path(p) for p in paths], chunk_rows
-        stem, scale, found = None, None, {}
-        for path in self.paths:
-            head, base = read_safetensors_header(path)
-            scales = [k for k in head if k.endswith("ngram_embedding.weight_scale")]
-            for k in scales:
-                if scale is not None:
-                    raise ConvertError(f"{path}: a second ngram_embedding.weight_scale")
-                sc = head[k]
-                if sc["dtype"] != "BF16" or sc["shape"] != [1]:
-                    raise ConvertError(f"{path}: the PLE scale is not one BF16 value")
-                with open(path, "rb") as f:
-                    f.seek(base + sc["data_offsets"][0])
-                    u = np.frombuffer(f.read(2), dtype="<u2").astype(np.uint32) << 16
-                scale = float(u.view(np.float32)[0])
-                stem = k[:-len("weight_scale")]
-            if stem is None:      # a file with shards but the scale in another file: its own prefix
-                heads = [k for k in head if "ngram_embedding.shard_" in k]
-                stem = heads[0][:heads[0].index("shard_")] if heads else None
-            for k, t in head.items():
-                if stem is None or not k.startswith(stem + "shard_") or not k.endswith(".weight"):
-                    continue
-                i = int(k[len(stem) + len("shard_"):-len(".weight")])
-                if i in found:
-                    raise ConvertError(f"{path}: PLE shard {i} is in two files")
-                if t["dtype"] != "F8_E4M3" or len(t["shape"]) != 2 or t["shape"][1] != PLE_DIM:
-                    raise ConvertError(f"{path}: shard {i} is not FP8 rows of {PLE_DIM}")
-                found[i] = (path, base + t["data_offsets"][0], t["shape"][0])
-        if scale is None:
-            raise ConvertError("no ngram_embedding.weight_scale in " + ", ".join(str(p) for p in self.paths))
-        if not found:
-            raise ConvertError("no PLE shards in " + ", ".join(str(p) for p in self.paths))
-        missing = sorted(set(range(max(found) + 1)) - set(found))
-        if missing:
-            raise ConvertError(f"the PLE table lacks shards {missing[:8]} of {max(found) + 1}")
-        self.scale = scale
-        self.shards = [found[i] for i in range(max(found) + 1)]
-        self.rows = sum(r for _, _, r in self.shards)
-        self.row_bytes = PLE_DIM // 32 * 34
-        self.nbytes = self.rows * self.row_bytes
-        self.conversion = {"src_type": "F8_E4M3", "dst_type": "Q8_0",
-                           "method": "fp8 code x per-tensor BF16 scale, Q8_0 blocks of 32 (ggml reference rounding)",
-                           "scale": self.scale}
-
-    def jobs(self):
-        for path, off, rows in self.shards:
-            for r in range(0, rows, self.chunk_rows):
-                n = min(self.chunk_rows, rows - r)
-                yield (str(path), off + r * PLE_DIM, n, self.scale)
-
-    def chunks(self, pool, depth: int = 16):
-        """The Q8_0 rows in order, made on `pool` with at most `depth` chunks in flight."""
-        yield from bounded_imap(pool, _ple_job, self.jobs(), depth)
-
-
-# ------------------------------------------------------------------ Q6_K requantization of the dense projections
+# ------------------------------------------------------------------ Q6_K
 Q6K_BLOCK, Q6K_BYTES = 256, 210
 
 
@@ -688,25 +450,10 @@ def q6_k(x: np.ndarray) -> bytes:
     return out.tobytes()
 
 
-# Q8_0 dense tensors of a pack that move to Q6_K: GGUF name pattern -> checkpoint name under `layers.N.`.
-Q6K_TARGETS = [
-    (re.compile(r"blk\.(\d+)\.attn_qkv\.weight"), "linear_attn.in_proj_qkv"),
-    (re.compile(r"blk\.(\d+)\.attn_gate\.weight"), "linear_attn.in_proj_z"),
-    (re.compile(r"blk\.(\d+)\.ssm_out\.weight"), "linear_attn.out_proj"),
-    (re.compile(r"blk\.(\d+)\.ffn_gate_shexp\.weight"), "mlp.shared_expert.gate_proj"),
-    (re.compile(r"blk\.(\d+)\.ffn_up_shexp\.weight"), "mlp.shared_expert.up_proj"),
-    (re.compile(r"blk\.(\d+)\.ffn_down_shexp\.weight"), "mlp.shared_expert.down_proj"),
-    (re.compile(r"blk\.(\d+)\.attn_q\.weight"), "self_attn.q_proj"),
-    (re.compile(r"blk\.(\d+)\.attn_k\.weight"), "self_attn.k_proj"),
-    (re.compile(r"blk\.(\d+)\.attn_v\.weight"), "self_attn.v_proj"),
-    (re.compile(r"blk\.(\d+)\.attn_output\.weight"), "self_attn.o_proj"),
-]
-Q6K_VALUES_PER_JOB = 1 << 22
 # The GGUF lists the 48 value heads (128 wide) as (ratio r, key head k) = r * 16 + k, the checkpoint as k * 3 + r.
 # The GGUF's GDN qkv rows after the q and k parts (4096), its z rows and its out-projection columns follow that order.
 GDN_HEAD, GDN_V_HEADS, GDN_K_HEADS = 128, 48, 16
 GDN_QK_ROWS = 4096
-Q6K_LAYOUT = {"attn_qkv": "rows", "attn_gate": "rows", "ssm_out": "cols"}
 
 
 def gdn_block_source() -> np.ndarray:
@@ -722,86 +469,3 @@ def gdn_index(n: int, first: int) -> np.ndarray:
     return idx
 
 
-def q6k_target(name: str, info: dict):
-    """The checkpoint tensor name for a Q8_0 dense tensor that can move to Q6_K, else None (rows must be whole blocks)."""
-    if info["type"] != "Q8_0" or info["shape"][0] % Q6K_BLOCK:
-        return None
-    for rx, hf in Q6K_TARGETS:
-        m = rx.fullmatch(name)
-        if m:
-            return f"model.language_model.layers.{m.group(1)}.{hf}.weight"
-    return None
-
-
-def q8_0_values(raw: np.ndarray) -> np.ndarray:
-    b = raw.reshape(-1, 34)
-    return b[:, :2].copy().view(np.float16).astype(np.float32) * b[:, 2:].view(np.int8).astype(np.float32)
-
-
-def _q6k_job(args):
-    """One row range: its Q6_K bytes, and the largest distance between the Q8_0 values and the BF16 source in Q8_0 steps."""
-    pack, off, ne0, row0, rows, st_path, st_off, layout = args
-    raw = np.fromfile(pack, dtype=np.uint8, count=rows * ne0 // 32 * 34, offset=off + row0 * ne0 // 32 * 34)
-    q8 = q8_0_values(raw).reshape(rows, ne0)
-    if st_path is None:
-        return q6_k(q8), 0.0
-    if layout is None:
-        u = np.fromfile(st_path, dtype="<u2", count=rows * ne0, offset=st_off + 2 * row0 * ne0)
-    else:
-        kind, ne1 = layout
-        mm = np.memmap(st_path, dtype="<u2", mode="r", offset=st_off, shape=(ne1, ne0))
-        if kind == "rows":
-            u = mm[gdn_index(ne1, GDN_QK_ROWS if ne1 > GDN_V_HEADS * GDN_HEAD else 0)[row0:row0 + rows]]
-        else:
-            u = mm[row0:row0 + rows][:, gdn_index(ne0, 0)]
-    src = _bf16_to_f32(np.ascontiguousarray(u)).reshape(rows, ne0)
-    step = np.abs(src).reshape(-1, 32).max(axis=1) / 127.0
-    err = np.abs(q8 - src).reshape(-1, 32).max(axis=1)
-    return q6_k(src), float((err / np.maximum(step, 2e-5)).max())
-
-
-class DenseQ6K:
-    """Q6_K stand-ins for the Q8_0 dense projections of a pack, quantized from the checkpoint's BF16 tensors when
-    `checkpoint` (a directory of safetensors shards) is given, else from the pack's own Q8_0 values. Each BF16
-    tensor is checked against the pack's Q8_0 copy: a name or layout mismatch shows as a distance above one step."""
-
-    def __init__(self, tensors: dict, checkpoint=None):
-        hf = {}
-        if checkpoint:
-            for p in sorted(pathlib.Path(checkpoint).glob("model-0*.safetensors")):
-                head, base = read_safetensors_header(p)
-                for k, t in head.items():
-                    if k != "__metadata__":
-                        hf[k] = (str(p), base + t["data_offsets"][0], t["dtype"], t["shape"])
-        self.plan, self.layout = {}, {}
-        for n, info in tensors.items():
-            want = q6k_target(n, info)
-            if want is None:
-                continue
-            src = hf.get(want)
-            if checkpoint and (src is None or src[2] != "BF16" or list(reversed(info["shape"])) != src[3]):
-                raise ConvertError(f"{n}: no matching BF16 tensor {want} in {checkpoint}")
-            self.plan[n] = src
-            kind = Q6K_LAYOUT.get(n.split(".", 2)[2].rsplit(".weight", 1)[0])
-            if kind:
-                self.layout[n] = (kind, info["shape"][1])
-        self.worst = 0.0
-
-    @staticmethod
-    def nbytes(info: dict) -> int:
-        return info["shape"][0] // Q6K_BLOCK * Q6K_BYTES * info["shape"][1]
-
-    def jobs(self, name, info, pack, gguf_off):
-        ne0, ne1 = info["shape"]
-        step = max(1, Q6K_VALUES_PER_JOB // ne0)
-        src = self.plan[name]
-        for r in range(0, ne1, step):
-            yield (pack, gguf_off + info["offset"], ne0, r, min(step, ne1 - r),
-                   src[0] if src else None, src[1] if src else 0, self.layout.get(name))
-
-    def chunks(self, name, info, pack, gguf_off, pool):
-        for blob, worst in pool.imap(_q6k_job, self.jobs(name, info, pack, gguf_off), chunksize=1):
-            self.worst = max(self.worst, worst)
-            if worst > 1.05:
-                raise ConvertError(f"{name}: the BF16 source is {worst:.2f} Q8_0 steps from the pack's copy")
-            yield blob

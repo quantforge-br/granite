@@ -72,9 +72,8 @@ class DeepSeek41Test(unittest.TestCase):
         self.tmp.cleanup()
 
     def args(self, **kw):
-        d = dict(gguf=[str(self.gguf)], mmproj=None, out=str(self.t / "out.basalt"), mtp_source=None, mtp_dense=None,
-                 draft_vocab=None, profile=None, profile_from=None, hc8=None, name="Tiny", compat_bf16=False,
-                 no_vision=False, force=False, sections_from=None)
+        d = dict(gguf=[str(self.gguf)], mmproj=None, out=str(self.t / "out.basalt"), profile=None, profile_from=None,
+                 hc8=None, name="Tiny", compat_bf16=False, no_vision=False, force=False, sections_from=None)
         d.update(kw)
         return type("A", (), d)()
 
@@ -133,10 +132,6 @@ class DeepSeek41Test(unittest.TestCase):
                 self.assertEqual(out[off + e * blob:off + (e + 1) * blob], want, (l, e))
             off += blob * N_EXPERT
         self.assertEqual(off, len(out))
-
-    def test_side_sections_are_refused(self):
-        with self.assertRaises(SystemExit):
-            convert.convert(self.args(draft_vocab=str(self.gguf)))
 
     def test_mmproj_becomes_the_vision_section(self):
         proj = self.t / "mmproj.gguf"

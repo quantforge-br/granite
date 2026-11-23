@@ -15,7 +15,6 @@
 // may change, the bits may not), on a fixture made from the raw generator output only, so it is the same on every
 // standard library. The AVX-512 quantizer must match to the bit and its Q2_0 rows to rounding, where the CPU has them. A token's rows must not depend on how many tokens share the call. `--print` prints the hashes,
 // `--bench` one row range per format on each build.
-#include "basalt/models/qwen4exp/geometry.hpp"
 #include "basalt/ggml/ggml.h"
 #include "basalt/kernels/cpu/expert.hpp"
 #include "basalt/kernels/cpu/expert_layout.hpp"
@@ -36,7 +35,8 @@ namespace cpu = basalt::kernels::cpu;
 
 namespace {
 
-constexpr int H = cpu::H, FF = cpu::FF, MAXT = cpu::MAXT;
+// the row geometry the frozen hashes were taken at: 2560 inputs, 640 expert rows
+constexpr int H = 2560, FF = 640, MAXT = cpu::MAXT;
 
 // Random bytes with a valid small fp16 scale at the start of each block; mode 1 pins every code to its extreme.
 void fill(std::vector<uint8_t>& v, int type, uint64_t seed, int mode) {

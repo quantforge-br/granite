@@ -252,7 +252,6 @@ class Parse(unittest.TestCase):
 class Seam(unittest.TestCase):
     def test_dialect_choice(self):
         self.assertIsInstance(dialect_for("deepseek41"), DeepSeek41)
-        self.assertIsInstance(dialect_for("qwen4exp"), Qwen)
         self.assertIsInstance(dialect_for("qwen35"), Qwen)
         self.assertIsInstance(dialect_for(None), Qwen)
 

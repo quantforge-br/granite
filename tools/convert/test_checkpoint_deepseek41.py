@@ -157,8 +157,8 @@ class DeepSeekCheckpointTest(unittest.TestCase):
         convert.export_tokenizer = tokenizer_files
         try:
             out = self.t / ("swapped.basalt" if swap_q_a else "base.basalt")
-            a = dict(gguf=[str(gguf)], mmproj=None, out=str(out), mtp_source=None, mtp_dense=None, draft_vocab=None,
-                     name="Tiny", compat_bf16=False, no_vision=False, force=False, sections_from=None)
+            a = dict(gguf=[str(gguf)], mmproj=None, out=str(out), name="Tiny", compat_bf16=False, no_vision=False,
+                     force=False, sections_from=None)
             convert.convert(type("A", (), a)())
         finally:
             convert.export_tokenizer = orig
@@ -169,8 +169,7 @@ class DeepSeekCheckpointTest(unittest.TestCase):
 
     def run_ck(self, out, stream=False, base=None, ck=None):
         a = dict(sections_from=str(base or self.base), checkpoint=str(ck or self.ck), out=str(self.t / out),
-                 stream_shards=stream, workers=2, name="Tiny NVFP4", force=False,
-                 dense_q8_0=False, mtp_dense=None)
+                 stream_shards=stream, workers=2, name="Tiny NVFP4", force=False)
         convert.from_checkpoint(type("A", (), a)())
         return ModelFile(str(self.t / out))
 

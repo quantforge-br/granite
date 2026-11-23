@@ -141,9 +141,8 @@ Unless `relaxed-drafting` is on, output is exactly plain decoding's.
 | `suffix-draft` | engine | tokens | 3 (`0` = the drafter only) | Flash-Next and Qwen3.8-27B. Prompt lookup: fill a window from an earlier repeat of at least N tokens. Its index takes host RAM by `max-context`: 64 MiB per slot at 262,144 tokens. |
 | `mtp-max-t` | engine | integer | 0 (= `spec`) | Flash-Next only. Caps the MTP's own windows. |
 | `mtp-window` | engine | cells | 32768 (`0` = all) | Flash-Next only. The drafter attends to the last N cells. |
-| `relaxed-drafting` | engine (`[P]`) | `true` or 0 to 1 | off | Flash-Next only. **Changes output.** Under sampling, keeps a draft the model gives probability P or more. Greedy, `logit_bias`, JSON and tool calls stay exact. [precision](../precision/qwen38-flash-next.md#relaxed-drafting) |
-| `route-tail-skip` | engine (`[R]`) | `true` or 1 to 9 | off | Flash-Next only. **Changes output.** Skips experts no GPU holds when they rank R or lower in every window entry. Needs the device MoE tail. [precision](../precision/qwen38-flash-next.md#lossy-routing-flags) |
-| `route-prior` | engine (`[LAMBDA]`) | `true` or 0 to 16 | off | Flash-Next only. **Changes output.** Adds LAMBDA to held experts' router logits. Needs the device MoE tail. [precision](../precision/qwen38-flash-next.md#lossy-routing-flags) |
+| `route-tail-skip` | engine (`[R]`) | `true` or 1 to k-1 | off | **Changes output.** Skips experts no GPU holds when they rank R or lower in every window entry. [quality](../precision/quality.md#lossy-routing-flags) |
+| `route-prior` | engine (`[LAMBDA]`) | `true` or 0 to 16 | off | **Changes output.** Adds LAMBDA to held experts' router scores. [quality](../precision/quality.md#lossy-routing-flags) |
 
 ## Parallel slots
 

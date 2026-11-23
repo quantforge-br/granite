@@ -108,9 +108,8 @@ class Hy4FlashTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def args(self, **kw):
-        d = dict(gguf=[str(self.gguf)], mmproj=None, out=str(self.t / "out.basalt"), mtp_source=None, mtp_dense=None,
-                 draft_vocab=None, name="Tiny", compat_bf16=False, no_vision=False, force=False, sections_from=None,
-                 hf_dir=str(self.hf))
+        d = dict(gguf=[str(self.gguf)], mmproj=None, out=str(self.t / "out.basalt"), name="Tiny", compat_bf16=False,
+                 no_vision=False, force=False, sections_from=None, hf_dir=str(self.hf))
         d.update(kw)
         return type("A", (), d)()
 
@@ -192,7 +191,7 @@ class Hy4FlashTest(unittest.TestCase):
             f.write(bytes([b[0] ^ 1]))
         self.assertFalse(verify_pack.verify(str(pack), str(self.gguf)))
 
-    def test_hf_dir_is_needed_and_the_wrong_side_inputs_are_refused(self):
+    def test_hf_dir_is_needed_and_a_wrong_projector_is_refused(self):
         with self.assertRaises(SystemExit):
             convert.convert(self.args(hf_dir=None))
         # --mmproj is the vision projector (vision/mmproj), accepted for this arch; a file that is not a projector GGUF is refused
@@ -200,8 +199,6 @@ class Hy4FlashTest(unittest.TestCase):
         notgguf.write_bytes(b"not a gguf")
         with self.assertRaises(SystemExit):
             convert.convert(self.args(mmproj=str(notgguf)))
-        with self.assertRaises(SystemExit):
-            convert.convert(self.args(draft_vocab=str(self.gguf)))
 
     def test_dry_run_writes_nothing(self):
         convert.convert(self.args(dry_run=True))

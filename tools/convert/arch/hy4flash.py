@@ -36,9 +36,7 @@ class Hy4Flash(Arch):
     gguf_architecture = "hy_v4_flash"
     not_in_dense = frozenset({ENGRAM_TENSOR})
     own_sections = {ENGRAM_TENSOR: ENGRAM_SECTION}
-    side_sections = False
-    mmproj_only = True            # `--mmproj` adds llama.cpp's hy_v4_flash projector GGUF (the side file of the BF16 checkpoint) as vision/mmproj
-    projector_type = "hy_v4_flash"
+    projector_type = "hy_v4_flash"  # `--mmproj`: llama.cpp's projector GGUF (the side file of the BF16 checkpoint)
     needs_hf_dir = True
     sampling_kv = {}
     engram_type = F8_E4M3_RAW     # the source table's type; the BF16 GGUF's is BF16 (hy4flash_bf16.py rounds it)
@@ -73,7 +71,7 @@ class Hy4Flash(Arch):
         return {"license": {"name": "Tencent Hy License, Version 1.0", "text": lic.read_text(encoding="utf-8")},
                 "hf_config": conf, "rope": {"mrope_section": section, "interleaved": interleaved}}
 
-    def default_name(self, first_gguf, kv, sections_from=False):
+    def default_name(self, first_gguf, kv):
         stem = re.sub(r"-\d{5}-of-\d{5}\.gguf$", "", Path(first_gguf).name)
         base = "Hy4-flash"
         tail = stem[len(base):].strip("-_ ") if stem.startswith(base) else ""

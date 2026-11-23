@@ -65,17 +65,6 @@ int main() {
         (void) a.finish_flags(*o);
         return o->lossy;
     };
-    if (const model::ModelAdapter* q = model::find_adapter("qwen4exp")) {
-        check(lossy_of(*q, {}).empty(), "qwen4exp with no flag is not lossy");
-        const auto one = lossy_of(*q, {"--route-tail-skip", "7"});
-        check(one.size() == 1 && one[0].flag == "--route-tail-skip" &&
-                  one[0].effect == "--route-tail-skip 7 drops low-ranked missed experts",
-              "qwen4exp --route-tail-skip 7 is lossy, with its warning");
-        const auto all = lossy_of(*q, {"--relaxed-drafting", "--route-prior", "1.5", "--route-tail-skip"});
-        check(all.size() == 3 && all[0].flag == "--relaxed-drafting" && all[1].effect == "--route-prior 1.5 changes expert routing" &&
-                  all[2].effect == "--route-tail-skip 9 drops low-ranked missed experts",
-              "qwen4exp: every lossy flag, bare ones at their defaults, in the warning order");
-    }
     // the routing flags of every mixture-of-experts model: the bare prior is the model's own; the tail skip needs the pack's
     // experts per token, so without a pack it is refused
     for (const auto& [arch, bare] : {std::pair<const char*, const char*>{"deepseek41", "0.1"}, {"hy4flash", "0.01"}}) {

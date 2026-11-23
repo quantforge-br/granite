@@ -8,7 +8,6 @@
 // experts (more than the pool's buffers too), 1 to 8 tokens per expert, at several active worker counts, with a
 // pause longer than the workers' spin in the middle, and fails on the first differing word or untouched output.
 // `--bench` prints the time and rate of one layer of 15 experts.
-#include "basalt/models/qwen4exp/geometry.hpp"
 #include "basalt/ggml/ggml.h"
 #include "basalt/kernels/cpu/expert.hpp"
 #include "basalt/kernels/cpu/expert_layout.hpp"
@@ -30,7 +29,7 @@ namespace cpu = basalt::kernels::cpu;
 
 namespace {
 
-constexpr int H = cpu::H, FF = cpu::FF, MAXT = cpu::MAXT;
+constexpr int H = 2560, FF = 640, MAXT = cpu::MAXT;   // 2560 inputs, 640 expert rows
 constexpr int kBlobs = 48;   // distinct blobs per format; experts index into them
 
 // NVFP4: rows quantized from random values with a spread of block scales, and the blob's FP32 scale tail.

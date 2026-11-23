@@ -33,5 +33,4 @@ The whole model sits on the card; the context takes what the weights leave ([gui
 
 Like the first, with `"max-context": 65536`, `"kv": "q4_0"` and `"vram-reserve-mib": 1024`.
 
-Several models: [models and the router](models.md). `"relaxed-drafting": 0.5` in an entry trades exactness under sampling for speed
-([precision](../precision/qwen38-flash-next.md#relaxed-drafting)).
+Several models: [models and the router](models.md).

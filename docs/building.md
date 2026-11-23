@@ -23,24 +23,22 @@ all: its C++ and CUDA sources, its kernels and its tests are skipped, which is m
 
 | Model | Id |
 | --- | --- |
-| Qwen3.8-Flash-Next | `qwen4exp` |
 | DeepSeek-V4.1-Flash | `deepseek41` |
 | Qwen3.8-27B | `qwen35` |
 | Hy4-flash | `hy4flash` |
 | Inkling 2 Mini | `inkling2` |
 
 ```sh
-cmake -S . -B build -DBASALT_MODELS=qwen4exp                  # Flash-Next only
 cmake -S . -B build -DBASALT_MODELS=deepseek41                # DeepSeek only
 cmake -S . -B build -DBASALT_MODELS=qwen35                    # the 27B only
 cmake -S . -B build -DBASALT_MODELS=hy4flash                  # Hy4-flash only
 cmake -S . -B build -DBASALT_MODELS=inkling2                  # Inkling 2 Mini only
-cmake -S . -B build "-DBASALT_MODELS=qwen4exp;deepseek41"     # two of them; quote the semicolon
+cmake -S . -B build "-DBASALT_MODELS=deepseek41;inkling2"     # two of them; quote the semicolon
 ```
 
 An unknown id or an empty list stops the configure and names the valid ids. A pack of a model the build left out fails at load with
-`architecture is 'deepseek41', a Basalt model this build left out (built with BASALT_MODELS=qwen4exp); rebuild with cmake
--DBASALT_MODELS="qwen4exp;deepseek41;qwen35" to load it`. The value is kept in the build folder's cache: to change it, pass the option again (`-DBASALT_MODELS=all` goes back to every
+`architecture is 'deepseek41', a Basalt model this build left out (built with BASALT_MODELS=inkling2); rebuild with cmake
+-DBASALT_MODELS="deepseek41;inkling2" to load it`. The value is kept in the build folder's cache: to change it, pass the option again (`-DBASALT_MODELS=all` goes back to every
 model). A folder configured by 0.4 holds that version's default list, `qwen4exp;deepseek41;qwen35`; the configure reads it as `all`.
 
 ## Tests
