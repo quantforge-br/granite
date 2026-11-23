@@ -132,7 +132,7 @@ target_link_libraries(artifact INTERFACE platform warnings)
 # `model` is the registry and the adapter interface (shared code may use it). Each model is its own library under
 # src/models/<arch>/; `models` is the composition root that registers them. tools/check_model_layering.sh keeps
 # shared code from including src/models and models from including each other.
-add_library(model STATIC src/model/registry.cpp src/model/rope_flags.cpp src/model/route_flags.cpp src/model/start.cpp src/model/batch_check.cpp)
+add_library(model STATIC src/model/registry.cpp src/model/rope_flags.cpp src/model/start.cpp src/model/batch_check.cpp)
 target_compile_definitions(model PRIVATE BASALT_KNOWN_MODELS="${_basalt_known}" BASALT_BUILT_MODELS="${_basalt_built}")
 target_include_directories(model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(model PUBLIC artifact warnings)
@@ -295,7 +295,6 @@ add_library(kernels STATIC src/kernels/cuda/quantize_act.cu
                         src/kernels/cuda/mhc.cu
                         src/kernels/cuda/mhc_plain.cu
                         src/kernels/cuda/router.cu
-                        src/kernels/cuda/route_tail_skip.cu
                         src/kernels/cuda/row_norm.cu
                         src/ngram/ple_reader.cpp)
 target_link_libraries(kernels PUBLIC core artifact)
@@ -511,11 +510,6 @@ endif()
 
 # the route tail skip against a plain CPU rule: which entries it drops over random windows, tables and ranks at each MoE
 # model's geometry (GPU, synthetic, no model; --bench times the window kernel)
-add_executable(route_tail_skip_parity tests/kernels/route_tail_skip_parity.cpp)
-target_include_directories(route_tail_skip_parity PRIVATE ${_gpu_include_directories})
-target_link_libraries(route_tail_skip_parity PRIVATE kernels ${_gpu_runtime_target})
-basalt_gpu_test(NAME route_tail_skip_parity COMMAND route_tail_skip_parity)
-set_tests_properties(route_tail_skip_parity PROPERTIES SKIP_RETURN_CODE 77)
 add_executable(dense_ops_parity tests/kernels/dense_ops_parity.cpp)
 target_link_libraries(dense_ops_parity PRIVATE kernels ${_gpu_runtime_target})
 basalt_gpu_test(NAME dense_ops_parity COMMAND dense_ops_parity)
