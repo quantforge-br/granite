@@ -1,6 +1,6 @@
 # Running the server
 
-Settings: [configuration](configuration/index.md). Diagnostic flags: `bin/basalt --help`. Several models: [models and the router](configuration/models.md).
+Settings: [configuration](configuration/index.md). Diagnostic flags: `bin/granite --help`. Several models: [models and the router](configuration/models.md).
 
 ## Start-up
 
@@ -40,20 +40,21 @@ While a prompt is read, a slot prints `pp=<read>/<total>` with the rate. While r
 Each request ends with one `done` line:
 
 ```
-[server] s1 done  pp=96/89c 0.1s  tg=1720 119.6t/s acc=65% dl=2.9  ttft=0.1s  end=stop  hit=89.7%  pcie=39.3%
+[server] s1 done  pp=96/89c 0.1s  tg=1720 119.6t/s acc=65% dl=2.9  ttft=0.1s  end=stop  hit=89.7%  pcie=0.0%
 ```
 
 - `pp=<prompt tokens>/<cached>c`: the rate counts newly read tokens only.
 - `acc`: drafts accepted over drafts offered. `dl`: tokens per window, from the engine's own window count over the whole request (its solo and batch runs and every pass). With `--parallel` a window serves every busy slot in a fixed number of rows, so `dl` falls toward 1.0 as the slots fill. Both are absent when the request did not draft.
 - `end`: `stop`, `length`, `cancelled`, `disconnect` or `error`.
-- `hit`: expert cache hit rate. `pcie`: share of routed experts read over PCIe.
+- `hit`: the share of decode's expert lookups whose expert is on the card (below 100% when experts are in RAM). `pcie`: the share
+  read over PCIe or from another card; Inkling 2 Mini reads none that way.
 
-The engine's own `basalt ...` lines go to `~/.cache/basalt/<id>/engine.log`, one folder per model file (`<id>` is 16 hex digits
+The engine's own `granite ...` lines go to `~/.cache/granite/<id>/engine.log`, one folder per model file (`<id>` is 16 hex digits
 taken from the file); `[server] engine log: PATH` names it at start. A log of 10 MiB or more moves to `engine.log.1` at the
 next start. An engine that dies of a fault or an unhandled exception writes a `granite crash: error: ...` line (the fault, the stage
 it was in) and the server's warning quotes it with the exit status. The folder also holds the conversation
-cache. Nothing is unpacked from the model file: the server reads the tokenizer from its sections, and the engine and `basalt-vision`
-read the vision projector inside it.
+cache. Nothing is unpacked from the model file: the server reads the tokenizer from its sections, and the engine reads the vision
+projector inside it.
 
 ## The stats page
 
@@ -63,10 +64,9 @@ The server's address serves a page, updated every second from `/metrics`, `/slot
   new tokens (a cached follow-up has no meaningful read rate). The decode number's tooltip has the best decode and the conversation
   cache; the prefill number's has the last prompt, its prefix cache hit and the best prefill (the fastest read listed when the
   server has none yet).
-- Experts: where the last request's expert lookups were served (VRAM, a peer card, CPU and RAM, the SSD), as a legend, and a map
-  of 640 experts sampled evenly from every layer (`experts_map`): its colour is where the expert lives now, its brightness how often
-  decode looked it up lately, an ember edge a lookup off the GPUs in the last second. A dense model shows its weights by bytes.
-  Experts on the SSD turn the heading amber.
+- Experts: where the last request's expert lookups were served (VRAM, CPU and RAM), as a legend, and a map of 640 experts sampled
+  evenly from every layer (`experts_map`): its brightness is how often decode looked it up lately. Inkling 2 Mini marks every
+  sampled expert as in VRAM, also when some are in RAM.
 - With no model loaded, a slow field of basalt columns on its own (8 frames a second, paused while the tab is hidden, one still
   frame under reduced motion).
 
@@ -83,17 +83,16 @@ Under it, four tabs (keys `1` to `4`, `L` for the logs, or `#tab=req|slots|hw|lo
 
 The engine's own figures, which the server asks for with `STATS` once the engine is ready:
 
-- `/metrics` `experts_map`: `total` experts, and for each sampled one `tier` (0 VRAM, 1 peer card, 2 RAM, 3 file),
+- `/metrics` `experts_map`: `total` experts, and for each sampled one `tier` (0 VRAM, the only value Inkling 2 Mini gives),
   `routed` (decode lookups a second, 0 once nothing runs) and `recent` (its lookups, fading by 0.85 a second).
 - `/slots` per slot: `started` (epoch seconds), `path` (the endpoint) and `prompt_ms` (the read time) of the running request;
   for its current or last request `accept_pos` (drafts accepted over offered by draft position) and `accept_hist` (tokens per
   decode window, a sample a second over 60 s); for a model with routed experts `hit`: its windows' lookups split `vram`, `peer`
   (a bus copy or another card) and `cpu`, with `lookups_s`, `peer_s` and `ram_s` a second. A batch window several slots share
-  counts its lookups for each of them; a model whose slots run through layer split stages counts none per slot.
+  counts its lookups for each of them.
 - `/metrics` `engine`: `commit` (the build's), and `expert_slots`, the experts every card holds now (fewer while asleep).
 - `/metrics` `hardware`: each card's `sm_clock` and `mem_clock` (MHz), `throttle` (what holds the clocks down, empty for nothing),
-  `expert_slots` and `h2d_gbps` (the host-to-device link as the start measured it; Flash-Next measures it, the other models
-  leave it out); `cpu_ccd` (the load of each group of cores that share an L3 cache), `ram_parts` (`experts` the engine holds in
+  `expert_slots`; `cpu_ccd` (the load of each group of cores that share an L3 cache), `ram_parts` (`experts` the engine holds in
   RAM, `page_cache`, `other`; Linux only) and `disk_hist` (the read rate's last 60 s).
 
 The header word reads `Thinking`, `Answering` or `Tool call` (`live.phase`) while exactly one request runs. The conversation cache
@@ -109,13 +108,16 @@ write always leaves 4 GiB of the volume free. After a restart, a prompt that sta
 
 ## Sleep: `--idle-sleep`
 
-After the given seconds without requests, the engine frees its VRAM (the driver moves the GPU state to host memory). The process and its
-RAM copy of the experts stay (a dense model has no cache to give back first: the driver moves all its GPU state, both cards' on two cards). The next request wakes it in seconds. Linux only. The server stays awake when the GPU state would not fit in
-free RAM with 8 GiB to spare. `--idle-unload` ends the process instead.
+After the given seconds without requests, the engine frees its VRAM: the card's copies of the experts planned into RAM go back to
+RAM, and the driver moves the rest of the GPU state to host memory. The process stays. The next request wakes it in seconds. The
+server stays awake when the GPU state would not fit in free RAM with 8 GiB to spare. `--idle-unload` ends the process instead.
+Details: [Inkling 2 Mini](models/inkling2.md#memory).
 
 ## Lending VRAM: `POST /v1/vram`
 
-With `--vram-elastic`, `POST /v1/vram` with `{"reserve_mib": N}` resizes the expert cache to keep N MiB free (`null`: the start's reserve).
+`POST /v1/vram` with `{"reserve_mib": N}` moves the card's copies of the experts planned into RAM back to RAM, or returns them,
+to keep N MiB free (`null`: the start's `--vram-reserve-mib`, default 0). Only those copies are lendable: the experts the card
+keeps have no RAM copy, so a reserve above what the copies free is refused (`400`) ([Inkling 2 Mini](models/inkling2.md#memory)).
 A resize needs a gap between requests. Idle, it applies at once and answers `200` with the new figures. While a request runs it is
 queued and answered `202 {"status": "pending"}`: it applies when the running requests have finished, and requests that arrive meanwhile
 wait for it, so steady traffic cannot hold it off. A later POST replaces a queued one (`"replaced": true`). A malformed body is a
@@ -124,66 +126,17 @@ the queued one).
 
 ## Memory floors
 
-Basalt refuses settings that would leave the machine without memory, and never shrinks what you asked for:
-
-- `--vram-reserve-mib` below 256 is refused on Windows and WSL2 (128 on Linux): less free VRAM makes the driver page GPU memory.
-- `--ram-reserve-mib` (default 2048) is the RAM left free for the rest of the system. The engine allocates its host buffers
-  first, or holds their RAM when it page-locks them later; the expert tiers then take the free RAM less the reserve and less
-  the driver's tracking of the pages they pin (`RAM floor ...` in the start log). Flash-Next's copy and top-up also leave 2 GiB beside the reserve
-  for the host memory the engine takes after they read the free RAM (CUDA graphs, the first request), so the free RAM settles
-  above the guard, not on it. When some experts stay in the file, the
-  tiers also leave the OS file cache they are read through a floor: one prompt chunk's file reads and two layers' share of
-  those experts, at least 4 GiB. Programs left idle beside a small reserve may be swapped out.
-- While serving, the RAM guard holds the reserve: below it, it parks conversations to disk or drops them. A request waits up to 30 s
-  for RAM to return. A running request stops with an error only when RAM is critical (under 1 GiB free, or below the reserve under
-  memory pressure). `--ram-reserve-mib 0` turns the guard off.
-- Experts on the SSD give one warning, the same for every model: `N experts on SSD (X GiB) · free X GiB RAM`. The console
-  repeats it and the stats page adds an SSD tier and turns its Experts heading amber.
+- `--ram-reserve-mib` (default 2048) is the RAM left free for the rest of the system. While serving, the RAM guard holds it: below
+  it, it parks conversations to disk or drops them. A request waits up to 30 s for RAM to return. A running request stops with an
+  error only when RAM is critical (under 1 GiB free, or below the reserve under memory pressure). `--ram-reserve-mib 0` turns the
+  guard off. Programs left idle beside a small reserve may be swapped out.
 - The disk tier keeps its floor a GiB above the reserve.
-- `--resident-budget-gib` that would leave less than the floor is refused with the largest safe value.
 
 ## Vision: `--vision`
 
-`--vision off | dynamic | cpu | <GPU number>` (config: `"vision"` in `server`). The encoder is Basalt's own, and all modes give bitwise
-identical embeddings. All of them read the projector in place from the model file's `vision/mmproj` section. The text can still
-differ between modes: the sidecar's VRAM cost shrinks the expert cache, and which experts run on the GPU or the CPU shifts the
-last bits of the logits, so a greedy answer can fork after some tokens (`dynamic` does the same with a different cache size).
+`--vision off | dynamic` (config: `"vision"` in a model entry). Inkling 2 Mini's own encoder runs inside the engine on the main
+card and reads the projector in place from the model file's `vision/mmproj` section; the server refuses the other modes. It keeps
+no card memory at rest: a request's pictures borrow the encoder's region from the experts and give it back
+([Inkling 2 Mini](models/inkling2.md#images)).
 
-| Mode | Encoder runs | VRAM cost | Fresh-image TTFT (IQ3_S, 400 W): 1k / 3k / 4k image tokens |
-| --- | --- | --- | --- |
-| `off` | none | none | |
-| GPU number | sidecar `bin/basalt-vision` on that card | about 2.2 GiB of its expert cache | 0.77 s / 1.4 s / 1.8 s |
-| `dynamic` | inside the engine, on the main GPU | none at rest (0.85 GiB pinned RAM) | 0.77 s / 1.45 s / 1.8 s |
-| `cpu` | sidecar on the CPU | none | about 6 s / 40 s / 70 s |
-
-`dynamic` borrows the cache's last slots per image and refills them afterwards (about 70 ms), so the cache is identical after.
 Which images a request may name: [image sources](configuration/image-sources.md). An image may not sit in a system prompt.
-
-## Video
-
-With image input on, Qwen3.8-Flash-Next reads video (Inkling 2 Mini does not). A user message names a video as it names an image, from
-the same [sources](configuration/image-sources.md):
-
-| API | Part |
-| --- | --- |
-| OpenAI chat | `{"type": "video_url", "video_url": {"url": "..."}}`; llama.cpp's `{"type": "input_video", "input_video": {"url": "..."}}` |
-| Responses | `{"type": "input_video", "video_url": "..."}` |
-| Anthropic | `{"type": "video", "source": {"type": "base64", "media_type": "video/mp4", "data": "..."}}`, or a `url` source |
-
-Frames are sampled as the model's own processor samples them: 2 a second, 4 to 768, evenly spaced. A part may set `fps` (up to 60)
-and `max_frames` (4 to 768). All frames are scaled to one size so the whole video fits `video-max-tokens` (default 8192 image
-tokens), and each pair of frames is read as one picture with its time in the prompt. Audio and rotation metadata are not read: a
-phone's portrait clip arrives sideways.
-
-Decoding uses FFmpeg 6, 7, 8 or 9 from the machine ([platforms](platforms.md#ffmpeg-for-video)). At start the server prints
-`video  on, FFmpeg 8 (...)`, or `video  off` with the reason, and then a video is refused with that reason. A video may be 1 GiB.
-
-Qwen3.8-Flash-Next's frames decode on the encoder's GPU with NVDEC (H.264, HEVC, AV1, VP9 and the older codecs FFmpeg's NVDEC takes); a stream NVDEC
-refuses decodes on the CPU, with the same pixels. With `dynamic` the expert cache lends NVDEC the memory for the decode when no
-reply is running (tens of ms to lend and refill); beside a running reply the video decodes on the CPU, and the reply keeps going
-until the frames are encoded. Another question about the same video, in the same chat or a new one, starts from the video
-already read.
-
-NVFP4 pack, `dynamic`, 400 W + 180 W, cold, time to the first token: a 30 s 1280x720 clip (8,202 prompt tokens) 2.7 s; a minute of
-3840x2160 HEVC 5.2 s (decode 2.6 s, encode 0.3 s, prompt read 1.9 s); of 1920x1080 H.264 4.3 s. A new question on the same 30 s
-clip: 0.4 s.
