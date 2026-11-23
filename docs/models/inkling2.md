@@ -37,7 +37,8 @@ the text model.
 ## Memory
 
 - **One card.** The main card holds the weights: 1.10 GiB dense, 14.71 GiB experts, the drafter 0.48 GiB. The token
-  embedding (0.86 GiB) stays in page-locked RAM and the card gathers its rows. Two cards: [half of every expert on each](#two-cards).
+  embedding (0.86 GiB) stays in page-locked RAM and the card gathers its rows. Two cards:
+  [half of every expert on each](#two-cards).
 - **Context:** `--max-context` from 1,024 to 1,048,576, default 8,192.
 - **Per position:** the 8 full-attention visits keep every position, 32 KiB with `--kv fp16`, 16 KiB with `--kv fp8`, plus the
   drafter's full layer; the window layers' rings do not grow.
@@ -67,7 +68,7 @@ together (`tensor parallelism on CUDA0 and CUDA1`):
   card, 576 to 1,151 on the second, with the matching half of each down row (about 7.36 GiB of experts a card).
 - **A layer:** both cards run the attention, the router and the mixes on the same rows, then their halves of the routed
   experts. Each card writes its experts' sum into the other's memory, and both add the two sums, the first card's first, so
-  both cards hold the same bits. Prompt chunks split the same way.
+  both cards hold the same bits (`--diag-tp-check` compares every cache after each call). Prompt chunks split the same way.
 - **First card only:** the head, the sampler, the drafter and the image encoder. The first card keeps the encoder's region
   (1.37 GiB) free: there is no expert memory to lend.
 - **Context:** it must fit beside the weights on both cards: no experts in RAM, no `--expert-cache`. On two 24 GiB cards

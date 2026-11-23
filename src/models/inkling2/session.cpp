@@ -225,6 +225,8 @@ public:
     ~Session() override {
         if (stream_) cudaStreamSynchronize(stream_);
         if (stream1_) cudaStreamSynchronize(stream1_);
+        if (tp_checks_ > 0)
+            basalt::log::info("basalt inkling2", "diag-tp-check: the two cards held the same caches after each of %lld calls", (long long) tp_checks_);
         if (m_.spill().any() && ex_tally_) {   // how decode's lookups fell between the card and RAM
             std::vector<uint32_t> t;
             if (read_tally(t)) {
@@ -392,7 +394,7 @@ public:
                 cudaMemcpyAsync(r.logits, logits_ + (size_t) (head - 1) * g_.n_vocab, (size_t) g_.n_vocab * 4, cudaMemcpyDeviceToHost, stream_);
         }
         if (cudaStreamSynchronize(stream_) != cudaSuccess) return {model::Status::Error, "inkling2: the window failed"};
-        return {};
+        return cards_agree({});
     }
 
     // ---- batch windows (docs/design/batching.md): several sessions' windows in one pass through the weights, on this
@@ -442,7 +444,7 @@ public:
         if (r.pos == 0) restart_positions(r.n_tokens);
         if (std::string e; !ensure_positions(r.pos + r.n_tokens, e)) return {model::Status::Refused, "inkling2: " + e};
         hist_.resize((size_t) r.pos);
-        if (sh_->prompt && r.n_tokens > 16) return sh_->prompt->read(r, hist_, target());   // PROMPT HOOK
+        if (sh_->prompt && r.n_tokens > 16) return cards_agree(sh_->prompt->read(r, hist_, target()));   // PROMPT HOOK
         std::string err;
         for (int t0 = 0; t0 < r.n_tokens; t0 += kMaxRows) {
             if (r.stop && r.stop()) break;
@@ -455,7 +457,7 @@ public:
             }
         }
         if (cudaStreamSynchronize(stream_) != cudaSuccess) return {model::Status::Error, "inkling2: the prompt failed"};
-        return {};
+        return cards_agree({});
     }
 
     // ---- [vision] images (vision.hpp, vision_encoder.hpp): a picture's rows stand in for its pad tokens' embeddings, taken
@@ -474,7 +476,7 @@ public:
         if (pos + n_rows > m_.context()) return {model::Status::Refused, "inkling2: the picture runs past the context"};
         if (std::string e; !ensure_positions(pos + n_rows, e)) return {model::Status::Refused, "inkling2: " + e};
         hist_.resize((size_t) pos);
-        if (sh_->prompt && n_rows > 16) return sh_->prompt->read_rows(rows, n_rows, pos, g_.image_token, hist_, target());
+        if (sh_->prompt && n_rows > 16) return cards_agree(sh_->prompt->read_rows(rows, n_rows, pos, g_.image_token, hist_, target()));
         std::string err;
         for (int at = 0; at < n_rows; at += kMaxRows) {
             const int n = std::min(kMaxRows, n_rows - at);
@@ -482,7 +484,7 @@ public:
             for (int i = 0; i < n; ++i) hist_.push_back(g_.image_token);
         }
         if (cudaStreamSynchronize(stream_) != cudaSuccess) return {model::Status::Error, "inkling2: the image rows failed"};
-        return {};
+        return cards_agree({});
     }
 
     model::Result set_logit_bias(const float* bias) override {
@@ -775,6 +777,39 @@ public:
 
 private:
     int64_t expert_pairs() const { return (int64_t) g_.n_layers * g_.n_expert; }
+
+    // --diag-tp-check, after a call that returned `r` with both cards synced: every cache and ring of the second card
+    // against the first's, bitwise (a full visit's cells up to the session's position).
+    model::Result cards_agree(model::Result r) {
+        if (!r.ok() || m_.cards() < 2 || !m_.flags().diag_tp_check) return r;
+        if (cudaStreamSynchronize(stream1_) != cudaSuccess || cudaStreamSynchronize(stream_) != cudaSuccess)
+            return {model::Status::Error, "inkling2: a card failed before the tensor-parallel check"};
+        const size_t kv_ring = (size_t) kConvRing * kKvHeads * kHeadDim * 4, e_ring = (size_t) kConvRing * g_.n_embd * 4;
+        std::vector<uint8_t> a, b;
+        std::string bad;
+        const auto same = [&](const void* p0, const void* p1, size_t n, const char* what, size_t slot) {
+            if (!bad.empty() || n == 0) return;
+            a.resize(n);
+            b.resize(n);
+            if (cudaMemcpy(a.data(), p0, n, cudaMemcpyDeviceToHost) != cudaSuccess || cudaMemcpy(b.data(), p1, n, cudaMemcpyDeviceToHost) != cudaSuccess)
+                bad = std::string("reading the ") + what + " back failed";
+            else if (std::memcmp(a.data(), b.data(), n) != 0)
+                bad = std::string("the cards' ") + what + " of visit cache " + std::to_string(slot) + " differ";
+        };
+        const size_t cells = (size_t) hist_.size() * (size_t) cell_bytes();
+        for (size_t i = 0; i < vc_.size(); ++i) {
+            const VisitCache &c0 = vc_[i], &c1 = vc1_[i];
+            same(c0.k, c1.k, c0.ring ? kv_bytes_of(c0) : cells, "keys", i);
+            same(c0.v, c1.v, c0.ring ? kv_bytes_of(c0) : cells, "values", i);
+            same(c0.k_ring, c1.k_ring, kv_ring, "key convolution ring", i);
+            same(c0.v_ring, c1.v_ring, kv_ring, "value convolution ring", i);
+            same(c0.a_ring, c1.a_ring, e_ring, "attention convolution ring", i);
+            same(c0.m_ring, c1.m_ring, e_ring, "experts' convolution ring", i);
+        }
+        if (!bad.empty()) return {model::Status::Error, "inkling2: tensor parallelism: " + bad + " at position " + std::to_string(hist_.size())};
+        ++tp_checks_;
+        return r;
+    }
 
     // On the current device.
     void* alloc(size_t bytes, bool& ok) {
@@ -1343,6 +1378,7 @@ private:
     std::vector<uint32_t> tally_h_;
     ResidentExpertMap map_;
     int64_t lookups_ = 0;                    // decode's routed lookups so far
+    int64_t tp_checks_ = 0;                  // --diag-tp-check: the calls checked
     // the elastic KV (model.hpp elastic()): the full visits' caches back their first backed_ cells
     std::vector<std::unique_ptr<core::ElasticArray>> elastic_;
     int64_t backed_ = 0;

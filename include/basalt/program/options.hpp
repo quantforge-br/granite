@@ -114,6 +114,7 @@ struct CommonOptions {
     bool diag_serial_prompt = false;       ///< --diag-serial-prompt: an adapter model reads its prompt one decode step at a time
     std::string diag_logits;               ///< --diag-logits FILE: an adapter model writes the logits of each decoded row
     bool diag_batch_check = false;         ///< --diag-batch-check: the batch conformance check over --batch N sessions (model/batch_check.hpp)
+    bool diag_tp_check = false;            ///< --diag-tp-check: a tensor-parallel model's cards against each other after each call
     std::vector<std::string> images;       ///< --image FILE ... with --image-at N: the picture's block goes before token N
     std::vector<int64_t> image_at;
     bool image_pad_given = false;
