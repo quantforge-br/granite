@@ -1,7 +1,10 @@
 # Inkling 2 Mini
 
-Thinking Machines Lab's Inkling 2 Mini (Apache-2.0). Runs with the same command as any model: `basalt serve PACK`. What it
-supports next to the others: [models](index.md). Rounding and quality: [precision](../precision/inkling2.md).
+Thinking Machines Lab's Inkling 2 Mini (Apache-2.0), the model granite runs: `granite serve PACK`. What granite supports:
+[models](index.md). Rounding and quality: [precision](../precision/inkling2.md).
+
+Numbers marked upstream are Basalt's own, measured on Blackwell cards (RTX 5090, RTX 5060 Ti) before the fork, where the
+prompt path ran the NVFP4 experts on FP4 tensor cores; granite runs them through MMQ ([long prompts](#long-prompts)).
 
 ## Pack
 
@@ -48,16 +51,17 @@ the text model.
   pairs whose expert is in RAM while the card runs the rest, and the card takes their rows before it combines them. The
   full visits' caches then back their first 32,768 positions and grow as prompts
   need them, and the experts planned into RAM are copied back to the card while the caches leave room, the least routed
-  giving way first when they grow. A short chat at `--max-context 1048576 --kv fp8` keeps every expert on the card. On a
-  smaller card the spill is static: what does not fit stays in RAM. Nothing changes when everything fits.
+  giving way first when they grow. A short chat at `--max-context 1048576 --kv fp8` keeps every expert on an RTX 5090
+  (upstream). With a context of at most 32,768, or with `--expert-cache`, the spill is static: what does not fit stays in
+  RAM. Nothing changes when everything fits.
 - **Sleep and lending:** `--idle-sleep` and `POST /v1/vram` ([running](../running.md#sleep---idle-sleep)) use the same copies.
   At a sleep the card's copies of the RAM experts go back to RAM (the CPU computes them) and the driver moves the rest
   of the GPU state to host memory; the wake takes the copies back while the card has room. `reserve_mib` resizes them the
   same way: copies go back when the card has less than that free, return when it has more. Only the copies are lendable:
   the experts a pack keeps on the card have no RAM copy, so a reserve above what the copies free is refused (`400`), and an
-  engine with every expert on the card gives nothing back before the driver moves it. No `--vram-elastic` (Flash-Next's
-  segmented cache) is needed or accepted. At `--max-context 1048576 --kv fp8` on an RTX 5090 with images on the card holds
-  28.4 GB awake and 20 MiB asleep; the wake takes about 2 s and every token after it equals the one before.
+  engine with every expert on the card gives nothing back before the driver moves it. Upstream, at `--max-context 1048576
+  --kv fp8` with images on, an RTX 5090 held 28.4 GB awake and 20 MiB asleep; the wake took about 2 s and every token after
+  it equalled the one before.
 
 ## Two cards
 
@@ -79,14 +83,16 @@ A pair that is not alike, has no peer access, or asks for `--expert-cache` runs 
 
 ## Long prompts
 
-Prompts of more than 16 tokens read in chunks of up to 4,096 rows on the tensor cores: the NVFP4 experts on the FP4 block-scaled
-tensor cores (each activation row as two FP4 terms, [precision](../precision/inkling2.md#where-each-stage-rounds)), the other
-products through MMQ. The drafter sees every chunk. With experts in RAM a chunk stages each spilled layer's experts on the card,
-from their card copies when it has them all. At `--max-context 1048576 --kv fp8` on an RTX 5090, needles at 131K and 400K are
-found; decode runs at 264 tok/s on a short chat, 173 at 131K and 108 at 400K (plain decoding), and a 400K prompt reads at about
-4,110 tok/s. Needles at 10, 50 and 90 % of 31,943 and 127,958-token prompts are found through the server
-(`--max-context 262144`). On an RTX 5090 at 400 W with every expert on the card, prompts of 2K, 16K, 32K and 128K tokens read at
-about 14,100, 13,300, 12,200 and 8,900 tok/s.
+Prompts of more than 16 tokens read in chunks of up to 4,096 rows: every expert and projection product through MMQ (int8, q8_1
+activations, [precision](../precision/inkling2.md#where-each-stage-rounds)), attention on the fp16 tensor cores. The drafter
+sees every chunk. With experts in RAM a chunk stages each spilled layer's experts on the card, from their card copies when it
+has them all.
+
+Upstream, on an RTX 5090 with the FP4 prompt path: at `--max-context 1048576 --kv fp8` needles at 131K and 400K were found;
+decode ran at 264 tok/s on a short chat, 173 at 131K and 108 at 400K (plain decoding), and a 400K prompt read at about 4,110
+tok/s. Needles at 10, 50 and 90 % of 31,943 and 127,958-token prompts were found through the server (`--max-context 262144`).
+At 400 W with every expert on the card, prompts of 2K, 16K, 32K and 128K tokens read at about 14,100, 13,300, 12,200 and
+8,900 tok/s.
 
 ## Drafting
 
@@ -95,8 +101,8 @@ mask rows, reading keys and values made from the target's visits 5, 23 and 41 an
 head over the target's head (screened through 2-bit copies of its rows). The draft policy picks each window by expected
 tokens per millisecond (`include/basalt/spec/draft_policy.hpp`). `--spec N` caps the window (default 8: the last accepted token
 plus the block); `--spec 1` turns it off. The target checks every draft: output is plain decoding's.
-A window also takes a draft copied from an earlier repeat of the context (`--suffix-draft`, default 3) when the policy expects
-more from it than from the block: a 2,405-token copy prompt decodes 13 % faster.
+A window also takes a draft copied from an earlier repeat of at least 3 tokens of the context when the policy expects more
+from it than from the block: upstream, a 2,405-token copy prompt decoded 13 % faster.
 
 ## Parallel slots
 
@@ -110,7 +116,7 @@ same greedy tokens as with `--parallel 1`, and requests decoding together each g
 `--vision dynamic` ([vision](../running.md#vision---vision)) keeps no card memory, so the context that keeps every expert on
 the card is the same as without it. A request's pictures borrow the encoder's region (up to 1.37 GiB) from the experts: the
 card copies of RAM experts go back first, then whole layers' experts are copied to RAM and come back byte for byte at the
-same addresses after the pictures (one layer, about 0.3 s a request on an RTX 5090 with every expert on the card). The
+same addresses after the pictures (one layer, about 0.3 s a request on an RTX 5090 with every expert on the card, upstream). The
 engine's own encoder reads a picture at its size, padded to multiples of 40 pixels, one token per 40 x 40 cell: a 640 x 488
 picture takes 208 tokens. A picture of more than 10,609 cells
 (about 4,120 x 4,120) is scaled down to fit (bicubic). Transparent pixels are laid over the reference processor's grey
@@ -136,23 +142,25 @@ checkerboard (8 x 8 squares of 204 and 153), as the model saw in training; the m
 ## Limits
 
 - At most two cards, as one tensor-parallel pair (no expert tier, no third card). Experts in RAM run on the CPU,
-  so a spilled card decodes slower than a full one: an RTX 5060 Ti alone at 180 W with a Ryzen 9 9950X and about 1,100 experts in RAM decodes conversation at 59 tok/s,
-  struct at 118 and prose at 53, about 2.6 times as fast as reading them over the bus; prompts read as before (2,430 tok/s
-  at 16K).
-- The server's `decode expert cache hit rate` line reads 100 % on a spilled load; the engine's `experts: ... on the card`
-  line at the end of a session is the real share.
+  so a spilled card decodes slower than a full one: upstream, an RTX 5060 Ti alone at 180 W with a Ryzen 9 9950X and about
+  1,100 experts in RAM decoded conversation at 59 tok/s, struct at 118 and prose at 53, about 2.6 times as fast as reading
+  them over the bus; prompts read as before (2,430 tok/s at 16K).
+- With experts in RAM, the server's hit rate (`hit=`, `decode expert cache hit rate`) and the engine's `experts: ... on the
+  card` line give the share of decode lookups whose expert is on the card. The stats page's expert map shows every expert
+  in VRAM.
 - No video.
 
 ## Speed
 
-`basalt-bench` (seeded, `-r 2`), RTX 5090 alone at 400 W, the pack above, drafting on:
+Upstream Basalt's `basalt-bench` (seeded, `-r 2`), RTX 5090 alone at 400 W, the pack above, drafting on, the FP4 prompt
+path:
 
-| | Inkling 2 Mini | llama.cpp, IQ4_NL GGUF | Qwen3.8-27B (Basalt) |
-| --- | ---: | ---: | ---: |
-| Decode: conversation | 347 tok/s | 94.5 | 261 |
-| Decode: struct | 628 tok/s | 92.5 | 768 |
-| Decode: prose | 296 tok/s | 94.5 | 192 |
-| Prompt read | 12,310 tok/s (16K) | 3,093 (`llama-bench` pp512) | 10,757 (16K) |
+| | Inkling 2 Mini (Basalt) | llama.cpp, IQ4_NL GGUF |
+| --- | ---: | ---: |
+| Decode: conversation | 347 tok/s | 94.5 |
+| Decode: struct | 628 tok/s | 92.5 |
+| Decode: prose | 296 tok/s | 94.5 |
+| Prompt read | 12,310 tok/s (16K) | 3,093 (`llama-bench` pp512) |
 
 Drafts accepted: conversation 68.0 %, struct 97.5 %, prose 50.7 %. llama.cpp (29b52d398, `-fa 1`, full offload, no drafting)
 ran the same token ids through `llama-server` with the same lengths and temperatures; `llama-bench` tg128 reads 96.3 tok/s.
