@@ -55,7 +55,9 @@ void native_swiglu_quantize_q8_1(const float* gate, const float* up, void* x_q8_
 // Up to kQ80Segments row ranges of one Q8_0 matrix in one launch, each with its own input and output: segment i is rows
 // [row0[i], row0[i] + n_out[i]) of `weights` times x[i] (ncols columns), column j written to y[i] + j * ld[i] (ld 0:
 // n_out[i]) as native_q8_0_mmvq(that range, x[i], ..., n_in, n_out[i], ncols) writes it, the same bits. Shapes whose own
-// calls would take different kernels run as those calls, which only segments of stride n_out (or one column) allow.
+// calls would take different kernels run as those calls, which only segments of stride n_out (or one column) and no y2
+// allow. y2[i] set: the segment's output also there, the same layout (another card's memory: the stores go 16 rows at a
+// time, the tensor-core layout at any column count, which gives the same bits).
 constexpr int kQ80Segments = 6;
 struct Q80Segments {
     int n = 0;
@@ -64,6 +66,7 @@ struct Q80Segments {
     int ld[kQ80Segments] = {};
     const void* x[kQ80Segments] = {};
     float* y[kQ80Segments] = {};
+    float* y2[kQ80Segments] = {};
 };
 void native_q8_0_mmvq_segments(const void* weights, const Q80Segments& seg, int n_in, int ncols, void* stream);
 

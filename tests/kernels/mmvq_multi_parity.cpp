@@ -571,6 +571,33 @@ int q80_segments_section(cudaStream_t s) {
             std::printf("Q8_0 strided segments T=%d card %d (6 ranges): %lld of %lld differ  %s\n", T, card, sdiff, n,
                         sdiff == 0 ? "ok" : "FAIL");
         }
+        // a second output, at the shape of a card's output projection under tensor parallelism (half the input): both
+        // outputs the call's bits
+        {
+            constexpr int OUT_IN = 1536, OUT_ROWS = 2304;
+            const std::size_t on = (std::size_t) T * OUT_ROWS;
+            cudaMemset(ya, 0xff, ybytes);
+            cudaMemset(yb, 0xfe, ybytes);
+            k::native_mmvq(Q8_0, dw, dq, yb, OUT_IN, OUT_ROWS, T, s);
+            k::Q80Segments d;
+            d.n = 1;
+            d.n_out[0] = OUT_ROWS;
+            d.x[0] = dq;
+            d.y[0] = ya;
+            d.y2[0] = ya + on;
+            k::native_q8_0_mmvq_segments(dw, d, OUT_IN, T, s);
+            std::vector<float> got(2 * on), want(on);
+            if (!ck(cudaStreamSynchronize(s), "second output") ||
+                !ck(cudaMemcpy(got.data(), ya, got.size() * 4, cudaMemcpyDeviceToHost), "read") ||
+                !ck(cudaMemcpy(want.data(), yb, on * 4, cudaMemcpyDeviceToHost), "read"))
+                return bad + 1;
+            long long ddiff = 0;
+            for (std::size_t i = 0; i < on; ++i)
+                ddiff += (std::memcmp(&got[i], &want[i], 4) != 0) + (std::memcmp(&got[on + i], &want[i], 4) != 0);
+            bad += ddiff != 0;
+            std::printf("Q8_0 segment with a second output T=%d (%d rows of %d): %lld of %zu differ  %s\n", T, OUT_ROWS,
+                        OUT_IN, ddiff, 2 * on, ddiff == 0 ? "ok" : "FAIL");
+        }
     }
     cudaFree(dw); cudaFree(dq); cudaFree(dx); cudaFree(ya); cudaFree(yb);
     return bad;

@@ -860,7 +860,8 @@ __global__ void native_small_mmvq_kernel(const Weight* __restrict__ w,
 // the output's column stride `ldy` (n_out in its own launch).
 template<bool SmallK, bool Stream, int NCOLS>
 __device__ __forceinline__ void small_q80_body(const Q80Block* __restrict__ w, const Q81Block* __restrict__ x,
-                                               float* __restrict__ y, int n_in, int n_out, int ldy, int bx) {
+                                               float* __restrict__ y, float* __restrict__ y2, int n_in, int n_out, int ldy,
+                                               int bx) {
     static_assert(NCOLS == 1 || !SmallK, "columns take the one-row layout");
     constexpr int Qi = 8;
     constexpr int ROWS = SmallK ? WARPS : 1;
@@ -950,7 +951,10 @@ __device__ __forceinline__ void small_q80_body(const Q80Block* __restrict__ w, c
 #pragma unroll
             for (int l = 0; l < WARPS - 1; ++l) tmp[j][i] += partial[l][j][i][threadIdx.x];
             tmp[j][i] = warp_sum(tmp[j][i]);
-            if (threadIdx.x == i && row0 + i < n_out) y[std::size_t(j) * ldy + row0 + i] = tmp[j][i];
+            if (threadIdx.x == i && row0 + i < n_out) {
+                y[std::size_t(j) * ldy + row0 + i] = tmp[j][i];
+                if (y2) y2[std::size_t(j) * ldy + row0 + i] = tmp[j][i];
+            }
         }
     }
 }
@@ -960,7 +964,7 @@ __launch_bounds__(WARPS * WARP, NCOLS > 1 ? 8 : 1)
 __global__ void native_small_q80_kernel(const Q80Block* __restrict__ w,
                                         const Q81Block* __restrict__ x,
                                         float* __restrict__ y, int n_in, int n_out) {
-    small_q80_body<SmallK, Stream, NCOLS>(w, x, y, n_in, n_out, n_out, int(blockIdx.x));
+    small_q80_body<SmallK, Stream, NCOLS>(w, x, y, nullptr, n_in, n_out, n_out, int(blockIdx.x));
 }
 
 // A segmented launch: up to kQ80Segments row ranges of one matrix, each with its own input and output, the blocks of
@@ -970,20 +974,20 @@ struct SegArgs {
     int end[kQ80Segments];                                   // a segment's last block + 1, cumulative
     int row0[kQ80Segments], n_out[kQ80Segments], ld[kQ80Segments];   // its first row in the matrix, its rows, its stride
     const Q81Block* x[kQ80Segments];
-    float* y[kQ80Segments];
+    float *y[kQ80Segments], *y2[kQ80Segments];   // y2: also there (null: not)
 };
 struct SegPick {
     int bx, row0, n_out, ld;
     const Q81Block* x;
-    float* y;
+    float *y, *y2;
 };
 // constant indices only, so the arguments stay in the parameter bank
 __device__ __forceinline__ SegPick seg_pick(const SegArgs& a) {
     const int b = int(blockIdx.x);
-    SegPick p{b, a.row0[0], a.n_out[0], a.ld[0], a.x[0], a.y[0]};
+    SegPick p{b, a.row0[0], a.n_out[0], a.ld[0], a.x[0], a.y[0], a.y2[0]};
 #pragma unroll
     for (int i = 1; i < kQ80Segments; ++i)
-        if (b >= a.end[i - 1]) p = {b - a.end[i - 1], a.row0[i], a.n_out[i], a.ld[i], a.x[i], a.y[i]};
+        if (b >= a.end[i - 1]) p = {b - a.end[i - 1], a.row0[i], a.n_out[i], a.ld[i], a.x[i], a.y[i], a.y2[i]};
     return p;
 }
 
@@ -991,7 +995,7 @@ template<int NCOLS>
 __launch_bounds__(WARPS * WARP, NCOLS > 1 ? 8 : 1)
 __global__ void native_small_q80_seg_kernel(const Q80Block* __restrict__ w, SegArgs a, int n_in) {
     const SegPick p = seg_pick(a);
-    small_q80_body<false, false, NCOLS>(w + std::size_t(p.row0) * (n_in / 32), p.x, p.y, n_in, p.n_out, p.ld, p.bx);
+    small_q80_body<false, false, NCOLS>(w + std::size_t(p.row0) * (n_in / 32), p.x, p.y, p.y2, n_in, p.n_out, p.ld, p.bx);
 }
 
 // ============================ ncols = 2..8 (speculative verify, small batches) ============================
@@ -1218,7 +1222,8 @@ bool g_multi_exact = true;   // the upstream layout is not the default
 
 template<typename F, int NCOLS, int NW, int ROWS>
 __device__ __forceinline__ void mmvq_multi_body(const typename F::Block* __restrict__ w, const Q81Block* __restrict__ x,
-                                                float* __restrict__ y, int n_in, int n_out, int ldy, int bx) {
+                                                float* __restrict__ y, float* __restrict__ y2, int n_in, int n_out, int ldy,
+                                                int bx) {
     constexpr int BPI = F::BPI * NW / WARPS;           // blocks per iteration scale with the warp count
     const int tid = WARP * int(threadIdx.y) + int(threadIdx.x);
     const int row0 = ROWS * bx;
@@ -1256,7 +1261,10 @@ __device__ __forceinline__ void mmvq_multi_body(const typename F::Block* __restr
 #pragma unroll
             for (int l = 0; l < NW - 1; ++l) tmp[j][i] += partial[l][j][i][threadIdx.x];
             tmp[j][i] = warp_sum(tmp[j][i]);
-            if (threadIdx.x == i && row0 + i < n_out) y[std::size_t(j) * ldy + row0 + i] = tmp[j][i];
+            if (threadIdx.x == i && row0 + i < n_out) {
+                y[std::size_t(j) * ldy + row0 + i] = tmp[j][i];
+                if (y2) y2[std::size_t(j) * ldy + row0 + i] = tmp[j][i];
+            }
         }
     }
 }
@@ -1266,14 +1274,15 @@ __launch_bounds__(NW * WARP, (ROWS <= 2 ? 4 : 1))
 __global__ void native_mmvq_multi_kernel(const typename F::Block* __restrict__ w,
                                          const Q81Block* __restrict__ x,
                                          float* __restrict__ y, int n_in, int n_out) {
-    mmvq_multi_body<F, NCOLS, NW, ROWS>(w, x, y, n_in, n_out, n_out, int(blockIdx.x));
+    mmvq_multi_body<F, NCOLS, NW, ROWS>(w, x, y, nullptr, n_in, n_out, n_out, int(blockIdx.x));
 }
 
 template<typename F, int NCOLS>
 __launch_bounds__(WARPS * WARP, 4)   // native_mmvq_multi_kernel's bound at one row a block
 __global__ void native_mmvq_multi_seg_kernel(const typename F::Block* __restrict__ w, SegArgs a, int n_in) {
     const SegPick p = seg_pick(a);
-    mmvq_multi_body<F, NCOLS, WARPS, 1>(w + std::size_t(p.row0) * (n_in / F::DIV), p.x, p.y, n_in, p.n_out, p.ld, p.bx);
+    mmvq_multi_body<F, NCOLS, WARPS, 1>(w + std::size_t(p.row0) * (n_in / F::DIV), p.x, p.y, p.y2, n_in, p.n_out, p.ld,
+                                        p.bx);
 }
 
 // ---------------------------------------------------------------- Q6_K columns on short rows (exact layout)
@@ -1760,7 +1769,8 @@ static_assert(MAX_NCOLS * 16 * 33 * 4 <= kQmStages * kQmSlot, "the partial sums 
 __device__ __forceinline__ int qm_next(int G, int ng) { return G + 4 < ng ? G + 4 : (G & 3) + 1; }
 
 __device__ __forceinline__ void q80_mma_body(const Q80Block* __restrict__ w, const Q81Block* __restrict__ x,
-                                             float* __restrict__ y, int n_in, int n_out, int ldy, int ncols, int bx) {
+                                             float* __restrict__ y, float* __restrict__ y2, int n_in, int n_out, int ldy,
+                                             int ncols, int bx) {
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
     __shared__ __align__(16) uint8_t s_qm[kQmStages * kQmSlot];
     const int tid = threadIdx.x, wp = tid >> 5, lane = tid & 31, g = lane >> 2, t = lane & 3;
@@ -1887,7 +1897,10 @@ __device__ __forceinline__ void q80_mma_body(const Q80Block* __restrict__ w, con
 #pragma unroll
         for (int L = 0; L < 4; ++L) r4[L] = r8[L] + r8[L + 4];
         const float r2a = r4[0] + r4[2], r2b = r4[1] + r4[3];
-        if (row0 + row < n_out) y[(size_t) col * ldy + row0 + row] = r2a + r2b;
+        if (row0 + row < n_out) {
+            y[(size_t) col * ldy + row0 + row] = r2a + r2b;
+            if (y2) y2[(size_t) col * ldy + row0 + row] = r2a + r2b;
+        }
     }
 #elif defined(__CUDA_ARCH__)
     __trap();
@@ -1897,13 +1910,13 @@ __device__ __forceinline__ void q80_mma_body(const Q80Block* __restrict__ w, con
 __global__ void __launch_bounds__(256) native_q80_mma_kernel(const Q80Block* __restrict__ w,
                                                              const Q81Block* __restrict__ x, float* __restrict__ y,
                                                              int n_in, int n_out, int ncols) {
-    q80_mma_body(w, x, y, n_in, n_out, n_out, ncols, int(blockIdx.x));
+    q80_mma_body(w, x, y, nullptr, n_in, n_out, n_out, ncols, int(blockIdx.x));
 }
 
 __global__ void __launch_bounds__(256) native_q80_mma_seg_kernel(const Q80Block* __restrict__ w, SegArgs a, int n_in,
                                                                  int ncols) {
     const SegPick p = seg_pick(a);
-    q80_mma_body(w + std::size_t(p.row0) * (n_in / 32), p.x, p.y, n_in, p.n_out, p.ld, ncols, p.bx);
+    q80_mma_body(w + std::size_t(p.row0) * (n_in / 32), p.x, p.y, p.y2, n_in, p.n_out, p.ld, ncols, p.bx);
 }
 
 // The slots are 16-byte copies: rows of a multiple of 8 blocks, and weights and activations 16-byte aligned.
@@ -2271,20 +2284,23 @@ void native_q8_0_mmvq_segments(const void* weights, const Q80Segments& seg, int 
         for (int i = 0; i < seg.n; ++i) {
             if (ncols > 1 && ld_of(i) != seg.n_out[i])
                 throw std::invalid_argument("native_q8_0_mmvq_segments: a strided segment's shape runs on another kernel");
+            if (seg.y2[i]) throw std::invalid_argument("native_q8_0_mmvq_segments: a second output's shape runs on another kernel");
             native_q8_0_mmvq(static_cast<const uint8_t*>(weights) + seg.row0[i] * row_bytes, seg.x[i], seg.y[i], n_in,
                              seg.n_out[i], ncols, stream);
         }
     };
     // the kernel each segment's own call takes (small_mmvq / launch_multi_n): one launch only where they all take the
-    // one-row layout of the same kernel
+    // one-row layout of the same kernel. A second output takes the 16-row one at any column count (the same bits): its
+    // stores are 16 rows' a column, where the one-row kernel's are a row's (another card's memory takes each as a write).
     constexpr int BPI = 2 * WARPS * WARP / 8;
     bool mma = false;
     for (int i = 0; i < seg.n; ++i) {
         validate_pointer(seg.x[i]);
         validate_pointer(seg.y[i]);
+        if (seg.y2[i]) validate_pointer(seg.y2[i]);
         if (seg.n_out[i] <= 0) throw std::invalid_argument("native MMVQ requires n_out > 0");
         if (ld_of(i) < seg.n_out[i]) throw std::invalid_argument("native_q8_0_mmvq_segments: a stride below the rows");
-        const bool m = mmvq_mma_sms() != 0 && ncols >= kQ80MmaMinCols &&
+        const bool m = mmvq_mma_sms() != 0 && (ncols >= kQ80MmaMinCols || seg.y2[i]) &&
                        q80_mma_fits(static_cast<const uint8_t*>(weights) + seg.row0[i] * row_bytes, seg.x[i], n_in);
         if (i == 0) mma = m;
         else if (m != mma) return separate();
@@ -2302,6 +2318,7 @@ void native_q8_0_mmvq_segments(const void* weights, const Q80Segments& seg, int 
         a.ld[i] = ld_of(k);
         a.x[i] = static_cast<const Q81Block*>(seg.x[k]);
         a.y[i] = seg.y[k];
+        a.y2[i] = seg.y2[k];
     }
     const dim3 grid{unsigned(end)}, threads(WARP, WARPS);
     using F = SmallTraits<Q80Block, 8>;
