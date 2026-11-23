@@ -920,10 +920,10 @@ bool pin_budget(uint64_t& limit, std::string& why, const char* luid, uint32_t no
 
 namespace {
 constexpr uint64_t kSharedArenaHeaderBytes = 4096;
-constexpr char kSharedArenaMagic[16] = "BASALT-ARENA-V1";
+constexpr char kSharedArenaMagic[24] = "GRANITE-ARENA-V1";
 
 struct SharedArenaHeader {
-    char magic[16];
+    char magic[24];
     uint32_t version;
     uint32_t header_bytes;
     uint64_t arena_bytes;
