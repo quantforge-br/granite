@@ -1,6 +1,6 @@
 # `.basalt` model file
 
-One file holds everything the engine, the server and the vision sidecar load: weights, tokenizer and chat template, DSpark drafter,
+One file holds everything the engine and the server load: weights, tokenizer and chat template, DSpark drafter,
 vision projector, and the GGUF metadata with default sampling. Flags and the expert profile are
 not in it.
 
@@ -13,7 +13,8 @@ not in it.
 ## `NVFP4_PLANES` (tensor type 45)
 
 An NVFP4 matrix of `rows` x `K` (rows a multiple of 128, K of 64) as two planes in one tensor, 36 bytes per 64 values like
-ggml's NVFP4 blocks, the layout the dense products read with TMA (NInfer's and Infernix's `block_scale_k16_m128x4`):
+ggml's NVFP4 blocks (NInfer's and Infernix's `block_scale_k16_m128x4` layout without its FP32 word). The Inkling 2 Mini pack
+stores no such tensor; the engine rounds the DSpark drafter's Q8_0 block products to this layout in memory at load:
 
 - **Codes**, `rows * K / 2` bytes from the tensor's start: row-major, byte `b` of a row holds value `2b` in its low nibble and
   `2b + 1` in its high nibble (E2M1, as NVIDIA's checkpoints store them).
