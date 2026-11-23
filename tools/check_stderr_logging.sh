@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Engine code writes its log lines through include/basalt/log.hpp, which gives every line its level. This fails when
+# Engine code writes its log lines through include/granite/log.hpp, which gives every line its level. This fails when
 # code under src/ or include/ names stderr (or cerr, perror) anywhere else, so a line cannot go out without a level.
 # Tests, parity checks and microbenchmarks print their own results and are not checked. tools/stderr_logging.allow
 # lists the files that still name stderr, with their hit counts (a use that is not a write, or help text); a count may
@@ -26,7 +26,7 @@ while IFS= read -r row; do
   [[ "${code}" =~ ${pattern} ]] || continue
   hits["${path}"]=$(( ${hits["${path}"]:-0} + 1 ))
 done < <(git grep -nE "${pattern}" -- src include \
-           ':!*parity*' ':!*_test.*' ':!*_bench.*' ':!src/kernels/cpu/ggml' ':!include/basalt/log.hpp' || true)
+           ':!*parity*' ':!*_test.*' ':!*_bench.*' ':!src/kernels/cpu/ggml' ':!include/granite/log.hpp' || true)
 
 status=0
 for path in "${!hits[@]}"; do
@@ -34,7 +34,7 @@ for path in "${!hits[@]}"; do
   count="${hits[${path}]}"
   if (( count > have )); then
     echo "stderr logging: ${path} names stderr ${count} times, allowed ${have}." >&2
-    echo "  Write log lines with basalt::log::info / warn / error (include/basalt/log.hpp)." >&2
+    echo "  Write log lines with basalt::log::info / warn / error (include/granite/log.hpp)." >&2
     status=1
   elif (( count < have )); then
     echo "stderr logging: ${path} is down to ${count} (allowlist says ${have}); lower it in ${allow}." >&2

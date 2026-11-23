@@ -1,5 +1,5 @@
 // src/program/probe_report.cpp - see probe_report.hpp.
-#include "basalt/program/probe_report.hpp"
+#include "granite/program/probe_report.hpp"
 
 #include <algorithm>
 #include <cctype>

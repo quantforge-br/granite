@@ -1,16 +1,16 @@
 // src/kernels/cpu/expert.cpp - the Q2_0 expert kernel.
 //
-// See include/basalt/kernels/cpu/expert.hpp first; it says why each piece is shaped this way.
-#include "basalt/kernels/cpu/expert.hpp"
+// See include/granite/kernels/cpu/expert.hpp first; it says why each piece is shaped this way.
+#include "granite/kernels/cpu/expert.hpp"
 
 #include <immintrin.h>
-#include "basalt/platform/compiler.hpp"
+#include "granite/platform/compiler.hpp"
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::kernels::cpu {
 namespace {

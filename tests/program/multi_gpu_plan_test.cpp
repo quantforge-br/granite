@@ -1,9 +1,9 @@
 // tests/program/multi_gpu_plan_test.cpp - what the cards do together, over fake card tables: the prices, the pick, the
 // single-card cases (no choice, no other card touched).
-#include "basalt/program/gpu_select.hpp"
-#include "basalt/program/multi_gpu_plan.hpp"
+#include "granite/program/gpu_select.hpp"
+#include "granite/program/multi_gpu_plan.hpp"
 
-#include "basalt/platform/process.hpp"
+#include "granite/platform/process.hpp"
 
 #include <algorithm>
 #include <cstdio>

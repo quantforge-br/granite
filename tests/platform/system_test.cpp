@@ -1,16 +1,16 @@
-// tests/platform/system_test.cpp - the host-system questions in basalt/platform/system.hpp, the DynLib loader and the
+// tests/platform/system_test.cpp - the host-system questions in granite/platform/system.hpp, the DynLib loader and the
 // memory-accounting paths. CPU only. Each answer is checked for being usable; none depends on a particular machine.
-#include "basalt/platform/dynlib.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/memory.hpp"
-#include "basalt/platform/system.hpp"
+#include "granite/platform/dynlib.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/memory.hpp"
+#include "granite/platform/system.hpp"
 
 #include <cstdio>
 #include <fstream>
 #include <string>
 
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #endif
 
 namespace {

@@ -1,9 +1,9 @@
 // Row norms: a weighted RMSNorm over one fp32 row per block, and the same norm fused behind the
 // hyper-connection collapse (hc_pre), so the collapsed row never makes a round trip through memory before it is
 // normalised.
-#include "basalt/kernels/row_norm.hpp"
+#include "granite/kernels/row_norm.hpp"
 
-#include "basalt/kernels/mhc.hpp"
+#include "granite/kernels/mhc.hpp"
 
 #include <cuda_runtime.h>
 

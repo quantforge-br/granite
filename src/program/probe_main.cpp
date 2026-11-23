@@ -13,15 +13,15 @@
 #include <string>
 #include <vector>
 
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/process.hpp"
-#include "basalt/platform/system.hpp"
-#include "basalt/program/engine_session.hpp"
-#include "basalt/program/gpu_select.hpp"
-#include "basalt/program/options.hpp"
-#include "basalt/program/probe_derive.hpp"
-#include "basalt/program/probe_report.hpp"
-#include "basalt/log.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/process.hpp"
+#include "granite/platform/system.hpp"
+#include "granite/program/engine_session.hpp"
+#include "granite/program/gpu_select.hpp"
+#include "granite/program/options.hpp"
+#include "granite/program/probe_derive.hpp"
+#include "granite/program/probe_report.hpp"
+#include "granite/log.hpp"
 
 #ifndef BASALT_BENCH_ENGINE
 #define BASALT_BENCH_ENGINE ""

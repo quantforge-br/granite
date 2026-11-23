@@ -1,8 +1,8 @@
 // src/models/inkling2/kernels/ops.cu - Inkling 2's block-residual mixes, loop-controller glue, attention preparation
 // (short convolutions, clips, cache writes), output gate, post-sublayer convolutions, expert plan and sum, and softcap.
-#include "basalt/kernels/pdl.hpp"
-#include "basalt/kernels/prefetch_l2.cuh"
-#include "basalt/models/inkling2/kernels.hpp"
+#include "granite/kernels/pdl.hpp"
+#include "granite/kernels/prefetch_l2.cuh"
+#include "granite/models/inkling2/kernels.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>

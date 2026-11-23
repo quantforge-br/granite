@@ -1,6 +1,6 @@
 // src/artifact/dequant.cpp - the `granite-dequant` CLI (dequantize a GGUF tensor and dump F32).
-// The dequantizers themselves are header-only in include/basalt/artifact/dequant.hpp.
-#include "basalt/artifact/dequant.hpp"
+// The dequantizers themselves are header-only in include/granite/artifact/dequant.hpp.
+#include "granite/artifact/dequant.hpp"
 
 #ifdef DEQUANT_SELFTEST
 int main(int argc, char** argv) {

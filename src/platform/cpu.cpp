@@ -1,5 +1,5 @@
-// src/platform/cpu.cpp - see include/basalt/platform/cpu.hpp.
-#include "basalt/platform/cpu.hpp"
+// src/platform/cpu.cpp - see include/granite/platform/cpu.hpp.
+#include "granite/platform/cpu.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -11,7 +11,7 @@
 #include <utility>
 
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #else
 #include <pthread.h>
 #include <sched.h>

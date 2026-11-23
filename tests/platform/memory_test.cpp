@@ -1,8 +1,8 @@
 // tests/platform/memory_test.cpp - lock_resident on 256 MiB (or what the locked-memory limit allows), the RAM floor, the
 // file cache decisions and the read-ahead hint on a mapped file view (CPU only, no GPU, no model; one temp file).
-#include "basalt/platform/memory.hpp"
+#include "granite/platform/memory.hpp"
 
-#include "basalt/platform/file.hpp"
+#include "granite/platform/file.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -15,7 +15,7 @@
 #include <vector>
 
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #include <psapi.h>   // QueryWorkingSetEx
 #else
 #include <fcntl.h>

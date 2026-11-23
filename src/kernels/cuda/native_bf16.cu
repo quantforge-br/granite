@@ -1,6 +1,6 @@
-#include "basalt/kernels/bf16_gemv.hpp"
-#include "basalt/kernels/bf16_bits.hpp"
-#include "basalt/kernels/pdl.hpp"
+#include "granite/kernels/bf16_gemv.hpp"
+#include "granite/kernels/bf16_bits.hpp"
+#include "granite/kernels/pdl.hpp"
 
 #include <cuda_runtime.h>
 #include <limits>

@@ -11,13 +11,13 @@
 // Reference: the weights dequantized with the ggml row dequantizer, the activation as the kernel sees it (q8_1 or
 // Q8_K blocks dequantized), accumulated in double; the SwiGLU limit applied in double.  The GPU / CPU outputs of one
 // entry must not depend on the window: the same entry alone, in a window and at another position is bitwise equal.
-#include "basalt/ggml/ggml.h"
-#include "basalt/kernels/cpu/native_expert.hpp"
-#include "basalt/kernels/cpu/expert_layout.hpp"
-#include "basalt/kernels/cpu/iq_avx512.hpp"
+#include "granite/ggml/ggml.h"
+#include "granite/kernels/cpu/native_expert.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/iq_avx512.hpp"
 
 #ifdef BASALT_IQ1S_GPU
-#include "basalt/kernels/iq_kernels.hpp"
+#include "granite/kernels/iq_kernels.hpp"
 #include <cuda_runtime.h>
 #endif
 

@@ -7,12 +7,12 @@
 // the activations carry a few large values, which cost the coarser Q8_K blocks more).  A
 // token's output must not depend on how many tokens share its expert's job: every row is also run alone and must match
 // bitwise.  Prints the pool's time per expert and the bytes it read per second.  Exit 77 without a CUDA device.
-#include "basalt/kernels/cpu/expert_layout.hpp"
-#include "basalt/kernels/cpu/native_expert.hpp"
-#include "basalt/kernels/cpu/pool.hpp"
-#include "basalt/prefill/moe_mmq.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/native_expert.hpp"
+#include "granite/kernels/cpu/pool.hpp"
+#include "granite/prefill/moe_mmq.hpp"
 
-#include "basalt/ggml/ggml.h"
+#include "granite/ggml/ggml.h"
 
 #include <cuda_runtime.h>
 

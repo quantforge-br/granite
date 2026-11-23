@@ -1,10 +1,10 @@
-// src/platform/mapped_file.cpp - see include/basalt/platform/mapped_file.hpp.
-#include "basalt/platform/mapped_file.hpp"
+// src/platform/mapped_file.cpp - see include/granite/platform/mapped_file.hpp.
+#include "granite/platform/mapped_file.hpp"
 
-#include "basalt/platform/file.hpp"
+#include "granite/platform/file.hpp"
 
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #else
 #include <sys/mman.h>
 #include <sys/stat.h>

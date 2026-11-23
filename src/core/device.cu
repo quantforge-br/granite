@@ -1,6 +1,6 @@
 // src/core/device.cu - the CUDA side of the runtime core.
-#include "basalt/core/device.hpp"
-#include "basalt/platform/dynlib.hpp"
+#include "granite/core/device.hpp"
+#include "granite/platform/dynlib.hpp"
 
 #include <cuda_runtime.h>
 

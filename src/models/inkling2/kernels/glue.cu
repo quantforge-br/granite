@@ -7,10 +7,10 @@
 // sums, so a row's bits do not depend on the rows beside it. A window's convolutions read the rows before them in the
 // window and the ring for the positions before the window, and each row writes its own ring slot: a window of at most
 // kDecodeRows rows touches distinct slots (kDecodeRows + kConv - 1 <= kConvRing).
-#include "basalt/kernels/pdl.hpp"
-#include "basalt/kernels/prefetch_l2.cuh"
-#include "basalt/kernels/q8_1_finite.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
+#include "granite/kernels/pdl.hpp"
+#include "granite/kernels/prefetch_l2.cuh"
+#include "granite/kernels/q8_1_finite.hpp"
+#include "granite/models/inkling2/kernels.hpp"
 #include "prep.cuh"
 
 #include <cuda_fp16.h>

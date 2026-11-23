@@ -1,5 +1,5 @@
 // src/program/community_row.cpp - adds a community benchmark row to docs/community/benchmarks.json, or updates the row of the same setup.
-#include "basalt/program/community_row.hpp"
+#include "granite/program/community_row.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "basalt/platform/file.hpp"
+#include "granite/platform/file.hpp"
 
 namespace basalt::program {
 

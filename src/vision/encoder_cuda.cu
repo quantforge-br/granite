@@ -1,5 +1,5 @@
-// src/vision/encoder_cuda.cu - see basalt/vision/encoder_cuda.hpp.
-#include "basalt/vision/encoder_cuda.hpp"
+// src/vision/encoder_cuda.cu - see granite/vision/encoder_cuda.hpp.
+#include "granite/vision/encoder_cuda.hpp"
 
 #include <cublas_v2.h>
 #include <cuda_bf16.h>
@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <cstring>
 
-#include "basalt/vision/preprocess.hpp"
+#include "granite/vision/preprocess.hpp"
 #include "hy4_weights.hpp"
 #include "vision_kernels.cuh"
 

@@ -3,7 +3,7 @@
 // queries, relative states and sinks (warps 2 and 3).
 #pragma once
 
-#include "basalt/models/inkling2/kernels.hpp"
+#include "granite/models/inkling2/kernels.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>

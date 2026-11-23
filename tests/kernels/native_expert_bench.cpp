@@ -6,11 +6,11 @@
 // Modes are EXP_MODE values.  A group is one expert (distinct blobs, ~2 MB each, so G >= 8 does not fit
 // in L2); its entries read distinct tokens of an 8-token window.  The output must be bitwise equal to the
 // reference mode's: the verify window's text depends on it.
-#include "basalt/artifact/gguf_reader.hpp"
-#include "basalt/kernels/cpu/native_expert.hpp"
-#include "basalt/kernels/iq_kernels.hpp"
+#include "granite/artifact/gguf_reader.hpp"
+#include "granite/kernels/cpu/native_expert.hpp"
+#include "granite/kernels/iq_kernels.hpp"
 
-#include "basalt/ggml/ggml.h"
+#include "granite/ggml/ggml.h"
 
 #include <cuda_runtime.h>
 

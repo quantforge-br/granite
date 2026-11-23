@@ -16,8 +16,8 @@
 // f32 inf/NaN (raw exponent 255) with a FINITE value too large for fp16, so every finite overflow came back as a NaN
 // instead of saturating to inf; the matching decoder flushed fp16 SUBNORMALS to zero (0x0001 as 0.0, not 2^-24).  An
 // O(1) fixture cannot see either.
-#include "basalt/kernels/bf16_bits.hpp"
-#include "basalt/kernels/f16_bits.hpp"
+#include "granite/kernels/bf16_bits.hpp"
+#include "granite/kernels/f16_bits.hpp"
 
 #include <cstdint>
 #include <cstdio>

@@ -1,7 +1,7 @@
-// src/kernels/cuda/dense_ops.cu - see include/basalt/kernels/dense_ops.hpp.
-#include "basalt/kernels/dense_ops.hpp"
-#include "basalt/kernels/gqa_attn.hpp"
-#include "basalt/kernels/pdl.hpp"
+// src/kernels/cuda/dense_ops.cu - see include/granite/kernels/dense_ops.hpp.
+#include "granite/kernels/dense_ops.hpp"
+#include "granite/kernels/gqa_attn.hpp"
+#include "granite/kernels/pdl.hpp"
 #include "philox.cuh"
 
 #include <cooperative_groups.h>
@@ -12,7 +12,7 @@
 
 #include <cmath>
 #include <cstdlib>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::kernels {
 namespace {

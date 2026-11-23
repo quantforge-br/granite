@@ -1,5 +1,5 @@
-// src/program/multi_gpu_plan.cpp - see include/basalt/program/multi_gpu_plan.hpp.
-#include "basalt/program/multi_gpu_plan.hpp"
+// src/program/multi_gpu_plan.cpp - see include/granite/program/multi_gpu_plan.hpp.
+#include "granite/program/multi_gpu_plan.hpp"
 
 #include <algorithm>
 #include <cmath>

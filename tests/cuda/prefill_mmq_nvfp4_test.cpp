@@ -15,9 +15,9 @@
 // The per-expert gather and the grouped gather must give bitwise equal outputs.  An all-zero token stays exactly 0.
 // Then a microbench line: one layer at a 2048-token chunk (512 experts, top 10) - gathers plus products - in us and
 // TFLOP/s.  --no-bench.  Exit 77 without a CUDA device.
-#include "basalt/prefill/moe_mmq.hpp"
+#include "granite/prefill/moe_mmq.hpp"
 
-#include "basalt/ggml/ggml.h"
+#include "granite/ggml/ggml.h"
 
 #include <cuda_runtime.h>
 

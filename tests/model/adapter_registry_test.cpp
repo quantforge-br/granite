@@ -1,7 +1,7 @@
 // tests/model/adapter_registry_test.cpp - the adapter registry: lookup by architecture, the replaced guard and Inkling 2
 // geometry from `inkling2.*` metadata. Host only: no model and no runtime are linked.
 #include "../core/gguf_fixture.hpp"
-#include "basalt/model/adapter.hpp"
+#include "granite/model/adapter.hpp"
 #include "meta_adapters.hpp"
 
 #include <cstdio>

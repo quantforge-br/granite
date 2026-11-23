@@ -1,4 +1,4 @@
-// src/kernels/cuda/window_gemm.cu - see include/basalt/kernels/window_gemm.hpp: the activation packs, the plan and the
+// src/kernels/cuda/window_gemm.cu - see include/granite/kernels/window_gemm.hpp: the activation packs, the plan and the
 // dispatch to the kernel instantiations (window_gemm_nvfp4.cu).
 // Adapted from Infernix (Ian Ranson and contributors), Apache-2.0: see THIRD_PARTY_LICENSES.
 #include "window_gemm_kernels.hpp"
@@ -12,7 +12,7 @@
 #include <mutex>
 #include <utility>
 
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::kernels::wgemm {
 namespace {

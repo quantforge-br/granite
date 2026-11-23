@@ -1,8 +1,8 @@
 // Registration ownership, independent mapped aliases and host endpoints on every visible card.
-#include "basalt/core/ram_load.hpp"
-#include "basalt/core/vmm.hpp"
-#include "basalt/platform/memory.hpp"
-#include "basalt/kernels/elementwise.hpp"
+#include "granite/core/ram_load.hpp"
+#include "granite/core/vmm.hpp"
+#include "granite/platform/memory.hpp"
+#include "granite/kernels/elementwise.hpp"
 #include <cuda_runtime.h>
 #include <algorithm>
 #include <cstdio>

@@ -19,9 +19,9 @@
 //
 // Random bytes are valid codes for every format here (all grid indices are in range); only the fp16 block scales
 // are set, small enough that the grouped path's SwiGLU output keeps a finite fp16 q8_1 scale.
-#include "basalt/kernels/f16_bits.hpp"
-#include "basalt/kernels/iq_kernels.hpp"
-#include "basalt/kernels/native_mmvq.hpp"
+#include "granite/kernels/f16_bits.hpp"
+#include "granite/kernels/iq_kernels.hpp"
+#include "granite/kernels/native_mmvq.hpp"
 
 #include <cuda_runtime.h>
 

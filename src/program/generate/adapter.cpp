@@ -4,16 +4,16 @@
 #include "../cli/tokens.hpp"
 #include "../serve/session_engine.hpp"
 
-#include "basalt/artifact/gguf_reader.hpp"
-#include "basalt/core/model_file.hpp"
-#include "basalt/core/shipped_profiles.hpp"
-#include "basalt/log.hpp"
-#include "basalt/model/adapter.hpp"
-#include "basalt/model/batch_check.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/process.hpp"
-#include "basalt/program/options.hpp"
-#include "basalt/protocol.hpp"
+#include "granite/artifact/gguf_reader.hpp"
+#include "granite/core/model_file.hpp"
+#include "granite/core/shipped_profiles.hpp"
+#include "granite/log.hpp"
+#include "granite/model/adapter.hpp"
+#include "granite/model/batch_check.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/process.hpp"
+#include "granite/program/options.hpp"
+#include "granite/protocol.hpp"
 #include <cuda_runtime.h>
 #include <chrono>
 #include <cstdio>

@@ -1,5 +1,5 @@
 // src/program/probe_derive.cpp - see probe_derive.hpp.
-#include "basalt/program/probe_derive.hpp"
+#include "granite/program/probe_derive.hpp"
 
 #include <algorithm>
 #include <cmath>

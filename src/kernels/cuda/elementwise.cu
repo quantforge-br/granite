@@ -1,16 +1,16 @@
 // src/kernels/cuda/elementwise.cu - the glue kernels.  See the header for why each exists.
-#include "basalt/kernels/elementwise.hpp"
-#include "basalt/kernels/dp4a.hpp"
+#include "granite/kernels/elementwise.hpp"
+#include "granite/kernels/dp4a.hpp"
 
-#include "basalt/kernels/bf16_bits.hpp"
-#include "basalt/kernels/f16_bits.hpp"
+#include "granite/kernels/bf16_bits.hpp"
+#include "granite/kernels/f16_bits.hpp"
 
 #include <cuda_runtime.h>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::kernels {
 namespace {

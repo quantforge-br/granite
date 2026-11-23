@@ -8,7 +8,7 @@
 // dispatcher in ggml_cpu_dispatch.cpp picks one at run time.
 #define GGML_COMMON_DECL_C
 #define GGML_COMMON_IMPL_C
-#include "basalt/ggml/ggml_common.h"
+#include "granite/ggml/ggml_common.h"
 
 #include "ggml_impl.h"
 

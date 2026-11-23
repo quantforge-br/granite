@@ -1,13 +1,13 @@
 // src/kernels/cpu/iq_avx2.cpp - the i-quant expert rows in 256-bit lanes, several tokens at once (iq_avx2_rows.inc),
 // the activation quantizer, and the choice between this file's rows and the AVX-VNNI build of the same code.
 
-#include "basalt/kernels/cpu/iq_avx2.hpp"
+#include "granite/kernels/cpu/iq_avx2.hpp"
 
 #define GGML_COMMON_DECL_CPP
 #define GGML_COMMON_IMPL_CPP
-#include "basalt/ggml/ggml_common.h"
-#include "basalt/log.hpp"
-#include "basalt/platform/compiler.hpp"
+#include "granite/ggml/ggml_common.h"
+#include "granite/log.hpp"
+#include "granite/platform/compiler.hpp"
 
 #include <immintrin.h>
 
@@ -15,7 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "basalt/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
 
 #define BASALT_IQ_VNNI 0
 #define BASALT_IQ_BMI2 0

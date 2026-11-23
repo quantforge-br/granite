@@ -1,5 +1,5 @@
-// src/program/host_rates.cpp - see include/basalt/program/host_rates.hpp.
-#include "basalt/program/host_rates.hpp"
+// src/program/host_rates.cpp - see include/granite/program/host_rates.hpp.
+#include "granite/program/host_rates.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -12,8 +12,8 @@
 #include <sstream>
 #include <thread>
 
-#include "basalt/platform/cpu.hpp"
-#include "basalt/platform/memory.hpp"
+#include "granite/platform/cpu.hpp"
+#include "granite/platform/memory.hpp"
 
 namespace basalt::program {
 

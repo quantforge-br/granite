@@ -1,5 +1,5 @@
 // src/model/batch_check.cpp - the batch conformance check (batch_check.hpp): solo windows against the same windows batched.
-#include "basalt/model/batch_check.hpp"
+#include "granite/model/batch_check.hpp"
 
 #include <algorithm>
 #include <cstring>

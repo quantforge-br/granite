@@ -1,6 +1,6 @@
 // core::device_memory and devices_allocate: a card the runtime cannot serve is reported with the call, the error and the
 // card, and leaves no error behind. Needs a CUDA device; skips (77) without one.
-#include "basalt/core/device.hpp"
+#include "granite/core/device.hpp"
 
 #include <cuda_runtime.h>
 

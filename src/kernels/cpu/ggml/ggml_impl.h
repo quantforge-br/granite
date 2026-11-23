@@ -4,7 +4,7 @@
 // MIT licence: see THIRD_PARTY_LICENSES.
 #pragma once
 
-#include "basalt/ggml/ggml.h"
+#include "granite/ggml/ggml.h"
 
 #include <math.h>
 #include <stdio.h>

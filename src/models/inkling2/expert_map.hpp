@@ -3,7 +3,7 @@
 // (layer, expert) pair, which the experts' plan adds to on every visit (a looped layer's three visits each count).
 #pragma once
 
-#include "basalt/core/expert_map.hpp"
+#include "granite/core/expert_map.hpp"
 
 #include <cstdint>
 #include <vector>

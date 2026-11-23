@@ -1,5 +1,5 @@
 // src/program/serve/request_image.cpp - what every model checks once the prompt's images are placed.
-#include "basalt/protocol.hpp"
+#include "granite/protocol.hpp"
 #include "request.hpp"
 
 namespace basalt::program::serve {

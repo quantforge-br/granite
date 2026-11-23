@@ -1,5 +1,5 @@
-// src/platform/memory.cpp - see include/basalt/platform/memory.hpp.
-#include "basalt/platform/memory.hpp"
+// src/platform/memory.cpp - see include/granite/platform/memory.hpp.
+#include "granite/platform/memory.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #include <dxgi1_4.h>
 #include <malloc.h>   // _aligned_malloc, _aligned_free, _heapmin
 #else
@@ -27,8 +27,8 @@
 #endif
 #include <cerrno>
 #include <cstring>
-#include "basalt/log.hpp"
-#include "basalt/platform/system.hpp"
+#include "granite/log.hpp"
+#include "granite/platform/system.hpp"
 
 namespace basalt::platform {
 

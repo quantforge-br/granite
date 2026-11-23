@@ -1,4 +1,4 @@
-// src/core/conversation_store.cpp - see include/basalt/core/conversation_store.hpp.
+// src/core/conversation_store.cpp - see include/granite/core/conversation_store.hpp.
 //
 // Three kinds of file share one container (little-endian, every offset a multiple of 4096):
 //   header (4096 B)       magic, version, file kind, identity, keys, geometry, counts, table and hash-table places
@@ -14,12 +14,12 @@
 // are there and writes only the new ones.  Block and state files nobody refers to are removed between writes.
 // A conversation stores the state of its root checkpoint (the end of the system prompt) and of its last kTurnStates
 // turn ends; the checkpoints a stride inside a long prompt and older turn ends are not written.
-#include "basalt/core/conversation_store.hpp"
+#include "granite/core/conversation_store.hpp"
 
-#include "basalt/log.hpp"
-#include "basalt/platform/direct_file.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/system.hpp"
+#include "granite/log.hpp"
+#include "granite/platform/direct_file.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/system.hpp"
 
 #include <algorithm>
 #include <array>

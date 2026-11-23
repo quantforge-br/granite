@@ -2,7 +2,7 @@
 #define _GNU_SOURCE
 #endif
 
-#include "basalt/kernels/cpu/pool.hpp"
+#include "granite/kernels/cpu/pool.hpp"
 
 #include <algorithm>
 #include <cerrno>

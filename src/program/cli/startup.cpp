@@ -3,14 +3,14 @@
 #include "help.hpp"
 #include "serve.hpp"
 
-#include "basalt/core/model_file.hpp"
-#include "basalt/log.hpp"
-#include "basalt/model/adapter.hpp"
-#include "basalt/platform/memory.hpp"
-#include "basalt/platform/process.hpp"
-#include "basalt/platform/system.hpp"
-#include "basalt/program/grammar/tool_form.hpp"
-#include "basalt/program/options.hpp"
+#include "granite/core/model_file.hpp"
+#include "granite/log.hpp"
+#include "granite/model/adapter.hpp"
+#include "granite/platform/memory.hpp"
+#include "granite/platform/process.hpp"
+#include "granite/platform/system.hpp"
+#include "granite/program/grammar/tool_form.hpp"
+#include "granite/program/options.hpp"
 
 #include <cstdio>
 #include <cstdlib>

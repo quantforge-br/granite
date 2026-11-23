@@ -2,9 +2,9 @@
 // read back, list with sizes and write times, replace by rename, touch, remove, nested directories and free space, on a
 // directory with a non-ASCII name (the bytes must reach the OS as UTF-8 on both platforms); where files have modes, the
 // new directories and files are owner-only and an existing directory keeps its mode. CPU only.
-#include "basalt/platform/direct_file.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/system.hpp"
+#include "granite/platform/direct_file.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/system.hpp"
 
 #if !defined(_WIN32)
 #include <sys/stat.h>

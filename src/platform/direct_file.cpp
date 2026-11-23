@@ -1,7 +1,7 @@
-// src/platform/direct_file.cpp - see include/basalt/platform/direct_file.hpp.
-#include "basalt/platform/direct_file.hpp"
+// src/platform/direct_file.cpp - see include/granite/platform/direct_file.hpp.
+#include "granite/platform/direct_file.hpp"
 
-#include "basalt/platform/file.hpp"
+#include "granite/platform/file.hpp"
 
 #include <chrono>
 #include <condition_variable>
@@ -14,7 +14,7 @@
 #include <vector>
 
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #else
 #include <fcntl.h>
 #include <sys/stat.h>

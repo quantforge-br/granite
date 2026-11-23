@@ -1,8 +1,8 @@
-#include "basalt/ggml/ggml.h"
-#include "basalt/kernels/cpu/expert_layout.hpp"
-#include "basalt/kernels/cpu/native_expert.hpp"
-#include "basalt/kernels/cpu/nvfp4_avx2.hpp"
-#include "basalt/kernels/cpu/nvfp4_avx512.hpp"
+#include "granite/ggml/ggml.h"
+#include "granite/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/native_expert.hpp"
+#include "granite/kernels/cpu/nvfp4_avx2.hpp"
+#include "granite/kernels/cpu/nvfp4_avx512.hpp"
 
 #include <algorithm>
 #include <cmath>

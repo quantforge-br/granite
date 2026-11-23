@@ -6,8 +6,8 @@
 //
 // The reference numbers below come from transformers 5.22.2 with its pyav loader; the clip is tests/data/video/
 // synth.mp4 (96x64, 25 frames at 10 fps).
-#include "basalt/vision/ffmpeg_api.hpp"
-#include "basalt/vision/video.hpp"
+#include "granite/vision/ffmpeg_api.hpp"
+#include "granite/vision/video.hpp"
 
 #include <algorithm>
 #include <cmath>

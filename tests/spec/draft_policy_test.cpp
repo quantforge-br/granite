@@ -17,7 +17,7 @@
 // A drafter with stated chances against a lookup proposal (choose_window):
 //  12. no proposal keeps the drafter's window; a long, reliable copy takes a wider window than confident drafts would;
 //  13. a short copy that keeps failing loses to confident drafts; windows past 8 rows stay within the cap.
-#include "basalt/spec/draft_policy.hpp"
+#include "granite/spec/draft_policy.hpp"
 
 #include <cstdio>
 #include <random>

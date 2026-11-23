@@ -3,16 +3,16 @@
 
 #include "batch_plan.hpp"
 #include "decode_loop.hpp"
-#include "basalt/core/diag.hpp"
-#include "basalt/core/device.hpp"
-#include "basalt/core/on_device.hpp"
-#include "basalt/program/community_row.hpp"
-#include "basalt/program/conv_cache.hpp"
-#include "basalt/program/probe_rates.hpp"
-#include "basalt/protocol.hpp"
-#include "basalt/spec/draft_policy.hpp"
-#include "basalt/vision/ffmpeg_api.hpp"
-#include "basalt/vision/video.hpp"
+#include "granite/core/diag.hpp"
+#include "granite/core/device.hpp"
+#include "granite/core/on_device.hpp"
+#include "granite/program/community_row.hpp"
+#include "granite/program/conv_cache.hpp"
+#include "granite/program/probe_rates.hpp"
+#include "granite/protocol.hpp"
+#include "granite/spec/draft_policy.hpp"
+#include "granite/vision/ffmpeg_api.hpp"
+#include "granite/vision/video.hpp"
 
 #include <iterator>
 #include <sstream>
@@ -385,7 +385,7 @@ public:
     void set_active(int slot) { active_ = slot; }
     void set_slot_sampling(int slot, const basalt::kernels::SamplerParams& sp) { slot_sampling_[(size_t) slot] = sp; }
     const basalt::model::ModelDesc& desc() const { return model_.desc(); }
-    /// The draft windows' policy (basalt/spec/draft_policy.hpp): learns this machine's round times and the drafter's
+    /// The draft windows' policy (granite/spec/draft_policy.hpp): learns this machine's round times and the drafter's
     /// acceptance across requests.
     std::optional<basalt::spec::DraftPolicy> policy, bpolicy;
     /// Prompt lookup (--suffix-draft) for a model whose sessions take copied drafts: the solo request's history.

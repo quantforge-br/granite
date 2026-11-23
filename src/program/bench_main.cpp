@@ -22,17 +22,17 @@
 #include <string>
 #include <vector>
 
-#include "basalt/platform/cpu.hpp"
-#include "basalt/platform/dynlib.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/memory.hpp"
-#include "basalt/platform/process.hpp"
-#include "basalt/platform/system.hpp"
-#include "basalt/program/community_row.hpp"
-#include "basalt/program/host_rates.hpp"
-#include "basalt/program/engine_session.hpp"
-#include "basalt/program/gpu_select.hpp"
-#include "basalt/program/options.hpp"
+#include "granite/platform/cpu.hpp"
+#include "granite/platform/dynlib.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/memory.hpp"
+#include "granite/platform/process.hpp"
+#include "granite/platform/system.hpp"
+#include "granite/program/community_row.hpp"
+#include "granite/program/host_rates.hpp"
+#include "granite/program/engine_session.hpp"
+#include "granite/program/gpu_select.hpp"
+#include "granite/program/options.hpp"
 
 #include <errno.h>
 
@@ -47,7 +47,7 @@
 #endif
 #if __has_include("basalt_git.h")
 #include "basalt_git.h"
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 #endif
 #ifndef BASALT_BENCH_GIT
 #define BASALT_BENCH_GIT "unknown"

@@ -1,8 +1,8 @@
 // src/kernels/cpu/pool.cpp - the CPU expert pool.  Read pool.hpp first; it explains the protocol.
-#include "basalt/kernels/cpu/pool.hpp"
-#include "basalt/core/progress.hpp"
-#include "basalt/kernels/cpu/cpu_quota.hpp"
-#include "basalt/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/pool.hpp"
+#include "granite/core/progress.hpp"
+#include "granite/kernels/cpu/cpu_quota.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -11,7 +11,7 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::kernels::cpu {
 

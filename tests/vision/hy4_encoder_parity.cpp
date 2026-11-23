@@ -20,9 +20,9 @@
 
 #include <cuda_runtime.h>
 
-#include "basalt/core/model_file.hpp"
-#include "basalt/vision/encoder_cpu.hpp"
-#include "basalt/vision/encoder_cuda.hpp"
+#include "granite/core/model_file.hpp"
+#include "granite/vision/encoder_cpu.hpp"
+#include "granite/vision/encoder_cuda.hpp"
 #include "vision_kernels.cuh"
 
 using namespace basalt::vision;

@@ -4,7 +4,7 @@
 // in the data section, and the tensors' payloads, each filled with a pattern the test can recognise.
 #pragma once
 
-#include "basalt/artifact/gguf_reader.hpp"
+#include "granite/artifact/gguf_reader.hpp"
 
 #include <cstdint>
 #include <cstring>

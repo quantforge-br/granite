@@ -2,7 +2,7 @@
 #pragma once
 
 #include "request.hpp"
-#include "basalt/model/adapter.hpp"
+#include "granite/model/adapter.hpp"
 
 namespace basalt::program::serve {
 

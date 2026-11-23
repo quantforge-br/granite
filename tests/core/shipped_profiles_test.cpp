@@ -1,6 +1,6 @@
 // The start's check for the expert profiles the engine ships beside its binary: a missing or empty file, or a missing
 // data/profiles folder, gives an error naming the path and the install layout; a pack that names none is never refused.
-#include "basalt/core/shipped_profiles.hpp"
+#include "granite/core/shipped_profiles.hpp"
 
 #include <cstdio>
 #include <filesystem>

@@ -1,7 +1,7 @@
 // tests/model/adapter_builtin_test.cpp - the program's own registration: every adapter the build holds, once each. Linking
 // the models needs the CUDA runtime, so this runs where that is installed; no GPU work.
-#include "basalt/model/adapter.hpp"
-#include "basalt/models/builtin.hpp"
+#include "granite/model/adapter.hpp"
+#include "granite/models/builtin.hpp"
 
 #include <cstdio>
 #include <string>

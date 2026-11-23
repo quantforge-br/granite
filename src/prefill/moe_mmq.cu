@@ -1,6 +1,6 @@
-// src/prefill/moe_mmq.cu - see include/basalt/prefill/moe_mmq.hpp.  llama.cpp's MMQ (ggml-cuda, MIT) lives in
+// src/prefill/moe_mmq.cu - see include/granite/prefill/moe_mmq.hpp.  llama.cpp's MMQ (ggml-cuda, MIT) lives in
 // src/prefill/mmq/; mmq_host.cu supplies the host symbols it references.
-#include "basalt/prefill/moe_mmq.hpp"
+#include "granite/prefill/moe_mmq.hpp"
 
 #include "mmq/mmq.cuh"
 #include "mmq/quantize.cuh"
@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::prefill::mmq {
 namespace {

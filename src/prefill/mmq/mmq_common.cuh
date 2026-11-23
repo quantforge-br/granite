@@ -5,8 +5,8 @@
 // authors.  MIT licence: see THIRD_PARTY_LICENSES.
 #pragma once
 
-#include "basalt/ggml/ggml.h"
-#include "basalt/log.hpp"
+#include "granite/ggml/ggml.h"
+#include "granite/log.hpp"
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
@@ -23,7 +23,7 @@
 
 #define GGML_COMMON_DECL_CUDA
 #define GGML_COMMON_IMPL_CUDA
-#include "basalt/ggml/ggml_common.h"
+#include "granite/ggml/ggml_common.h"
 
 // The kernels use int8 mma.sync, ldmatrix and cp.async: Ampere (8.0) and newer. granite builds them for 8.6.
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800

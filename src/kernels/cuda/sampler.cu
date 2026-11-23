@@ -24,8 +24,8 @@
 // A list longer than 64 (top_k 0 = the whole vocabulary, or top_k > 64) takes the WIDE PATH: each row's penalised
 // logits sorted in the selection order (`sampler_wide_keys_kernel`, a radix sort), then `sampler_wide_tail_kernel`,
 // the same arithmetic over the sorted list.
-#include "basalt/kernels/sampler.hpp"
-#include "basalt/core/diag.hpp"
+#include "granite/kernels/sampler.hpp"
+#include "granite/core/diag.hpp"
 #include "philox.cuh"
 
 #include <cub/device/device_radix_sort.cuh>
@@ -38,7 +38,7 @@
 #include <cstring>
 #include <mutex>
 #include <vector>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::kernels {
 namespace {

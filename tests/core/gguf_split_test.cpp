@@ -7,8 +7,8 @@
 // shards, a directory that does not add up to split.tensors.count, a truncated shard, and shard 1 opened alone.
 #include "gguf_fixture.hpp"
 
-#include "basalt/artifact/gguf_split.hpp"
-#include "basalt/model/adapter.hpp"
+#include "granite/artifact/gguf_split.hpp"
+#include "granite/model/adapter.hpp"
 #include "../model/meta_adapters.hpp"
 
 #include <chrono>

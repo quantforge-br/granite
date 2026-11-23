@@ -1,11 +1,11 @@
 // src/core/loader.cpp - see loader.hpp.
-#include "basalt/core/loader.hpp"
+#include "granite/core/loader.hpp"
 
-#include "basalt/core/load_progress.hpp"
-#include "basalt/kernels/f16_bits.hpp"
-#include "basalt/log.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/memory.hpp"
+#include "granite/core/load_progress.hpp"
+#include "granite/kernels/f16_bits.hpp"
+#include "granite/log.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/memory.hpp"
 
 #include <cuda_runtime.h>
 

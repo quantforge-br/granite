@@ -1,10 +1,10 @@
 // src/models/inkling2/cpu_experts.cpp - see the header.
 #include "models/inkling2/cpu_experts.hpp"
 
-#include "basalt/kernels/cpu/native_expert.hpp"
-#include "basalt/kernels/cpu/pool.hpp"
-#include "basalt/log.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
+#include "granite/kernels/cpu/native_expert.hpp"
+#include "granite/kernels/cpu/pool.hpp"
+#include "granite/log.hpp"
+#include "granite/models/inkling2/kernels.hpp"
 #include "models/inkling2/model.hpp"
 
 #include <algorithm>

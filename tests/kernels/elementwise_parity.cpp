@@ -12,8 +12,8 @@
 //      instead of decaying, so the sign is checked as a property and not assumed.
 //   3. `silu` IS COMPUTED IN DOUBLE then cast, because the Python reference's numpy does.  f32 `expf` differs in the
 //      last bits, and the test measures that rather than asserting it away.
-#include "basalt/kernels/elementwise.hpp"
-#include "basalt/kernels/f16_bits.hpp"
+#include "granite/kernels/elementwise.hpp"
+#include "granite/kernels/f16_bits.hpp"
 
 #include <cuda_runtime.h>
 

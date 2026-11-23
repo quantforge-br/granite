@@ -1,6 +1,6 @@
 // src/program/grammar/schema.cpp - see schema.hpp. The JSON-schema conversion is a port of llama.cpp's
 // json-schema-to-grammar (schema_convert.cpp, json_schema.cpp); this file adds the tool-call and request grammars.
-#include "basalt/program/grammar/schema.hpp"
+#include "granite/program/grammar/schema.hpp"
 
 #include <algorithm>
 #include <map>

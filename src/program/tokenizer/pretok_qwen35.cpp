@@ -5,7 +5,7 @@
 //   (?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
 // by hand, without backtracking. Here the code points are decoded once, with their flags, and the pieces come back as
 // byte offsets into the UTF-8 text.
-#include "basalt/program/qwen_forms.hpp"
+#include "granite/program/qwen_forms.hpp"
 #include "unicode_flags.hpp"
 
 namespace basalt::program::tokenizer {

@@ -1,12 +1,12 @@
-// src/vision/encoder_cpu.cpp - see basalt/vision/encoder_cpu.hpp.
-#include "basalt/vision/encoder_cpu.hpp"
+// src/vision/encoder_cpu.cpp - see granite/vision/encoder_cpu.hpp.
+#include "granite/vision/encoder_cpu.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <thread>
 
-#include "basalt/platform/compiler.hpp"
+#include "granite/platform/compiler.hpp"
 
 #include "gemm_cpu.hpp"
 #include "hy4_weights.hpp"

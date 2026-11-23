@@ -13,12 +13,12 @@
 // The sign masks of IQ2_XXS, IQ2_XS and IQ3_XXS are built from their 7-bit indices with BMI2 (pdep, and pext for
 // IQ2_XS) and a byte parity rather than eight table loads.  IQ3_S and IQ2_S, whose grid index takes extra high bits,
 // look the grid up with one gather; the grids indexed by a plain byte keep scalar loads, which are faster there.
-#include "basalt/kernels/cpu/iq_avx512.hpp"
+#include "granite/kernels/cpu/iq_avx512.hpp"
 
 #define GGML_COMMON_DECL_CPP
 #define GGML_COMMON_IMPL_CPP
-#include "basalt/ggml/ggml_common.h"
-#include "basalt/platform/compiler.hpp"
+#include "granite/ggml/ggml_common.h"
+#include "granite/platform/compiler.hpp"
 
 #include <immintrin.h>
 

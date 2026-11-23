@@ -6,17 +6,17 @@ cd "$(dirname "$0")/.."
 
 status=0
 
-# 1. shared code must not include a model. The composition root header (basalt/models/builtin.hpp, one
+# 1. shared code must not include a model. The composition root header (granite/models/builtin.hpp, one
 #    registration call) is the only models header a program main may include.
-hits=$(grep -rnE '#[[:space:]]*include[[:space:]]*"(models/|basalt/models/)' --include='*.[ch]pp' --include='*.cu' --include='*.cuh' src include \
-         | grep -vE '^(src/models|include/basalt/models)/' | grep -vE 'basalt/models/builtin\.hpp' || true)
+hits=$(grep -rnE '#[[:space:]]*include[[:space:]]*"(models/|granite/models/)' --include='*.[ch]pp' --include='*.cu' --include='*.cuh' src include \
+         | grep -vE '^(src/models|include/granite/models)/' | grep -vE 'granite/models/builtin\.hpp' || true)
 if [[ -n "${hits}" ]]; then
   echo "model layering: shared code includes a model:" >&2
   echo "${hits}" >&2
   status=1
 fi
-hits=$(grep -rnE 'basalt/models/builtin\.hpp' src include \
-         | grep -vE '^(src/models/|include/basalt/models/|src/program/|src/artifact/gguf_reader\.cpp)' || true)
+hits=$(grep -rnE 'granite/models/builtin\.hpp' src include \
+         | grep -vE '^(src/models/|include/granite/models/|src/program/|src/artifact/gguf_reader\.cpp)' || true)
 if [[ -n "${hits}" ]]; then
   echo "model layering: only program mains include the composition root:" >&2
   echo "${hits}" >&2
@@ -36,7 +36,7 @@ done
 
 # 3. relative includes reach a model too
 hits=$(grep -rnE '#[[:space:]]*include[[:space:]]*"[^"]*\.\./[^"]*models/' --include='*.[ch]pp' --include='*.cu' --include='*.cuh' src include \
-         | grep -vE '^(src/models|include/basalt/models)/' || true)
+         | grep -vE '^(src/models|include/granite/models)/' || true)
 if [[ -n "${hits}" ]]; then
   echo "model layering: shared code includes a model by a relative path:" >&2
   echo "${hits}" >&2
@@ -52,7 +52,7 @@ if [[ -n "${hits}" ]]; then
 fi
 
 # 5. a model's host code lives in its own namespace
-hits=$(grep -rnE 'namespace basalt::program' --include='*.[ch]pp' src/models include/basalt/models \
+hits=$(grep -rnE 'namespace basalt::program' --include='*.[ch]pp' src/models include/granite/models \
          | grep -v 'shared_names.hpp' || true)
 if [[ -n "${hits}" ]]; then
   echo "model layering: a model's code opens a shared namespace:" >&2

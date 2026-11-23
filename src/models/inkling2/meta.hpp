@@ -2,8 +2,8 @@
 // check it without linking the model.
 #pragma once
 
-#include "basalt/artifact/gguf_reader.hpp"
-#include "basalt/model/adapter.hpp"
+#include "granite/artifact/gguf_reader.hpp"
+#include "granite/model/adapter.hpp"
 
 #include <string>
 

@@ -4,8 +4,8 @@
 // Compiled with AVX2 only, so nothing here can fault on those CPUs.  The rows are q2_avx2_rows.inc, built here with
 // `maddubs` and `madd` and in q2_avx2_vnni.cpp with the AVX-VNNI instruction that does both; this file picks one at
 // run time.  The quantizer is the scalar rule, bit for bit.
-#include "basalt/kernels/cpu/expert.hpp"
-#include "basalt/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/expert.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
 
 #include <immintrin.h>
 

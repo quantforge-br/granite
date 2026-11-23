@@ -2,7 +2,7 @@
 // (core/expert_map.hpp): windows and drafts by position per slot, a round's lookups to every slot in it, a request's
 // start from zero, the lines' text; the sample's spread, determinism and counting.
 #include "console_stats.hpp"
-#include "basalt/core/expert_map.hpp"
+#include "granite/core/expert_map.hpp"
 
 #include <cstdio>
 #include <set>

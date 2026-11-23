@@ -1,7 +1,7 @@
 // A tool form for the grammar tests: <tool_call> blocks with <function=..> and <parameter=..> elements.
 #pragma once
 
-#include "basalt/program/grammar/tool_form.hpp"
+#include "granite/program/grammar/tool_form.hpp"
 
 inline void set_test_tool_form() {
     basalt::program::grammar::ToolForm f;

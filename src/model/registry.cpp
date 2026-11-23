@@ -1,8 +1,8 @@
 // Adapter registry: architecture name -> ModelAdapter.
-#include "basalt/model/adapter.hpp"
+#include "granite/model/adapter.hpp"
 
-#include "basalt/artifact/gguf_reader.hpp"
-#include "basalt/program/options.hpp"
+#include "granite/artifact/gguf_reader.hpp"
+#include "granite/program/options.hpp"
 
 #include <algorithm>
 #include <map>

@@ -5,8 +5,8 @@
 #undef NDEBUG
 #endif
 
-#include "basalt/program/grammar/grammar.hpp"
-#include "basalt/program/grammar/schema.hpp"
+#include "granite/program/grammar/grammar.hpp"
+#include "granite/program/grammar/schema.hpp"
 #include "schema_internal.hpp"
 
 #include <cassert>

@@ -1,5 +1,5 @@
-// include/basalt/log.hpp: the line each level renders. The writes themselves are one call each to stderr.
-#include "basalt/log.hpp"
+// include/granite/log.hpp: the line each level renders. The writes themselves are one call each to stderr.
+#include "granite/log.hpp"
 
 #include <cstdio>
 #include <string>

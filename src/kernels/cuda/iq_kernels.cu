@@ -1,29 +1,29 @@
-// src/kernels/cuda/iq_kernels.cu - see include/basalt/kernels/iq_kernels.hpp.
+// src/kernels/cuda/iq_kernels.cu - see include/granite/kernels/iq_kernels.hpp.
 //
 // The dot products (vec_dot_*_q8_1), the dequantizers and the q8_1 quantizer are transcribed from llama.cpp
 // (ggml/src/ggml-cuda/vecdotq.cuh, dequantize.cuh, quantize.cu at llama.cpp commit
 // 3cf03257f219afbe7334045ff7c6a06ac68c627d; MIT, Copyright (c) 2023-2026 The ggml authors, see
-// THIRD_PARTY_LICENSES).  The block structs and codebook grids are basalt/ggml/ggml_common.h.
-#include "basalt/kernels/iq_kernels.hpp"
-#include "basalt/kernels/dp4a.hpp"
-#include "basalt/kernels/packed_byte.hpp"
-#include "basalt/kernels/q8_1_finite.hpp"
-#include "basalt/kernels/pdl.hpp"
-#include "basalt/core/diag.hpp"
+// THIRD_PARTY_LICENSES).  The block structs and codebook grids are granite/ggml/ggml_common.h.
+#include "granite/kernels/iq_kernels.hpp"
+#include "granite/kernels/dp4a.hpp"
+#include "granite/kernels/packed_byte.hpp"
+#include "granite/kernels/q8_1_finite.hpp"
+#include "granite/kernels/pdl.hpp"
+#include "granite/core/diag.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
 #define GGML_COMMON_DECL_CUDA
 #define GGML_COMMON_IMPL_CUDA
-#include "basalt/ggml/ggml_common.h"
+#include "granite/ggml/ggml_common.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::kernels {
 namespace {

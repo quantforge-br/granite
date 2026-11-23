@@ -4,7 +4,7 @@
 // each holds every dense weight and its half of every expert (cards(), layer(l, card)).
 #pragma once
 
-#include "basalt/model/adapter.hpp"
+#include "granite/model/adapter.hpp"
 #include "models/inkling2/dspark.hpp"   // DSPARK HOOK
 #include "models/inkling2/pack.hpp"
 #include "models/inkling2/spill.hpp"

@@ -11,14 +11,14 @@
 // so both cards hold the same bits).
 #include "models/inkling2/prompt.hpp"
 
-#include "basalt/kernels/dense_ops.hpp"
-#include "basalt/kernels/elementwise.hpp"
-#include "basalt/kernels/iq_kernels.hpp"
-#include "basalt/kernels/router.hpp"
-#include "basalt/kernels/row_norm.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
-#include "basalt/models/inkling2/prompt_kernels.hpp"
-#include "basalt/prefill/moe_mmq.hpp"
+#include "granite/kernels/dense_ops.hpp"
+#include "granite/kernels/elementwise.hpp"
+#include "granite/kernels/iq_kernels.hpp"
+#include "granite/kernels/router.hpp"
+#include "granite/kernels/row_norm.hpp"
+#include "granite/models/inkling2/kernels.hpp"
+#include "granite/models/inkling2/prompt_kernels.hpp"
+#include "granite/prefill/moe_mmq.hpp"
 #include "models/inkling2/dspark.hpp"
 #include "models/inkling2/walk.hpp"
 

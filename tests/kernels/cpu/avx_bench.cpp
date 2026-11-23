@@ -7,15 +7,15 @@
 // thread on one cache-resident expert (compute ceiling).  The last line is one NVFP4 expert through the expert pool
 // (the decode CPU tier's path): cold, the pool's idle read of it, and the expert computed after that read.  Calls go straight to each set's kernels, so the CPU can
 // time the set it does not dispatch to.  Weights are random bytes with a valid scale field.
-#include "basalt/ggml/ggml.h"
-#include "basalt/kernels/cpu/expert.hpp"
-#include "basalt/kernels/cpu/expert_layout.hpp"
-#include "basalt/kernels/cpu/iq_avx2.hpp"
-#include "basalt/kernels/cpu/iq_avx512.hpp"
-#include "basalt/kernels/cpu/native_expert.hpp"
-#include "basalt/kernels/cpu/nvfp4_avx2.hpp"
-#include "basalt/kernels/cpu/nvfp4_avx512.hpp"
-#include "basalt/kernels/cpu/pool.hpp"
+#include "granite/ggml/ggml.h"
+#include "granite/kernels/cpu/expert.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/iq_avx2.hpp"
+#include "granite/kernels/cpu/iq_avx512.hpp"
+#include "granite/kernels/cpu/native_expert.hpp"
+#include "granite/kernels/cpu/nvfp4_avx2.hpp"
+#include "granite/kernels/cpu/nvfp4_avx512.hpp"
+#include "granite/kernels/cpu/pool.hpp"
 
 #include <algorithm>
 #include <atomic>

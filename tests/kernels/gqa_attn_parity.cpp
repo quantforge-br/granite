@@ -1,4 +1,4 @@
-// tests/kernels/gqa_attn_parity.cpp - gqa_decode_attn and gqa_prompt_attn (basalt/kernels/gqa_attn.hpp) and
+// tests/kernels/gqa_attn_parity.cpp - gqa_decode_attn and gqa_prompt_attn (granite/kernels/gqa_attn.hpp) and
 // attn_qk_prepare (dense_ops.hpp) against a CPU reference in double precision, at the Qwen3.5-27B attention geometry
 // (24 query heads, 4 KV heads, 256 wide, 64 rotated dims, interleaved M-RoPE sections 11/11/10), unscaled and under YaRN.
 //
@@ -6,9 +6,9 @@
 // 8-warp launches); a decode row's output is bitwise the same
 // whatever the window width or the row's place in it; the prompt kernel's rows agree with decode's within fp16 rounding.
 // Exit 77 without a GPU.  Prints one line per check and a microbench line for the decode and prompt kernels.
-#include "basalt/kernels/dense_ops.hpp"
-#include "basalt/kernels/f16_bits.hpp"
-#include "basalt/kernels/gqa_attn.hpp"
+#include "granite/kernels/dense_ops.hpp"
+#include "granite/kernels/f16_bits.hpp"
+#include "granite/kernels/gqa_attn.hpp"
 
 #include <cuda_runtime.h>
 

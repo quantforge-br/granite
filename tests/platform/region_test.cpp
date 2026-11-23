@@ -1,6 +1,6 @@
 // tests/platform/region_test.cpp - platform::alloc_region and free_region. CPU only. Large pages are not assumed: the
 // region has to come back usable whichever backing it got, and the note has to say which.
-#include "basalt/platform/memory.hpp"
+#include "granite/platform/memory.hpp"
 
 #include <cstdint>
 #include <cstdio>

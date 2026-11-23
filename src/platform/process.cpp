@@ -1,9 +1,9 @@
-// src/platform/process.cpp - see include/basalt/platform/process.hpp.
-#include "basalt/platform/process.hpp"
+// src/platform/process.cpp - see include/granite/platform/process.hpp.
+#include "granite/platform/process.hpp"
 
-#include "basalt/core/progress.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/system.hpp"
+#include "granite/core/progress.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/system.hpp"
 
 #include <atomic>
 #include <cerrno>
@@ -15,7 +15,7 @@
 #include <vector>
 
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #include <fcntl.h>   // _O_BINARY, _O_WRONLY, _O_RDONLY
 #include <io.h>      // _open_osfhandle, _read, _write, _close
 #else

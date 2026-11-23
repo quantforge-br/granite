@@ -31,14 +31,14 @@
 // reference rounds to bf16 at every step; a draft only changes the speed (the target verifies every row).
 #pragma once
 
-#include "basalt/core/checkpoint_regions.hpp"
-#include "basalt/core/conversation_cache.hpp"
-#include "basalt/core/loader.hpp"
-#include "basalt/model/adapter.hpp"
-#include "basalt/models/inkling2/dspark_kernels.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
-#include "basalt/kernels/window_gemm.hpp"
-#include "basalt/program/options.hpp"
+#include "granite/core/checkpoint_regions.hpp"
+#include "granite/core/conversation_cache.hpp"
+#include "granite/core/loader.hpp"
+#include "granite/model/adapter.hpp"
+#include "granite/models/inkling2/dspark_kernels.hpp"
+#include "granite/models/inkling2/kernels.hpp"
+#include "granite/kernels/window_gemm.hpp"
+#include "granite/program/options.hpp"
 #include "models/inkling2/pack.hpp"
 
 #include <cuda_runtime.h>

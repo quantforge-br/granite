@@ -5,7 +5,7 @@ vision projector, and the GGUF metadata with default sampling. Flags and the exp
 not in it.
 
 - **Layout:** a 64 KiB header (magic `BASALTMF`, version 2, up to 511 named sections with offset, size and SHA-256), then sections aligned
-  to 2 MiB. Authoritative: [model_format.hpp](../include/basalt/core/model_format.hpp).
+  to 2 MiB. Authoritative: [model_format.hpp](../include/granite/core/model_format.hpp).
 - **Versions:** the engine reads version 2 only. Version 1 files convert with
   [tools/migrations/basalt_v1_to_v2.py](../tools/migrations/README.md), without a download. What changed:
   [file format changes](basalt-file-changelog.md).
@@ -23,7 +23,7 @@ stores no such tensor; the engine rounds the DSpark drafter's Q8_0 block product
   `((r / 128) * (K / 64) + g / 4) * 512 + (r % 32) * 16 + ((r % 128) / 32) * 4 + g % 4`.
 - The matrix's FP32 scale is a separate F32 [1] tensor `<name>.scale`; a value is `e2m1 * ue4m3 * scale`.
 
-[nvfp4_planes.hpp](../include/basalt/kernels/nvfp4_planes.hpp) is the engine's copy of this layout.
+[nvfp4_planes.hpp](../include/granite/kernels/nvfp4_planes.hpp) is the engine's copy of this layout.
 
 ## Inkling 2 Mini pack
 

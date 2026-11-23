@@ -1,11 +1,11 @@
-// tests/kernels/logprobs_parity.cpp - row_logprobs (basalt/kernels/logprobs.hpp) against a double CPU reference.
+// tests/kernels/logprobs_parity.cpp - row_logprobs (granite/kernels/logprobs.hpp) against a double CPU reference.
 //
 // Random rows at the real head widths (Flash-Next 151,936; DeepSeek 129,280): normal rows, peaked rows, rows with ties
 // and a masked (-inf) logit. The pick's log probability and each alternative's must be within 2e-6 of the reference
 // and the ids exactly its order (larger first, ties to the lower id). A row's output must not depend on the batch width
 // or its place in it: every row is also run alone and compared bit for bit. Then a microbench: us per call and GB/s
 // over the bytes the rows hold (one pass: the chunks are read once into shared memory).
-#include "basalt/kernels/logprobs.hpp"
+#include "granite/kernels/logprobs.hpp"
 
 #include <cuda_runtime.h>
 

@@ -2,12 +2,12 @@
 //
 // Each step reuses the code the microbenches use: the startup PCIe probe's burst timing and avx_bench's cold-expert
 // pool loop and its idle read.  A model's own peer path is measured through its ProbePeerPath.
-#include "basalt/program/probe_rates.hpp"
+#include "granite/program/probe_rates.hpp"
 
-#include "basalt/kernels/cpu/cpu_quota.hpp"
-#include "basalt/kernels/cpu/native_expert.hpp"
-#include "basalt/platform/dynlib.hpp"
-#include "basalt/platform/memory.hpp"
+#include "granite/kernels/cpu/cpu_quota.hpp"
+#include "granite/kernels/cpu/native_expert.hpp"
+#include "granite/platform/dynlib.hpp"
+#include "granite/platform/memory.hpp"
 
 #include <cuda_runtime.h>
 

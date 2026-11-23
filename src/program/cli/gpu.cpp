@@ -1,8 +1,8 @@
 #include "gpu.hpp"
 
-#include "basalt/log.hpp"
-#include "basalt/platform/system.hpp"
-#include "basalt/program/options.hpp"
+#include "granite/log.hpp"
+#include "granite/platform/system.hpp"
+#include "granite/program/options.hpp"
 
 #include <algorithm>
 #include <cstdio>

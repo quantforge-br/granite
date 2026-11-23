@@ -1,4 +1,4 @@
-// basalt/program/serve/reply_rows.hpp - which rows of a verify window the session keeps.
+// granite/program/serve/reply_rows.hpp - which rows of a verify window the session keeps.
 //
 // Row i of a window is fed by window[i]: row 0 by the token carried over (the last prompt token or the previous
 // window's last pick), row i > 0 by the draft the target confirmed as pick i - 1.  Picks e0..a are the reply's; the

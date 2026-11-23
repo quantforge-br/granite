@@ -6,7 +6,7 @@
 #include <cstring>
 #include <string>
 
-#include "basalt/vision/mmproj.hpp"
+#include "granite/vision/mmproj.hpp"
 
 namespace basalt::vision::hy4 {
 

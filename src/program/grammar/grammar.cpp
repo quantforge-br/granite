@@ -1,6 +1,6 @@
 // src/program/grammar/grammar.cpp - see grammar.hpp. The GBNF parser, the pushdown stacks (interned, with memoized
 // closure and character steps) and the vocabulary trie walk.
-#include "basalt/program/grammar/grammar.hpp"
+#include "granite/program/grammar/grammar.hpp"
 
 #include <algorithm>
 #include <cstdio>

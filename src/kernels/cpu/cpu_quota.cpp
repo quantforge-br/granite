@@ -1,7 +1,7 @@
 // src/kernels/cpu/cpu_quota.cpp - the CPU quota of the process's cgroup.  See cpu_quota.hpp.
-#include "basalt/kernels/cpu/cpu_quota.hpp"
+#include "granite/kernels/cpu/cpu_quota.hpp"
 
-#include "basalt/platform/system.hpp"
+#include "granite/platform/system.hpp"
 
 #include <algorithm>
 #include <filesystem>

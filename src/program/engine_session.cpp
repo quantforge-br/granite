@@ -1,12 +1,12 @@
 // src/program/engine_session.cpp - see engine_session.hpp.
-#include "basalt/log.hpp"
-#include "basalt/program/engine_session.hpp"
+#include "granite/log.hpp"
+#include "granite/program/engine_session.hpp"
 
 #include <filesystem>
 
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/system.hpp"
-#include "basalt/program/load_summary.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/system.hpp"
+#include "granite/program/load_summary.hpp"
 
 #include <algorithm>
 #include <atomic>

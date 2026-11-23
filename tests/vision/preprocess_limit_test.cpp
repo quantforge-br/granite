@@ -3,7 +3,7 @@
 // A PNG's IHDR alone says how many pixels the file claims, so the refusal happens without allocating a pixel buffer.
 // The IDAT below is a stored deflate block of the one row a 1x1 image has, which keeps the accepted case a real
 // decode rather than a header-only file.
-#include "basalt/vision/preprocess.hpp"
+#include "granite/vision/preprocess.hpp"
 
 #include <cstdint>
 #include <cstdio>

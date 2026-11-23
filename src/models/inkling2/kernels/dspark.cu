@@ -1,9 +1,9 @@
-// src/models/inkling2/kernels/dspark.cu - the DSpark drafter's own kernels (basalt/models/inkling2/dspark_kernels.hpp).
-#include "basalt/models/inkling2/dspark_kernels.hpp"
+// src/models/inkling2/kernels/dspark.cu - the DSpark drafter's own kernels (granite/models/inkling2/dspark_kernels.hpp).
+#include "granite/models/inkling2/dspark_kernels.hpp"
 
-#include "basalt/kernels/head_proxy.cuh"
-#include "basalt/kernels/pdl.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
+#include "granite/kernels/head_proxy.cuh"
+#include "granite/kernels/pdl.hpp"
+#include "granite/models/inkling2/kernels.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -201,7 +201,7 @@ __global__ void __launch_bounds__(kStepWarps * 32) markov_step_kernel(const floa
 // ---- the head, screened ------------------------------------------------------------------------------------------------
 //
 // Draft i's logits are l[v] = cap tanh((head_v . h + fold_v . lat_i + fold_b[v]) / cap), h = block row i + 1 and lat_i
-// the recurrence's latent, both as q8_1. The screen (basalt/kernels/head_proxy.cuh) scores every row approximately from
+// the recurrence's latent, both as q8_1. The screen (granite/kernels/head_proxy.cuh) scores every row approximately from
 // 2-bit copies of the head and the fold: the head term once for all the block's rows (one pass over the copy), the fold
 // term per draft; then the rows near the best are scored exactly (exact_logit) and the exact best is the pick. The
 // reference (dspark_head_exact) scores every row with the same exact_logit, so a pick is the full head's whenever the full

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "basalt/model/adapter.hpp"
-#include "basalt/program/options.hpp"
+#include "granite/model/adapter.hpp"
+#include "granite/program/options.hpp"
 
 namespace basalt::program::generate {
 

@@ -104,7 +104,7 @@ At 400 W with every expert on the card, prompts of 2K, 16K, 32K and 128K tokens 
 On when the pack has the DSpark drafter. One block pass drafts up to seven tokens: three dense layers over the anchor and seven
 mask rows, reading keys and values made from the target's visits 5, 23 and 41 and its final state, then a recurrent Markov
 head over the target's head (screened through 2-bit copies of its rows). The draft policy picks each window by expected
-tokens per millisecond (`include/basalt/spec/draft_policy.hpp`). `--spec N` caps the window (default 8: the last accepted token
+tokens per millisecond (`include/granite/spec/draft_policy.hpp`). `--spec N` caps the window (default 8: the last accepted token
 plus the block); `--spec 1` turns it off. The target checks every draft: output is plain decoding's.
 A window also takes a draft copied from an earlier repeat of at least 3 tokens of the context when the policy expects more
 from it than from the block: upstream, a 2,405-token copy prompt decoded 13 % faster.

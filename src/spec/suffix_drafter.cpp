@@ -1,5 +1,5 @@
-// src/spec/suffix_drafter.cpp - see include/basalt/spec/suffix_drafter.hpp.
-#include "basalt/spec/suffix_drafter.hpp"
+// src/spec/suffix_drafter.cpp - see include/granite/spec/suffix_drafter.hpp.
+#include "granite/spec/suffix_drafter.hpp"
 
 #include <algorithm>
 

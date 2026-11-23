@@ -1,8 +1,8 @@
-// src/vision/mmproj.cpp - see basalt/vision/mmproj.hpp.
-#include "basalt/vision/mmproj.hpp"
+// src/vision/mmproj.cpp - see granite/vision/mmproj.hpp.
+#include "granite/vision/mmproj.hpp"
 
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/memory.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/memory.hpp"
 
 #include <algorithm>
 #include <cstdlib>

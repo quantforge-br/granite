@@ -1,6 +1,6 @@
 // Unit test for basalt-probe's report: parsing the rates block, the k-suffix depth parser and the layout.
-#include "basalt/program/engine_session.hpp"
-#include "basalt/program/probe_report.hpp"
+#include "granite/program/engine_session.hpp"
+#include "granite/program/probe_report.hpp"
 
 #include <cstdio>
 #include <cstdlib>

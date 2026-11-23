@@ -12,7 +12,7 @@ Options
   --workers N        converter processes
   --force            overwrite --out
 
-It writes a version 2 file. Sections are listed in include/basalt/core/model_format.hpp. Everything is streamed.
+It writes a version 2 file. Sections are listed in include/granite/core/model_format.hpp. Everything is streamed.
 """
 from __future__ import annotations
 

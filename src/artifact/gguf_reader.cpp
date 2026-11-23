@@ -1,9 +1,9 @@
 // src/artifact/gguf_reader.cpp - the `granite-gguf` CLI.  The reader itself is header-only in
-// include/basalt/artifact/gguf_reader.hpp; this file is just the entry point, so it cannot drift
+// include/granite/artifact/gguf_reader.hpp; this file is just the entry point, so it cannot drift
 // from the library it exercises.
-#include "basalt/artifact/gguf_reader.hpp"
-#include "basalt/model/adapter.hpp"
-#include "basalt/models/builtin.hpp"
+#include "granite/artifact/gguf_reader.hpp"
+#include "granite/model/adapter.hpp"
+#include "granite/models/builtin.hpp"
 
 #ifndef GGUF_MAIN_DISABLED
 int main(int argc, char** argv) {

@@ -8,7 +8,7 @@
 #include <thread>
 #include <vector>
 
-#include "basalt/platform/compiler.hpp"
+#include "granite/platform/compiler.hpp"
 #include "gemm_cpu.hpp"
 
 namespace basalt::vision {

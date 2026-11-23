@@ -2,7 +2,7 @@
 // the session's caches.
 #pragma once
 
-#include "basalt/model/adapter.hpp"
+#include "granite/model/adapter.hpp"
 #include "models/inkling2/caches.hpp"
 #include "models/inkling2/model.hpp"
 

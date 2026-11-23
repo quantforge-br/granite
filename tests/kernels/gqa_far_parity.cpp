@@ -1,4 +1,4 @@
-// tests/kernels/gqa_far_parity.cpp - a cache split in two places (KvFar, basalt/kernels/gqa_attn.hpp): the cells from `at` on
+// tests/kernels/gqa_far_parity.cpp - a cache split in two places (KvFar, granite/kernels/gqa_attn.hpp): the cells from `at` on
 // in other buffers, page-locked device-mapped host memory for decode (K/V streaming) or a device copy for prompt chunks.
 // At the Qwen3.5-27B attention geometry (24 query heads, 4 KV heads, 256 wide), fp16 and int8 caches, a split that falls
 // inside a decode chunk and a prompt key tile:
@@ -9,10 +9,10 @@
 //
 // `--bench`: a decode row and an 8-row window over 128K cells with none, half and all of them in host memory (the bus
 // reads they cost).  Exit 77 without a GPU.
-#include "basalt/kernels/bf16_bits.hpp"
-#include "basalt/kernels/dense_ops.hpp"
-#include "basalt/kernels/f16_bits.hpp"
-#include "basalt/kernels/gqa_attn.hpp"
+#include "granite/kernels/bf16_bits.hpp"
+#include "granite/kernels/dense_ops.hpp"
+#include "granite/kernels/f16_bits.hpp"
+#include "granite/kernels/gqa_attn.hpp"
 
 #include <cuda_runtime.h>
 

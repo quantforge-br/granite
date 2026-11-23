@@ -6,7 +6,7 @@
 // embeddings as they are (no embedding norm). The text model has no rotary positions, so the rows need no grid.
 #pragma once
 
-#include "basalt/vision/preprocess.hpp"
+#include "granite/vision/preprocess.hpp"
 
 #include <cstdint>
 #include <string>

@@ -2,13 +2,13 @@
 //
 // A token is known by its raw bytes (the GPT-2 byte alphabet undone at load). A merge is an id pair with a rank and the
 // id of the token it makes; a piece is merged by lowest rank first, the leftmost pair on a tie.
-#include "basalt/program/tokenizer.hpp"
+#include "granite/program/tokenizer.hpp"
 
 #include <algorithm>
 #include <cstring>
 #include <unordered_map>
 
-#include "basalt/program/json_scan.hpp"
+#include "granite/program/json_scan.hpp"
 #include "unicode_flags.hpp"
 
 namespace basalt::program {

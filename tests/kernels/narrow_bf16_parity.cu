@@ -1,8 +1,8 @@
-// tests/kernels/narrow_bf16_parity.cu - the FP4 E2M1 and UE4M3 conversions to bf16x2 (basalt/kernels/narrow_bf16.cuh)
+// tests/kernels/narrow_bf16_parity.cu - the FP4 E2M1 and UE4M3 conversions to bf16x2 (granite/kernels/narrow_bf16.cuh)
 // against the host's values: every UE4M3 scale byte in both halves (bit 7 ignored, 0x7f as 0), and every E2M1 byte at
 // every UE4M3 scale byte in each byte of the word, bit for bit; and bf16x2_mul_rn against the host's rounding of the
 // product on a sweep of bf16 pairs.  Exit 77 without a GPU.
-#include "basalt/kernels/narrow_bf16.cuh"
+#include "granite/kernels/narrow_bf16.cuh"
 
 #include <cuda_fp8.h>
 #include <cuda_runtime.h>
@@ -55,7 +55,7 @@ float e4m3f(unsigned b) {
     return (float) v;
 }
 
-// a UE4M3 scale byte as the NVFP4 format reads it (basalt/artifact/dequant.hpp: bit 7 ignored, 0x7f as 0)
+// a UE4M3 scale byte as the NVFP4 format reads it (granite/artifact/dequant.hpp: bit 7 ignored, 0x7f as 0)
 float ue4m3f(unsigned b) {
     b &= 0x7fu;
     return b == 0x7fu ? 0.0f : e4m3f(b);

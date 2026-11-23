@@ -1,8 +1,8 @@
 // src/core/elastic_array.cpp - see elastic_array.hpp.
-#include "basalt/core/elastic_array.hpp"
+#include "granite/core/elastic_array.hpp"
 
-#include "basalt/core/device.hpp"
-#include "basalt/core/vmm.hpp"
+#include "granite/core/device.hpp"
+#include "granite/core/vmm.hpp"
 
 #include <cuda_runtime.h>
 

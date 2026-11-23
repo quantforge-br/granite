@@ -1,11 +1,11 @@
-// src/vision/ffmpeg_api.cpp - see basalt/vision/ffmpeg_api.hpp.
-#include "basalt/vision/ffmpeg_api.hpp"
+// src/vision/ffmpeg_api.cpp - see granite/vision/ffmpeg_api.hpp.
+#include "granite/vision/ffmpeg_api.hpp"
 
 #include <iterator>
 #include <mutex>
 #include <type_traits>
 
-#include "basalt/platform/dynlib.hpp"
+#include "granite/platform/dynlib.hpp"
 
 namespace basalt::vision {
 

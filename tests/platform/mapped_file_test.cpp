@@ -1,8 +1,8 @@
 // tests/platform/mapped_file_test.cpp - platform::MappedFile, file_size and pread_all on one scratch file. CPU only,
 // no model. The same assertions hold on every platform: a whole-file view, a section at an offset, the refusals, and
 // the view's hints (which may do nothing, but must not fault).
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/mapped_file.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/mapped_file.hpp"
 
 #include <cstdint>
 #include <cstdio>

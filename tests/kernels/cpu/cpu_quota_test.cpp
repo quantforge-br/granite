@@ -1,6 +1,6 @@
 // Parity of cgroup_cpu_quota against fake cgroup trees (v2, v1, hybrid, hidden paths).
-#include "basalt/kernels/cpu/cpu_quota.hpp"
-#include "basalt/platform/system.hpp"
+#include "granite/kernels/cpu/cpu_quota.hpp"
+#include "granite/platform/system.hpp"
 
 #include <cmath>
 #include <cstdio>

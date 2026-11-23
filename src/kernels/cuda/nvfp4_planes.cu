@@ -1,5 +1,5 @@
-// src/kernels/cuda/nvfp4_planes.cu - see include/basalt/kernels/nvfp4_planes.hpp.
-#include "basalt/kernels/nvfp4_planes.hpp"
+// src/kernels/cuda/nvfp4_planes.cu - see include/granite/kernels/nvfp4_planes.hpp.
+#include "granite/kernels/nvfp4_planes.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
@@ -7,7 +7,7 @@
 
 #include <cstdlib>
 
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::kernels::nvfp4p {
 namespace {

@@ -20,9 +20,9 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-#include "basalt/kernels/router.hpp"
+#include "granite/kernels/router.hpp"
 
-#include "basalt/kernels/pdl.hpp"
+#include "granite/kernels/pdl.hpp"
 
 #include <cuda_runtime.h>
 

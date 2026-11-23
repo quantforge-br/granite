@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-#include "basalt/vision/encoder_cpu.hpp"
+#include "granite/vision/encoder_cpu.hpp"
 
 using namespace basalt::vision;
 

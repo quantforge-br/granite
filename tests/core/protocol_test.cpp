@@ -1,5 +1,5 @@
-// include/basalt/protocol.hpp: protocol lines written from several threads each arrive whole on stdout.
-#include "basalt/protocol.hpp"
+// include/granite/protocol.hpp: protocol lines written from several threads each arrive whole on stdout.
+#include "granite/protocol.hpp"
 
 #include <cstdio>
 #include <string>

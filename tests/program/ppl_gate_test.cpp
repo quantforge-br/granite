@@ -1,6 +1,6 @@
 // tests/program/ppl_gate_test.cpp - the quality gate over a small base file: its shape checks, and the row of a chunk it reads.
-#include "basalt/platform/system.hpp"
-#include "basalt/program/ppl_gate.hpp"
+#include "granite/platform/system.hpp"
+#include "granite/program/ppl_gate.hpp"
 
 #include <cstdio>
 #include <filesystem>

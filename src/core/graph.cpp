@@ -1,5 +1,5 @@
 // src/core/graph.cpp - the GraphRegistry implementation.
-#include "basalt/core/graph.hpp"
+#include "granite/core/graph.hpp"
 
 #include <immintrin.h>
 

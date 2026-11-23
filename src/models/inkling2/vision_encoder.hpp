@@ -1,9 +1,9 @@
 // src/models/inkling2/vision_encoder.hpp - the image encoder on the model's card, as the session drives it.
 #pragma once
 
-#include "basalt/core/model_file.hpp"
-#include "basalt/model/adapter.hpp"
-#include "basalt/vision/encoder_cuda.hpp"
+#include "granite/core/model_file.hpp"
+#include "granite/model/adapter.hpp"
+#include "granite/vision/encoder_cuda.hpp"
 #include "models/inkling2/vision.hpp"
 
 #include <cstddef>

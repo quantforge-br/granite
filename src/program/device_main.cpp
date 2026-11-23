@@ -2,12 +2,12 @@
 //
 // It runs without a model.  It is also the run-time half of the architecture policy: CMake refuses to COMPILE for
 // another architecture, and this refuses to RUN on one.
-#include "basalt/core/device.hpp"
+#include "granite/core/device.hpp"
 
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 static std::string human(uint64_t b) {
     char buf[64];

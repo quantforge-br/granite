@@ -1,6 +1,6 @@
-// src/kernels/cuda/gqa_attn.cu - see include/basalt/kernels/gqa_attn.hpp.
-#include "basalt/kernels/gqa_attn.hpp"
-#include "basalt/kernels/pdl.hpp"
+// src/kernels/cuda/gqa_attn.cu - see include/granite/kernels/gqa_attn.hpp.
+#include "granite/kernels/gqa_attn.hpp"
+#include "granite/kernels/pdl.hpp"
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
@@ -11,7 +11,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <type_traits>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::kernels {
 namespace {

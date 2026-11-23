@@ -1,6 +1,6 @@
 // src/models/inkling2/kernels/prompt_ops.cu - the prompt path's small kernels: the experts' plan as a stable counting sort
 // of a chunk's (row, slot) pairs by expert, and the staged sliding-window keys moved into the window rings.
-#include "basalt/models/inkling2/prompt_kernels.hpp"
+#include "granite/models/inkling2/prompt_kernels.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>

@@ -9,7 +9,7 @@
 // tensor cores with fp32 accumulation, and the sink joins the denominator at the end. A key at or after the chunk's first
 // position comes from the chunk's own buffer (a full layer's cache, a sliding-window layer's stage), an earlier one from
 // the cache (a window ring or the full cache).
-#include "basalt/models/inkling2/prompt_kernels.hpp"
+#include "granite/models/inkling2/prompt_kernels.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>

@@ -1,8 +1,8 @@
 // src/core/ram_load.cpp - the RAM tier's memory: allocation, pinning and registration.
-#include "basalt/core/ram_load.hpp"
-#include "basalt/core/vmm.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/memory.hpp"
+#include "granite/core/ram_load.hpp"
+#include "granite/core/vmm.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/memory.hpp"
 
 #include <cuda_runtime.h>
 

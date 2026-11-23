@@ -2,13 +2,13 @@
 // alignment and size, with every conversion, from a path or a descriptor, with items coalesced, counted exactly once,
 // copies of bytes the plan itself places run after its reads, its steps between the two, the reads that land on a card
 // before those that land in RAM (the start's bar says which), and a failure or a cancel reported.  The host cases need no GPU.
-#include "basalt/core/loader.hpp"
+#include "granite/core/loader.hpp"
 
-#include "basalt/core/load_progress.hpp"
+#include "granite/core/load_progress.hpp"
 
-#include "basalt/kernels/f16_bits.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/memory.hpp"
+#include "granite/kernels/f16_bits.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/memory.hpp"
 
 #include <cuda_runtime.h>
 

@@ -1,7 +1,7 @@
 // tests/program/gpu_select_test.cpp - the gpu setting over fake card tables: parsing, the card choice, the roles.
-#include "basalt/program/gpu_select.hpp"
+#include "granite/program/gpu_select.hpp"
 
-#include "basalt/platform/process.hpp"
+#include "granite/platform/process.hpp"
 
 #include <cstdio>
 #include <cstdlib>

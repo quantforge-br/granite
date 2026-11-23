@@ -2,10 +2,10 @@
 // loads the pack into an InklingModel.
 #include "models/inkling2/adapter.hpp"
 
-#include "basalt/artifact/gguf_reader.hpp"
-#include "basalt/log.hpp"
-#include "basalt/model/flags.hpp"
-#include "basalt/program/options.hpp"
+#include "granite/artifact/gguf_reader.hpp"
+#include "granite/log.hpp"
+#include "granite/model/flags.hpp"
+#include "granite/program/options.hpp"
 #include "models/inkling2/dspark.hpp"   // DSPARK HOOK
 #include "models/inkling2/meta.hpp"
 #include "models/inkling2/model.hpp"

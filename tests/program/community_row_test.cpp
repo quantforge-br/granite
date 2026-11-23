@@ -5,8 +5,8 @@
 //                                              compares it with what tools/check_benchmarks.py --fix writes)
 //   community_row_test --dup FILE              prints "I J" for each row I of FILE that has the setup of an earlier row J
 //                                              (the first such J), for community_row_fix_test.py to compare with the checker
-#include "basalt/program/community_row.hpp"
-#include "basalt/program/host_rates.hpp"
+#include "granite/program/community_row.hpp"
+#include "granite/program/host_rates.hpp"
 
 #include <cstdio>
 #include <cstring>

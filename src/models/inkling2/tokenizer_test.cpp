@@ -12,9 +12,9 @@
 #include <string>
 #include <vector>
 
-#include "basalt/core/model_file.hpp"
-#include "basalt/program/json_scan.hpp"
-#include "basalt/program/tokenizer.hpp"
+#include "granite/core/model_file.hpp"
+#include "granite/program/json_scan.hpp"
+#include "granite/program/tokenizer.hpp"
 
 int main(int argc, char** argv) {
     if (argc != 3) {

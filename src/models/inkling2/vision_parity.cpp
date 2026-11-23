@@ -7,10 +7,10 @@
 // inputs, and the lowest cosine of an output row. --dump: DIR/<name>.basalt.f32 (and .cpu.f32 with --cpu), the rows
 // [cells][2304] as float32. The time is the mean of N encodes after a first one (the picture's bytes to the card and the
 // rows back included), next to the host's decode and preparation. Exit status 1 when a gate fails.
-#include "basalt/core/model_file.hpp"
-#include "basalt/vision/encoder_cpu.hpp"
-#include "basalt/vision/encoder_cuda.hpp"
-#include "basalt/vision/mmproj.hpp"
+#include "granite/core/model_file.hpp"
+#include "granite/vision/encoder_cpu.hpp"
+#include "granite/vision/encoder_cuda.hpp"
+#include "granite/vision/mmproj.hpp"
 #include "models/inkling2/vision.hpp"
 
 #include <cuda_runtime.h>

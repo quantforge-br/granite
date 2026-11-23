@@ -2,7 +2,7 @@
 // else, so a CPU test links no model and no runtime.
 #pragma once
 
-#include "basalt/model/adapter.hpp"
+#include "granite/model/adapter.hpp"
 #include "models/inkling2/meta.hpp"
 
 #include <memory>

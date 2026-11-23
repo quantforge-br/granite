@@ -1,7 +1,7 @@
 // src/program/serve/runtime.cpp - lifecycle of the persistent engine.
 #include "state.hpp"
 
-#include "basalt/core/on_device.hpp"
+#include "granite/core/on_device.hpp"
 
 namespace basalt::program::serve {
 

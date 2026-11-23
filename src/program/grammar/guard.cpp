@@ -1,14 +1,14 @@
 // src/program/grammar/guard.cpp - the pack's vocabulary and the per-request window check.
-#include "basalt/program/grammar/guard.hpp"
+#include "granite/program/grammar/guard.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <unordered_map>
 
-#include "basalt/program/grammar/schema.hpp"
-#include "basalt/program/json_scan.hpp"
-#include "basalt/log.hpp"
+#include "granite/program/grammar/schema.hpp"
+#include "granite/program/json_scan.hpp"
+#include "granite/log.hpp"
 
 namespace basalt::program::grammar {
 

@@ -1,5 +1,5 @@
 // tests/program/probe_derive_test.cpp - the worker pick, the balance share and the suggestion lines.
-#include "basalt/program/probe_derive.hpp"
+#include "granite/program/probe_derive.hpp"
 
 #include <cmath>
 #include <cstdio>

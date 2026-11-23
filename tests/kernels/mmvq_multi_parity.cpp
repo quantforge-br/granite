@@ -2,7 +2,7 @@
 //
 //     build/mmvq_multi_parity
 //
-// WHY IT EXISTS.  `include/basalt/kernels/native_mmvq.hpp` says of `native_mmvq_set_multi_exact`:
+// WHY IT EXISTS.  `include/granite/kernels/native_mmvq.hpp` says of `native_mmvq_set_multi_exact`:
 //
 //     "true (default): the ncols == 1 layout, every column bitwise equal to a single-column call"
 //
@@ -38,8 +38,8 @@
 // MMVQ_MMA=1 in the environment the sweeps above take it for their IQ4_XS case as well.
 //
 //     build/mmvq_multi_parity [--bench]      --bench: the dp4a and tensor-core kernels timed at the model's shapes
-#include "basalt/kernels/iq_kernels.hpp"
-#include "basalt/kernels/native_mmvq.hpp"
+#include "granite/kernels/iq_kernels.hpp"
+#include "granite/kernels/native_mmvq.hpp"
 
 #include <cuda_runtime.h>
 

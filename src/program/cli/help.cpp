@@ -1,7 +1,7 @@
 #include "help.hpp"
 
-#include "basalt/log.hpp"
-#include "basalt/program/options.hpp"
+#include "granite/log.hpp"
+#include "granite/program/options.hpp"
 
 namespace basalt::program::cli {
 

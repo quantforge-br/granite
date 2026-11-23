@@ -11,7 +11,7 @@ The build commands are in the [README](../README.md). Requirements: [platforms](
 - `tests/`: parity and unit tests. `data/`: expert profiles (`data/profiles`) and benchmark fixtures (`data/bench`).
 
 The build fetches nothing. The ggml and llama.cpp parts granite uses (quantization formats, CPU dot products, MMQ) are in `src/` and
-`include/basalt/ggml/`, under the MIT licence in `THIRD_PARTY_LICENSES`.
+`include/granite/ggml/`, under the MIT licence in `THIRD_PARTY_LICENSES`.
 
 `-DWERROR=ON` makes project warnings errors (CI sets it on Linux).
 

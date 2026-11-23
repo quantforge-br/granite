@@ -3,10 +3,10 @@
 // same whatever the window's rows (1..8) and whatever the other rows hold, the Add and SwiGLU epilogues, a call of
 // several matrices, and the fused pack against rms_norm_rows followed by pack.
 // --bench: us per call and GB/s of weights, the weights rotated through copies larger than L2.  Exit 77 without a GPU.
-#include "basalt/kernels/dense_ops.hpp"
-#include "basalt/kernels/nvfp4_planes.hpp"
-#include "basalt/kernels/pdl.hpp"
-#include "basalt/kernels/window_gemm.hpp"
+#include "granite/kernels/dense_ops.hpp"
+#include "granite/kernels/nvfp4_planes.hpp"
+#include "granite/kernels/pdl.hpp"
+#include "granite/kernels/window_gemm.hpp"
 
 #include <cuda_bf16.h>
 #include <cuda_fp8.h>

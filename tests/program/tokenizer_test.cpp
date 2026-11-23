@@ -9,7 +9,7 @@
 #include <sstream>
 #include <string>
 
-#include "basalt/program/tokenizer.hpp"
+#include "granite/program/tokenizer.hpp"
 #include "unicode_flags.hpp"
 
 // The Qwen pre-tokenizer is shared (the tokenizer library).

@@ -5,15 +5,15 @@
 // against native_expert_grouped, and the NVFP4 experts on the FP4 tensor cores (moe_fp4, activations as two FP4 terms)
 // against a CPU reference that rounds the activations the same way. Rows are checked for not depending on the chunk's width or their place in it, and timed.
 // Exit 77 without a GPU.
-#include "basalt/ggml/ggml.h"
-#include "basalt/kernels/bf16_gemv.hpp"
-#include "basalt/kernels/dense_ops.hpp"
-#include "basalt/kernels/iq_kernels.hpp"
-#include "basalt/kernels/native_mmvq.hpp"
-#include "basalt/kernels/router.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
-#include "basalt/models/inkling2/prompt_kernels.hpp"
-#include "basalt/prefill/moe_mmq.hpp"
+#include "granite/ggml/ggml.h"
+#include "granite/kernels/bf16_gemv.hpp"
+#include "granite/kernels/dense_ops.hpp"
+#include "granite/kernels/iq_kernels.hpp"
+#include "granite/kernels/native_mmvq.hpp"
+#include "granite/kernels/router.hpp"
+#include "granite/models/inkling2/kernels.hpp"
+#include "granite/models/inkling2/prompt_kernels.hpp"
+#include "granite/prefill/moe_mmq.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>

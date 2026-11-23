@@ -1,6 +1,6 @@
-#include "basalt/models/builtin.hpp"
+#include "granite/models/builtin.hpp"
 
-#include "basalt/model/adapter.hpp"
+#include "granite/model/adapter.hpp"
 
 #include <memory>
 

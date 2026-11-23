@@ -1,6 +1,6 @@
-// tests/platform/compiler_test.cpp - the compiler-facing helpers in basalt/platform/compiler.hpp, and the
+// tests/platform/compiler_test.cpp - the compiler-facing helpers in granite/platform/compiler.hpp, and the
 // std::atomic_ref max-update the verifier uses for its flags. CPU only.
-#include "basalt/platform/compiler.hpp"
+#include "granite/platform/compiler.hpp"
 
 #include <atomic>
 #include <bit>

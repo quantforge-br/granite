@@ -5,13 +5,13 @@
 // them with a masked subtract and one VNNI dot.  Per token and row the arithmetic is the ggml dot's: the same
 // int32 sums per 4 bytes (dpbusd equals maddubs + madd at these magnitudes), the same per-lane fp32 products
 // d_y * scale, the same fused accumulation across blocks and the same final reduction, so results are bitwise equal.
-#include "basalt/kernels/cpu/nvfp4_avx512.hpp"
-#include "basalt/kernels/cpu/swiglu.hpp"
-#include "basalt/platform/compiler.hpp"
+#include "granite/kernels/cpu/nvfp4_avx512.hpp"
+#include "granite/kernels/cpu/swiglu.hpp"
+#include "granite/platform/compiler.hpp"
 
 #define GGML_COMMON_DECL_CPP
 #define GGML_COMMON_IMPL_CPP
-#include "basalt/ggml/ggml_common.h"
+#include "granite/ggml/ggml_common.h"
 
 #include <immintrin.h>
 

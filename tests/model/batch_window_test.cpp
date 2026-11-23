@@ -1,6 +1,6 @@
 // tests/model/batch_window_test.cpp - several sessions' windows as one window of segments: rows, positions, the device
 // segment table and a row's segment, the refusals, and the composition graphs' least recently used eviction (CPU).
-#include "basalt/model/batch_window.hpp"
+#include "granite/model/batch_window.hpp"
 
 #include <cstdio>
 #include <memory>

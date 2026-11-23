@@ -1,6 +1,6 @@
 """The `hc8` section: the 8-bit copies of the hyper-connection matrices the engine's decode reads.
 
-The layout is in include/basalt/core/model_file.hpp (Hc8Header, Hc8Entry).  Each copy is the matrix's int8 codes, then
+The layout is in include/granite/core/model_file.hpp (Hc8Header, Hc8Entry).  Each copy is the matrix's int8 codes, then
 its f16 scales: q = rint(w / s) clamped to +-127, s = f16(absmax / 127) per 32 consecutive values of a row, in fp32
 arithmetic, as the engine's quantizer (hc8_quant_kernel) computes them.
 

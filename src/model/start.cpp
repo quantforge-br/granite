@@ -1,8 +1,8 @@
 // src/model/start.cpp - ModelAdapter::start, the start every session model runs (adapter.hpp).  Its own translation unit:
 // only a program that starts a model (and links core, which places the bytes) pulls it in.
-#include "basalt/core/load_progress.hpp"
-#include "basalt/core/loader.hpp"
-#include "basalt/model/adapter.hpp"
+#include "granite/core/load_progress.hpp"
+#include "granite/core/loader.hpp"
+#include "granite/model/adapter.hpp"
 
 #include <algorithm>
 

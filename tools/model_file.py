@@ -1,4 +1,4 @@
-"""Read and write the .basalt model file (the layout in include/basalt/core/model_format.hpp).
+"""Read and write the .basalt model file (the layout in include/granite/core/model_format.hpp).
 
     w = ModelWriter(path)
     w.add_bytes("meta", json_bytes)

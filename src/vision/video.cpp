@@ -1,5 +1,5 @@
-// src/vision/video.cpp - see basalt/vision/video.hpp.
-#include "basalt/vision/video.hpp"
+// src/vision/video.cpp - see granite/vision/video.hpp.
+#include "granite/vision/video.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +13,7 @@
 #include <mutex>
 #include <thread>
 
-#include "basalt/vision/ffmpeg_api.hpp"
+#include "granite/vision/ffmpeg_api.hpp"
 
 namespace basalt::vision {
 

@@ -1,10 +1,10 @@
 // src/core/model_file.cpp - the .basalt reader, the byte ranges the loaders share, a small JSON parser and the
 // hc8 table.  Host only.  See the header.
-#include "basalt/core/model_file.hpp"
+#include "granite/core/model_file.hpp"
 
-#include "basalt/artifact/gguf_reader.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/memory.hpp"
+#include "granite/artifact/gguf_reader.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/memory.hpp"
 
 #include <algorithm>
 #include <cerrno>

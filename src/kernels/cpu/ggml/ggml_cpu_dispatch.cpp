@@ -1,6 +1,6 @@
 // Picks the AVX-512 or the AVX2 build of the extracted ggml dot products for this CPU (see ggml_cpu_dots.c).
-#include "basalt/ggml/ggml.h"
-#include "basalt/kernels/cpu/expert_layout.hpp"
+#include "granite/ggml/ggml.h"
+#include "granite/kernels/cpu/expert_layout.hpp"
 
 extern "C" {
 const ggml_type_traits_cpu* ggml_get_type_traits_cpu_avx2(ggml_type type);

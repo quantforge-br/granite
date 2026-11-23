@@ -1,4 +1,4 @@
-#include "basalt/core/conversation_memory.hpp"
+#include "granite/core/conversation_memory.hpp"
 
 #include <cstdio>
 #include <cstdlib>

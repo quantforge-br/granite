@@ -17,7 +17,7 @@ own conversation differs:
 
 ## The interface
 
-The interface exists today (`include/basalt/model/adapter.hpp`); the shared serve engine
+The interface exists today (`include/granite/model/adapter.hpp`); the shared serve engine
 (`src/program/serve/session_engine.cpp`) drives it. Every model batches through it: one batching path, no model-specific
 runtime or mode.
 

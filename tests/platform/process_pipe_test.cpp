@@ -1,10 +1,10 @@
 // tests/platform/process_pipe_test.cpp - platform::spawn_piped, the pipe calls and capture_output, with this program as
 // the child. CPU only, no model. `--echo` is the child's mode: it answers each line of its input with the same line
 // upper-cased on its output, reports on its error stream, and ends with code 7 when its input ends.
-#include "basalt/core/progress.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/process.hpp"
-#include "basalt/platform/system.hpp"
+#include "granite/core/progress.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/process.hpp"
+#include "granite/platform/system.hpp"
 
 #include <cctype>
 #include <cstdint>

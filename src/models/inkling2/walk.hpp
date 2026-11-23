@@ -7,7 +7,7 @@
 // forward both follow it.
 #pragma once
 
-#include "basalt/models/inkling2/kernels.hpp"
+#include "granite/models/inkling2/kernels.hpp"
 #include "models/inkling2/pack.hpp"
 
 #include <cstdint>

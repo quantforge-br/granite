@@ -1,5 +1,5 @@
-// src/vision/preprocess.cpp - see basalt/vision/preprocess.hpp.
-#include "basalt/vision/preprocess.hpp"
+// src/vision/preprocess.cpp - see granite/vision/preprocess.hpp.
+#include "granite/vision/preprocess.hpp"
 
 #include <algorithm>
 #include <cmath>

@@ -9,9 +9,9 @@
 // Each warp walks its tiles of 32 keys with a lane a key, the lane scoring its key's row from the stage, and the lanes
 // then sum the values with four channels a lane. A second kernel merges a row's slices with the sink, gates the heads and rounds
 // them to the q8_1 blocks of the output projection.
-#include "basalt/kernels/pdl.hpp"
-#include "basalt/kernels/q8_1_finite.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
+#include "granite/kernels/pdl.hpp"
+#include "granite/kernels/q8_1_finite.hpp"
+#include "granite/models/inkling2/kernels.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>

@@ -14,11 +14,11 @@
 //
 // More workers than cores makes the OS deschedule workers in the middle of a batch, the case the claim protocol must
 // survive without any wait for the workers to park.
-#include "basalt/ggml/ggml.h"
-#include "basalt/kernels/cpu/pool.hpp"
-#include "basalt/kernels/cpu/expert.hpp"
-#include "basalt/kernels/cpu/expert_layout.hpp"
-#include "basalt/kernels/cpu/native_expert.hpp"
+#include "granite/ggml/ggml.h"
+#include "granite/kernels/cpu/pool.hpp"
+#include "granite/kernels/cpu/expert.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/native_expert.hpp"
 
 #include <algorithm>
 #include <atomic>

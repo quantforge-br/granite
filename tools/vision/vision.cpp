@@ -30,14 +30,14 @@
 #include <vector>
 
 #ifdef BASALT_VISION_CUDA
-#include "basalt/vision/encoder_cuda.hpp"
+#include "granite/vision/encoder_cuda.hpp"
 #endif
-#include "basalt/core/model_file.hpp"
-#include "basalt/vision/encoder_cpu.hpp"
-#include "basalt/vision/ffmpeg_api.hpp"
-#include "basalt/vision/mmproj.hpp"
-#include "basalt/vision/preprocess.hpp"
-#include "basalt/vision/video.hpp"
+#include "granite/core/model_file.hpp"
+#include "granite/vision/encoder_cpu.hpp"
+#include "granite/vision/ffmpeg_api.hpp"
+#include "granite/vision/mmproj.hpp"
+#include "granite/vision/preprocess.hpp"
+#include "granite/vision/video.hpp"
 
 namespace {
 

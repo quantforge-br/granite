@@ -3,8 +3,8 @@
 // A release nobody ships loads nothing and the reason names the file looked for. Where the machine has FFmpeg the
 // process's copy must be one row of the table, with its file named; where it has none, the reason is printed and
 // the test still passes (CI runners carry no FFmpeg).
-#include "basalt/platform/dynlib.hpp"
-#include "basalt/vision/ffmpeg_api.hpp"
+#include "granite/platform/dynlib.hpp"
+#include "granite/vision/ffmpeg_api.hpp"
 
 #include <cstdio>
 #include <string>

@@ -1,12 +1,12 @@
-// tests/kernels/dense_ops_parity.cpp - the dense stack's element-wise kernels (basalt/kernels/dense_ops.hpp) and the block
+// tests/kernels/dense_ops_parity.cpp - the dense stack's element-wise kernels (granite/kernels/dense_ops.hpp) and the block
 // drafters' windowed attention (gqa_window_attn) against CPU references in double precision, at the Qwen3.8-27B widths
 // (5120 hidden, 17408 FFN) and its DFlash 2 drafter's (32 x 128 query heads, 8 KV heads, a 2048-cell window, groups of
 // 16 channels, 16 candidates of rank 256), and Inkling 2's DSpark window (24 x 128 query heads, 8 KV heads, a block's
 // shared 1,024-position window).  Prints max abs / rel error per kernel.  Exit 77 without a GPU.
-#include "basalt/kernels/dense_ops.hpp"
-#include "basalt/kernels/f16_bits.hpp"
-#include "basalt/kernels/gqa_attn.hpp"
-#include "basalt/kernels/logprobs.hpp"
+#include "granite/kernels/dense_ops.hpp"
+#include "granite/kernels/f16_bits.hpp"
+#include "granite/kernels/gqa_attn.hpp"
+#include "granite/kernels/logprobs.hpp"
 
 #include <cuda_runtime.h>
 

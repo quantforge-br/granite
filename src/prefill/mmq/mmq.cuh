@@ -9,7 +9,7 @@
 
 #include <climits>
 #include <cstdint>
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 #define MMQ_ITER_K             256
 #define MMQ_NWARPS               8

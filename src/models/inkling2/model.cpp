@@ -2,15 +2,15 @@
 // memory, then the context sized from what the weights leave.
 #include "models/inkling2/model.hpp"
 
-#include "basalt/core/elastic_kv.hpp"
-#include "basalt/core/expert_cache.hpp"
-#include "basalt/core/loader.hpp"
-#include "basalt/core/vmm.hpp"
-#include "basalt/log.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/kernels/iq_kernels.hpp"
-#include "basalt/prefill/moe_mmq.hpp"
+#include "granite/core/elastic_kv.hpp"
+#include "granite/core/expert_cache.hpp"
+#include "granite/core/loader.hpp"
+#include "granite/core/vmm.hpp"
+#include "granite/log.hpp"
+#include "granite/models/inkling2/kernels.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/kernels/iq_kernels.hpp"
+#include "granite/prefill/moe_mmq.hpp"
 #include "models/inkling2/prompt.hpp"
 
 #include <cuda_runtime.h>

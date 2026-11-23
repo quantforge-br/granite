@@ -1,11 +1,11 @@
 // src/kernels/cpu/expert_layout.cpp - the per-layer expert table.  See the header.
-#include "basalt/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include "basalt/platform/compiler.hpp"
+#include "granite/platform/compiler.hpp"
 #include <sstream>
 
 namespace basalt::kernels::cpu {

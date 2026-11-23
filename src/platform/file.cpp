@@ -1,8 +1,8 @@
-// src/platform/file.cpp - see include/basalt/platform/file.hpp.
+// src/platform/file.cpp - see include/granite/platform/file.hpp.
 //
 // One implementation per platform behind one spelling per call. The Linux half is the plain POSIX call the engine
 // made there before; the Windows half is the wide-call form of it, plus what reading a CRT descriptor needs there.
-#include "basalt/platform/file.hpp"
+#include "granite/platform/file.hpp"
 
 #include <cerrno>
 #include <chrono>
@@ -12,7 +12,7 @@
 #include <system_error>
 
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #include <direct.h>   // _wchdir, _wfullpath
 #include <fcntl.h>    // _O_RDONLY, _O_BINARY
 #include <io.h>       // _wopen, _waccess, _close, _fileno, _get_osfhandle

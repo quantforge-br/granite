@@ -2,7 +2,7 @@
 // error-marked log line during a healthy start does not fail it, an engine that exits before READY does, with its
 // error lines in the reason; an engine with lossy flags reports them. Also the default engine and fixtures paths and
 // the community refusal of engine flags. CPU only.
-#include "basalt/program/engine_session.hpp"
+#include "granite/program/engine_session.hpp"
 
 #include <cstdio>
 #include <cstring>

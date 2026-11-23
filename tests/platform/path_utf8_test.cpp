@@ -13,8 +13,8 @@
 // The fixture directory itself is made through `std::filesystem`, whose narrow strings the C++ library also reads
 // with the process code page: without the manifest that directory and the one the seam asks for are two different
 // places, so the cases above fail too, which is the point of the test.
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/process.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/process.hpp"
 
 #include <cstdint>
 #include <cstdio>

@@ -23,13 +23,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include "basalt/kernels/native_mmvq.hpp"
-#include "basalt/kernels/bf16_bits.hpp"
-#include "basalt/kernels/dp4a.hpp"
-#include "basalt/kernels/packed_byte.hpp"
-#include "basalt/kernels/q8_1_finite.hpp"
-#include "basalt/kernels/iq_kernels.hpp"
-#include "basalt/kernels/pdl.hpp"
+#include "granite/kernels/native_mmvq.hpp"
+#include "granite/kernels/bf16_bits.hpp"
+#include "granite/kernels/dp4a.hpp"
+#include "granite/kernels/packed_byte.hpp"
+#include "granite/kernels/q8_1_finite.hpp"
+#include "granite/kernels/iq_kernels.hpp"
+#include "granite/kernels/pdl.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>

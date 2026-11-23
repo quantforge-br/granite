@@ -3,7 +3,7 @@
 // (tools/convert/checkpoint_inkling2.py writes it).
 #pragma once
 
-#include "basalt/core/model_file.hpp"
+#include "granite/core/model_file.hpp"
 
 #include <cstdint>
 #include <map>

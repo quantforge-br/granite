@@ -1,5 +1,5 @@
 // The engine protocol's logit_bias key: what parses and what is refused.
-#include "basalt/core/logit_bias.hpp"
+#include "granite/core/logit_bias.hpp"
 
 #include <cstdio>
 #include <cstdlib>

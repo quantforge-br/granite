@@ -3,10 +3,10 @@
 #include "../cli/gpu.hpp"
 #include "../cli/startup.hpp"
 
-#include "basalt/model/adapter.hpp"
-#include "basalt/models/builtin.hpp"
-#include "basalt/program/gpu_select.hpp"
-#include "basalt/program/options.hpp"
+#include "granite/model/adapter.hpp"
+#include "granite/models/builtin.hpp"
+#include "granite/program/gpu_select.hpp"
+#include "granite/program/options.hpp"
 
 #include <memory>
 #include <optional>

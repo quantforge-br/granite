@@ -1,10 +1,10 @@
 // src/kernels/cpu/nvfp4_avx2.cpp - NVFP4 expert rows against Q8_0 activations, several tokens at once, in 256-bit
 // lanes (nvfp4_avx2_rows.inc), and the choice between this file's rows and the AVX-VNNI-INT8 build of the same code.
-#include "basalt/kernels/cpu/nvfp4_avx2.hpp"
+#include "granite/kernels/cpu/nvfp4_avx2.hpp"
 
 #define GGML_COMMON_DECL_CPP
 #define GGML_COMMON_IMPL_CPP
-#include "basalt/ggml/ggml_common.h"
+#include "granite/ggml/ggml_common.h"
 
 #include <immintrin.h>
 
@@ -12,7 +12,7 @@
 #include <cmath>
 #include <cstring>
 
-#include "basalt/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
 
 #define BASALT_NVFP4_VNNI_INT8 0
 #define BASALT_NVFP4_EXPORT(name) name##_base

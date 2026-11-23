@@ -1,8 +1,8 @@
 // tests/kernels/nvfp4_planes_test.cpp - kernels::nvfp4p::from_blocks: every value's E2M1 code and UE4M3 scale of a random
 // ggml NVFP4 matrix land where nvfp4_planes.hpp says, and dequantize to the same floats as artifact/dequant.hpp's blocks.
 // Exit 77 without a GPU.
-#include "basalt/artifact/dequant.hpp"
-#include "basalt/kernels/nvfp4_planes.hpp"
+#include "granite/artifact/dequant.hpp"
+#include "granite/kernels/nvfp4_planes.hpp"
 
 #include <cuda_runtime.h>
 

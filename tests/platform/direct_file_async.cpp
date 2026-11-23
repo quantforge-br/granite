@@ -1,6 +1,6 @@
-#include "basalt/platform/direct_file.hpp"
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/mapped_file.hpp"
+#include "granite/platform/direct_file.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/mapped_file.hpp"
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #else
 #include <unistd.h>
 #endif

@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <string>
 
-#include "basalt/program/tokenizer.hpp"
+#include "granite/program/tokenizer.hpp"
 namespace basalt::program::tokenizer { void pretok_qwen35(const char* text, size_t size, std::vector<size_t>& ends); }
 
 namespace {

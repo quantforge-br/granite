@@ -1,5 +1,5 @@
 // src/kernels/cuda/logprobs.cu - a pick's log probability and its row's likeliest tokens (see the header).
-#include "basalt/kernels/logprobs.hpp"
+#include "granite/kernels/logprobs.hpp"
 
 #include <cuda_runtime.h>
 

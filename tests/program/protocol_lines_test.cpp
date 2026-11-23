@@ -1,6 +1,6 @@
 // tests/program/protocol_lines_test.cpp - the protocol lines the server reads for the conversation cache and for a
-// prompt that does not fit the context (include/basalt/protocol.hpp): their exact form, one line each.
-#include "basalt/protocol.hpp"
+// prompt that does not fit the context (include/granite/protocol.hpp): their exact form, one line each.
+#include "granite/protocol.hpp"
 
 #include <cstdio>
 #include <string>

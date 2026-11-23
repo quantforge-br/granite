@@ -1,4 +1,4 @@
-// src/kernels/cuda/window_gemm.cuh - the decode window products' kernel (see include/basalt/kernels/window_gemm.hpp).  No
+// src/kernels/cuda/window_gemm.cuh - the decode window products' kernel (see include/granite/kernels/window_gemm.hpp).  No
 // kernel is instantiated here.
 //
 // A work item is RS rows of each of NM matrices (NM 2: a SwiGLU pair, gate rows in the first warps, up rows in the
@@ -17,9 +17,9 @@
 // see THIRD_PARTY_LICENSES): weights staged before the PDL wait, dependents started once the weights are read.
 #pragma once
 
-#include "basalt/kernels/narrow_bf16.cuh"
-#include "basalt/kernels/pdl.hpp"
-#include "basalt/kernels/window_gemm.hpp"
+#include "granite/kernels/narrow_bf16.cuh"
+#include "granite/kernels/pdl.hpp"
+#include "granite/kernels/window_gemm.hpp"
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>

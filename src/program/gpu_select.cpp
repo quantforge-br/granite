@@ -1,9 +1,9 @@
 // src/program/gpu_select.cpp - see gpu_select.hpp.
-#include "basalt/program/gpu_select.hpp"
+#include "granite/program/gpu_select.hpp"
 
-#include "basalt/log.hpp"
-#include "basalt/platform/dynlib.hpp"
-#include "basalt/platform/process.hpp"
+#include "granite/log.hpp"
+#include "granite/platform/dynlib.hpp"
+#include "granite/platform/process.hpp"
 
 #include <algorithm>
 #include <cstdio>

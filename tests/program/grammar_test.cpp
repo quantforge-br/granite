@@ -1,8 +1,8 @@
 // tests/program/grammar_test.cpp - GBNF parse, accept/reject, UTF-8 across tokens, clone/rewind, lazy triggers, and
 // the vocabulary mask against a token-by-token check. Ends with a timing line for allows() and fill_mask().
 #include "tool_form_fixture.hpp"
-#include "basalt/program/grammar/grammar.hpp"
-#include "basalt/program/grammar/schema.hpp"
+#include "granite/program/grammar/grammar.hpp"
+#include "granite/program/grammar/schema.hpp"
 
 #include <chrono>
 #include <cstdio>

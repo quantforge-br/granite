@@ -1,8 +1,8 @@
 // tests/program/grammar_schema_test.cpp - schema-to-GBNF and the tool-call grammar, checked by running JSON text and
 // tool-call text through the parsed grammar.
 #include "tool_form_fixture.hpp"
-#include "basalt/program/grammar/grammar.hpp"
-#include "basalt/program/grammar/schema.hpp"
+#include "granite/program/grammar/grammar.hpp"
+#include "granite/program/grammar/schema.hpp"
 
 #include <cstdio>
 #include <string>

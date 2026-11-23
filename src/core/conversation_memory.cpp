@@ -1,7 +1,7 @@
-#include "basalt/core/conversation_memory.hpp"
+#include "granite/core/conversation_memory.hpp"
 
-#include "basalt/platform/memory.hpp"
-#include "basalt/platform/system.hpp"
+#include "granite/platform/memory.hpp"
+#include "granite/platform/system.hpp"
 
 #include <charconv>
 #include <fstream>

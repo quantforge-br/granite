@@ -12,8 +12,8 @@
 // MMVQ dot (q8_1 activations) must match the float matrix-vector product over that reference within the
 // activation rounding (a few 1e-3 relative), for 1 to 8 columns, every column of a multi-column call bitwise
 // equal to a one-column call on it.
-#include "basalt/kernels/iq_kernels.hpp"
-#include "basalt/kernels/native_mmvq.hpp"
+#include "granite/kernels/iq_kernels.hpp"
+#include "granite/kernels/native_mmvq.hpp"
 
 #include <cuda_runtime.h>
 

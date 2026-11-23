@@ -6,10 +6,10 @@
 // CPU rounding of their own fp32 rows. Every kernel is checked for a row's bits not depending on the rows beside it, and
 // timed; and the experts cut in the two halves tensor parallelism gives each card, against the whole experts. Exit 77
 // without a GPU.
-#include "basalt/ggml/ggml.h"
-#include "basalt/kernels/iq_kernels.hpp"
-#include "basalt/kernels/native_mmvq.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
+#include "granite/ggml/ggml.h"
+#include "granite/kernels/iq_kernels.hpp"
+#include "granite/kernels/native_mmvq.hpp"
+#include "granite/models/inkling2/kernels.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>

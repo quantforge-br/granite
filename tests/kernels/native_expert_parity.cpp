@@ -11,16 +11,16 @@
 // activations).  (b) and (c) each differ from (a) by their activation rounding only (a few 1e-3 relative).  (c) runs
 // twice, with the kernels that decode a weight part once for all entries and with the per-entry ones: bitwise equal.
 // (d) the GPU dequantizers of the prompt path and the embedding against `to_float` (Q8_0: bit for bit).
-#include "basalt/artifact/gguf_reader.hpp"
-#include "basalt/kernels/cpu/native_expert.hpp"
-#include "basalt/kernels/cpu/expert.hpp"
-#include "basalt/kernels/cpu/iq_avx512.hpp"
-#include "basalt/kernels/cpu/iq_avx2.hpp"
-#include "basalt/kernels/cpu/nvfp4_avx2.hpp"
-#include "basalt/kernels/cpu/expert_layout.hpp"
-#include "basalt/kernels/iq_kernels.hpp"
+#include "granite/artifact/gguf_reader.hpp"
+#include "granite/kernels/cpu/native_expert.hpp"
+#include "granite/kernels/cpu/expert.hpp"
+#include "granite/kernels/cpu/iq_avx512.hpp"
+#include "granite/kernels/cpu/iq_avx2.hpp"
+#include "granite/kernels/cpu/nvfp4_avx2.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/iq_kernels.hpp"
 
-#include "basalt/ggml/ggml.h"
+#include "granite/ggml/ggml.h"
 
 #include <cuda_runtime.h>
 

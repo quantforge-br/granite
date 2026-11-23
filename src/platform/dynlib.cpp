@@ -1,14 +1,14 @@
-// src/platform/dynlib.cpp - see include/basalt/platform/dynlib.hpp.
-#include "basalt/platform/dynlib.hpp"
+// src/platform/dynlib.cpp - see include/granite/platform/dynlib.hpp.
+#include "granite/platform/dynlib.hpp"
 
 #include <algorithm>
 #include <string>
 #include <vector>
 
-#include "basalt/platform/file.hpp"
+#include "granite/platform/file.hpp"
 
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #else
 #include <dlfcn.h>
 #include <link.h>

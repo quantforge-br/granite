@@ -1,7 +1,7 @@
 // src/program/load_summary.cpp - see load_summary.hpp.
-#include "basalt/program/load_summary.hpp"
+#include "granite/program/load_summary.hpp"
 
-#include "basalt/log.hpp"
+#include "granite/log.hpp"
 
 #include <cstdio>
 #include <cstdlib>

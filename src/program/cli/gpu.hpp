@@ -3,7 +3,7 @@
 #include <functional>
 #include <optional>
 #include <vector>
-#include "basalt/program/gpu_select.hpp"
+#include "granite/program/gpu_select.hpp"
 
 namespace basalt::program { struct CommonOptions; }
 

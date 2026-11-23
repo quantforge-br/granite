@@ -1,8 +1,8 @@
 // tests/platform/mapped_file_large_test.cpp - a section of a sparse file past 4 GiB lands on the right bytes (a
 // 64-bit view offset). CPU only. CMake registers it off Windows only: there the file system writes the hole out as
 // zeros. Where a file this size cannot be made the case reports that and passes.
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/mapped_file.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/mapped_file.hpp"
 
 #include <cstdint>
 #include <cstdio>

@@ -9,8 +9,8 @@
 // 3. The round-to-nearest test quantizer: decode(quantize(x)) within the format's error on Gaussian rows.
 // 4. With an experts.bin (48 layers x 512 experts of [gate | up | down | {s_gate, s_up, s_down, 0}]): a few real
 //    experts decode to finite values, no scale byte is NaN, and the tail's scales are finite and positive.
-#include "basalt/artifact/dequant.hpp"
-#include "basalt/ggml/ggml.h"
+#include "granite/artifact/dequant.hpp"
+#include "granite/ggml/ggml.h"
 
 #include <cmath>
 #include <cstdio>

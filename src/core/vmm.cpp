@@ -1,7 +1,7 @@
 // src/core/vmm.cpp - the driver's virtual memory functions through the runtime's entry points (no link against the
 // driver library).  Read the header first.
-#include "basalt/core/vmm.hpp"
-#include "basalt/log.hpp"
+#include "granite/core/vmm.hpp"
+#include "granite/log.hpp"
 
 #include <cuda_runtime.h>
 #include <cuda.h>

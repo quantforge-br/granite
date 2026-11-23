@@ -3,7 +3,7 @@
 // announced) are not counted.  Each destination's share is announced with done 0 before any byte, climbs to its own
 // total and no further, and ends once with done == total; the shares sum to the total.  The lines go to stderr, read
 // back from a file here.
-#include "basalt/core/load_progress.hpp"
+#include "granite/core/load_progress.hpp"
 
 #include <cstdio>
 #include <cstdlib>

@@ -1,7 +1,7 @@
 // src/models/inkling2/vision_encoder.cpp - see vision_encoder.hpp.
 #include "models/inkling2/vision_encoder.hpp"
 
-#include "basalt/vision/mmproj.hpp"
+#include "granite/vision/mmproj.hpp"
 
 #include <cuda_runtime.h>
 

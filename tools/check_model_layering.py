@@ -68,7 +68,7 @@ for name, words in statements(text, "target_link_libraries"):
 tracked = subprocess.check_output(["git", "ls-files", "src", "include"], cwd=ROOT, text=True).split()
 hits = []
 for f in tracked:
-    if f.startswith(("src/models/", "include/basalt/models/")) or not f.endswith((".cpp", ".hpp", ".cu", ".cuh", ".h", ".inc")):
+    if f.startswith(("src/models/", "include/granite/models/")) or not f.endswith((".cpp", ".hpp", ".cu", ".cuh", ".h", ".inc")):
         continue
     for n, line in enumerate((ROOT / f).read_text(encoding="utf-8", errors="replace").splitlines(), 1):
         if NAMES.search(line):
@@ -78,16 +78,16 @@ fail("shared code names a model or its token ids", hits)
 # A model's widths in shared code: what a name check cannot see. Each allowed file says why.
 WIDTHS = re.compile(r"\b(2560|10240|1382400|1,382,400)\b|\bFF = 640\b|\b48 ?[x*] ?512\b")
 WIDTH_OK = {
-    "include/basalt/program/options.hpp": "2560 MiB, a RAM floor",
+    "include/granite/program/options.hpp": "2560 MiB, a RAM floor",
     "src/program/cli/help.cpp": "2560 MiB, a RAM floor",
     "src/kernels/cuda/gu2.cuh": "a shared kernel's instance for this width; other widths take the other path",
     "src/prefill/moe_mmq.cu": "the Q2_0 blob layout of that format's instance",
-    "include/basalt/prefill/moe_mmq.hpp": "the Q2_0 blob layout of that format's instance",
-    "include/basalt/kernels/cpu/expert.hpp": "the capacity of the Q8_1 activation block, not a model width",
+    "include/granite/prefill/moe_mmq.hpp": "the Q2_0 blob layout of that format's instance",
+    "include/granite/kernels/cpu/expert.hpp": "the capacity of the Q8_1 activation block, not a model width",
 }
 hits = []
 for f in tracked:
-    if f.startswith(("src/models/", "include/basalt/models/", "include/basalt/ggml/", "src/kernels/cpu/ggml/")) or f in WIDTH_OK:
+    if f.startswith(("src/models/", "include/granite/models/", "include/granite/ggml/", "src/kernels/cpu/ggml/")) or f in WIDTH_OK:
         continue
     if not f.endswith((".cpp", ".hpp", ".cu", ".cuh", ".h", ".inc")):
         continue

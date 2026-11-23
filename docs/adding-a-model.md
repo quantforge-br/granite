@@ -1,11 +1,11 @@
 # Adding a model
 
-A model lives in `src/models/<arch>/` and `include/basalt/models/<arch>/`. Shared code never names it
+A model lives in `src/models/<arch>/` and `include/granite/models/<arch>/`. Shared code never names it
 (`tools/check_model_layering.sh` checks this).
 
 ## What a model writes
 
-- An adapter (`include/basalt/model/adapter.hpp`): validate the file, describe it, make its `LoadedModel`, name its tokens,
+- An adapter (`include/granite/model/adapter.hpp`): validate the file, describe it, make its `LoadedModel`, name its tokens,
   pre-tokenizer and tool-call form. It is `basalt::models::<arch>::make_adapter()`, in the library `model_<arch>`.
 - A `ModelSession` with `decode_window`, `prefill_chunk` and the state calls it supports.
   A model whose conversations resume from checkpoints lists its running state in `running_state` (device regions, in a fixed
@@ -25,7 +25,7 @@ The router then needs one config entry. Nothing in the server names a model.
 - Flags: `parse_flag` and `finish_flags`. A flag a model lacks is the normal unknown-argument error. Token id flags default to the pack's tokens.
 - The start (`ModelAdapter::start`) runs in three steps. The model's `plan` decides and allocates everything, in the order its
   sizing depends on (weights, then what is sized from the memory left: caches, the RAM tier), and queues every
-  range of the file it reads in one `LoadPlan` (`basalt/core/loader.hpp`), with copies of bytes the plan itself places (a second
+  range of the file it reads in one `LoadPlan` (`granite/core/loader.hpp`), with copies of bytes the plan itself places (a second
   home) as memory sources; nothing is placed yet. The start announces the plan's bytes as the one total, places
   them in one unbuffered pass on a thread pool (the ranges bound for a card first, the main card then the others, each streamed
   through small pinned staging; then the ranges bound for RAM; the one bar names the stage and its own part: `loading model

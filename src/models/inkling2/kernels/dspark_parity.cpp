@@ -2,8 +2,8 @@
 // accumulation) at the drafter's geometry: the target features' mixes (and a row's bits alone), the block's inputs, the
 // Markov recurrence, the screened head over the whole vocabulary (against its exact rows, its tie rule), the head folds and
 // the recurrence's split. Each is timed. Exit 77 without a GPU.
-#include "basalt/models/inkling2/dspark_kernels.hpp"
-#include "basalt/models/inkling2/kernels.hpp"
+#include "granite/models/inkling2/dspark_kernels.hpp"
+#include "granite/models/inkling2/kernels.hpp"
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>

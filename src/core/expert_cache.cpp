@@ -1,8 +1,8 @@
 // src/core/expert_cache.cpp - R4's slot storage and residency table.  Read the header first.
-#include "basalt/core/expert_cache.hpp"
+#include "granite/core/expert_cache.hpp"
 
 #include <cuda_runtime.h>
-#include "basalt/core/vmm.hpp"
+#include "granite/core/vmm.hpp"
 
 #include <algorithm>
 #include <cstdio>

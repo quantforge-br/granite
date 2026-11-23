@@ -1,8 +1,8 @@
 // src/program/serve/protocol.cpp - protocol operations for the persistent engine.
-#include "basalt/protocol.hpp"
+#include "granite/protocol.hpp"
 #include "state.hpp"
 #include "basalt_git.h"
-#include "basalt/platform/cpu.hpp"
+#include "granite/platform/cpu.hpp"
 
 namespace basalt::program::serve {
 

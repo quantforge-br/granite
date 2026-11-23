@@ -1,6 +1,6 @@
 // tests/platform/cpu_test.cpp - platform::detect_cpu_topology and the thread placement calls. CPU only. Where the OS
 // refuses a placement (a restricted container) the placement cases are skipped with a line saying so.
-#include "basalt/platform/cpu.hpp"
+#include "granite/platform/cpu.hpp"
 
 #include <algorithm>
 #include <cstdio>

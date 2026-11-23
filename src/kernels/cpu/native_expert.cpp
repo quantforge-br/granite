@@ -1,16 +1,16 @@
 // src/kernels/cpu/native_expert.cpp - native (GGUF-form) experts on the CPU through the extracted ggml dot products.
 // See the header.  The activation quantizers and the row dot products here are ggml's (src/kernels/cpu/ggml), so an
 // IQ expert computes what llama.cpp's CPU backend computes for it.
-#include "basalt/kernels/cpu/native_expert.hpp"
-#include "basalt/kernels/cpu/expert.hpp"
-#include "basalt/kernels/cpu/iq_avx512.hpp"
-#include "basalt/kernels/cpu/iq_avx2.hpp"
-#include "basalt/kernels/cpu/nvfp4_avx512.hpp"
-#include "basalt/kernels/cpu/nvfp4_avx2.hpp"
-#include "basalt/kernels/cpu/expert_layout.hpp"
-#include "basalt/kernels/cpu/swiglu.hpp"
+#include "granite/kernels/cpu/native_expert.hpp"
+#include "granite/kernels/cpu/expert.hpp"
+#include "granite/kernels/cpu/iq_avx512.hpp"
+#include "granite/kernels/cpu/iq_avx2.hpp"
+#include "granite/kernels/cpu/nvfp4_avx512.hpp"
+#include "granite/kernels/cpu/nvfp4_avx2.hpp"
+#include "granite/kernels/cpu/expert_layout.hpp"
+#include "granite/kernels/cpu/swiglu.hpp"
 
-#include "basalt/ggml/ggml.h"
+#include "granite/ggml/ggml.h"
 
 #include <cmath>
 #include <cstdlib>

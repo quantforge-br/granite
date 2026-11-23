@@ -1,8 +1,8 @@
 // src/core/checkpoint_transfer.cpp - a conversation checkpoint's running state between the device and the host.
-#include "basalt/core/checkpoint_transfer.hpp"
+#include "granite/core/checkpoint_transfer.hpp"
 
-#include "basalt/core/on_device.hpp"
-#include "basalt/core/ram_load.hpp"
+#include "granite/core/on_device.hpp"
+#include "granite/core/ram_load.hpp"
 
 #include <cstring>
 

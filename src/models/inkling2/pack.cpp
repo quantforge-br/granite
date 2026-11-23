@@ -87,7 +87,7 @@ bool open_pack(const std::string& path, Pack& p, std::string& err) {
         err = path + ": meta.gguf_kv's inkling2 geometry is incomplete";
         return false;
     }
-    // the layout the kernels are built for (basalt/models/inkling2/kernels.hpp)
+    // the layout the kernels are built for (granite/models/inkling2/kernels.hpp)
     if (g.n_embd != 2304 || g.n_head != 24 || g.n_head_kv != 8 || g.head_dim != 128 || g.rel != 16 || g.extent != 1024 ||
         g.window != g.extent || g.conv != 4 || g.n_expert > 512 || g.n_expert % 32 || g.n_used > 16 ||
         g.loop_start <= 0 || g.loop_start >= g.loop_end || g.loop_end > g.n_layers || g.loop_start % g.block ||

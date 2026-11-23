@@ -1,8 +1,8 @@
-// src/platform/system.cpp - see include/basalt/platform/system.hpp.
-#include "basalt/platform/system.hpp"
+// src/platform/system.cpp - see include/granite/platform/system.hpp.
+#include "granite/platform/system.hpp"
 
-#include "basalt/platform/file.hpp"
-#include "basalt/platform/process.hpp"
+#include "granite/platform/file.hpp"
+#include "granite/platform/process.hpp"
 
 #include <cctype>
 #include <cstdio>
@@ -13,7 +13,7 @@
 #include <string>
 
 #if defined(_WIN32)
-#include "basalt/platform/win.hpp"
+#include "granite/platform/win.hpp"
 #include <fcntl.h>   // _O_BINARY
 #include <io.h>      // _fileno, _setmode
 #include <psapi.h>   // K32GetProcessMemoryInfo
