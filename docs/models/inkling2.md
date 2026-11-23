@@ -173,6 +173,27 @@ checkerboard (8 x 8 squares of 204 and 153), as the model saw in training; the m
 
 ## Speed
 
+`granite-bench` at `a4b75aab` on two RTX 3090s at 270 W (PCIe Gen4 x8/x8, driver 615.78.08, CUDA 13.5), the pack above,
+drafting on unless the row says otherwise. One card is CUDA1 alone (`--gpu 1`), two are the tensor-parallel pair
+(`--gpu 1,0`; CUDA0 also drives the display), run in A-B-B-A order:
+
+| | One RTX 3090 | Two, tensor parallel | Two / one |
+| --- | ---: | ---: | ---: |
+| Decode: conversation | 172 tok/s | 233 tok/s | 1.35 |
+| Decode: struct | 314 tok/s | 485 tok/s | 1.55 |
+| Decode: prose | 136 tok/s | 193 tok/s | 1.42 |
+| Plain decode (`--spec 0`) | 8.1 to 8.4 ms a token | 6.1 to 6.2 ms a token | 1.34 to 1.36 |
+| Prompt read, 16K | 3,825 tok/s | 4,613 tok/s | 1.21 |
+| Prompt read, 64K | 3,329 tok/s | 3,909 tok/s | 1.17 |
+
+- Conversation and prose sample at temperature 0.6, and one card and two round differently, so their texts differ. Each
+  decode row is the tokens over the decode time of five runs: seed 1 once in each leg, then seeds 2 to 4. Conversation's
+  runs spread from 168 to 183 tok/s on one card and from 221 to 240 on two. Struct is greedy and runs to its 8,192-token cap.
+- Drafts accepted: one card 62 % (conversation), 97 % (struct), 44 % (prose); two cards 57, 95 and 42 %. The draft policy
+  times its windows: with two cards' faster verify it drafts slightly longer (struct 5.63 tokens against 5.56) for the same
+  tokens a window.
+- Plain decode takes 8.1 ms a token on conversation and prose and 8.4 on struct's longer context; two cards take 6.1 and 6.2.
+
 Upstream Basalt's `basalt-bench` (seeded, `-r 2`), RTX 5090 alone at 400 W, the pack above, drafting on, the FP4 prompt
 path:
 

@@ -13,6 +13,8 @@ Status:
 - Two alike cards run each window tensor parallel over P2P: each holds every dense weight and half of every expert, a
   decode window splits the attention heads between them, and each card writes its partial sums into the other's memory
   ([GPUs](docs/configuration/gpus.md#two-cards)).
+- At 270 W, decoding with the drafter: 233, 485 and 193 tok/s (conversation, struct, prose) on two cards, 172, 314 and
+  136 on one; a 16K prompt reads at 4,613 and 3,825 tok/s ([speed](docs/models/inkling2.md#speed)).
 
 ## Hardware target
 
