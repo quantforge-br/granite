@@ -276,7 +276,7 @@ __global__ void __launch_bounds__(Cfg<F, RS, NM, CH, ST>::kThreads / MW, 1) wgem
                         const uint8_t* ss = sm + RS * C::CB + b * RS * 4;
                         const unsigned s0 = ss[(r0l & 31) * C::kScalePiece + (r0l >> 5) * 4 + c];
                         const unsigned s1 = ss[(r1l & 31) * C::kScalePiece + (r1l >> 5) * 4 + c];
-                        const unsigned sc0 = e4m3x2_bf16x2(s0 | (s0 << 8)), sc1 = e4m3x2_bf16x2(s1 | (s1 << 8));
+                        const unsigned sc0 = ue4m3x2_bf16x2(s0 | (s0 << 8)), sc1 = ue4m3x2_bf16x2(s1 | (s1 << 8));
                         unsigned h0[8], h1[8];
                         e2m1x8_bf16x2_scaled(w0.x, sc0, *reinterpret_cast<unsigned(*)[4]>(h0));
                         e2m1x8_bf16x2_scaled(w0.y, sc0, *reinterpret_cast<unsigned(*)[4]>(h0 + 4));

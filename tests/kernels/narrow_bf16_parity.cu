@@ -1,7 +1,7 @@
 // tests/kernels/narrow_bf16_parity.cu - the FP8 E4M3 and FP4 E2M1 conversions to bf16x2 (basalt/kernels/narrow_bf16.cuh)
-// against the host's values: every pair of E4M3 bytes, and every E2M1 byte at every UE4M3 scale byte in each byte of the
-// word, bit for bit (a NaN only as a NaN); and bf16x2_mul_rn against the host's rounding of the product on a sweep of
-// bf16 pairs.  Exit 77 without a GPU.
+// against the host's values: every pair of E4M3 bytes, every pair of UE4M3 scale bytes (bit 7 ignored, 0x7f as 0), and
+// every E2M1 byte at every UE4M3 scale byte in each byte of the word, bit for bit (a NaN only as a NaN); and bf16x2_mul_rn
+// against the host's rounding of the product on a sweep of bf16 pairs.  Exit 77 without a GPU.
 #include "basalt/kernels/narrow_bf16.cuh"
 
 #include <cuda_fp8.h>
@@ -23,6 +23,12 @@ constexpr int kN = 1 << 16;
 __global__ void e4m3(unsigned* got) {
     const unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
     got[i] = bk::e4m3x2_bf16x2(i);
+}
+
+// i: two UE4M3 scale bytes
+__global__ void ue4m3(unsigned* got) {
+    const unsigned i = blockIdx.x * blockDim.x + threadIdx.x;
+    got[i] = bk::ue4m3x2_bf16x2(i);
 }
 
 // the word for i: byte k is the low byte of i plus 37 k, so every byte position sees all 256 values; the high byte of i
@@ -53,6 +59,12 @@ float e4m3f(unsigned b) {
     const uint8_t u = (uint8_t) b;
     std::memcpy(&v, &u, 1);
     return (float) v;
+}
+
+// a UE4M3 scale byte as the NVFP4 format reads it (basalt/artifact/dequant.hpp: bit 7 ignored, 0x7f as 0)
+float ue4m3f(unsigned b) {
+    b &= 0x7fu;
+    return b == 0x7fu ? 0.0f : e4m3f(b);
 }
 
 float e2m1f(unsigned n) {
@@ -108,6 +120,10 @@ int main() {
     for (unsigned i = 0; i < kN; ++i)
         for (int half = 0; half < 2; ++half) check("e4m3x2", i, half, g[i], e4m3f((i >> (8 * half)) & 0xffu));
     std::printf("e4m3x2: NaN 0x7f -> 0x%04x, 0xff -> 0x%04x\n", g[0x7f] & 0xffffu, g[0xff] & 0xffffu);
+
+    if (!run(ue4m3, d, g, kN, "ue4m3")) return 1;
+    for (unsigned i = 0; i < kN; ++i)
+        for (int half = 0; half < 2; ++half) check("ue4m3x2", i, half, g[i], ue4m3f((i >> (8 * half)) & 0xffu));
 
     if (!run(e2m1, d, g, 4 * (size_t) kN, "e2m1")) return 1;
     for (unsigned i = 0; i < kN; ++i) {

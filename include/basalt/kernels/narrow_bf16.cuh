@@ -28,6 +28,13 @@ __device__ __forceinline__ unsigned e4m3x2_bf16x2(unsigned x) {
     return h | (__vcmpeq2(m, 0x07f007f0u) & 0x7fff7fffu);
 }
 
+/// two NVFP4 sub-block scale bytes (UE4M3: the low 16 bits of x, the low byte the lower half) as bf16x2, as the format
+/// reads them elsewhere (basalt/artifact/dequant.hpp, the MMQ tiles): bit 7 ignored, 0x7f (NaN) as 0
+__device__ __forceinline__ unsigned ue4m3x2_bf16x2(unsigned x) {
+    const unsigned s = (x & 0x7fu) | ((x & 0x7f00u) << 8);   // byte k in half k, bit 7 dropped
+    return e4m3x2_bf16x2(x & 0x7f7fu) & ~__vcmpeq2(s, 0x007f007fu);
+}
+
 /// the four bytes of w, each two E2M1 codes (the low nibble the lower half), as bf16x2 times the bf16x2 scale sc (exact:
 /// a code times a UE4M3 scale has at most six significant bits)
 __device__ __forceinline__ void e2m1x8_bf16x2_scaled(unsigned w, unsigned sc, unsigned (&h)[4]) {
