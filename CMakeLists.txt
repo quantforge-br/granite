@@ -185,8 +185,8 @@ if(BUILD_TESTING)
   add_executable(inkling2_vision_test src/models/inkling2/vision_test.cpp src/models/inkling2/vision.cpp)
   target_include_directories(inkling2_vision_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   target_link_libraries(inkling2_vision_test PRIVATE vision_core warnings)
-  granite_cpu_test(NAME inkling2_vision_test COMMAND inkling2_vision_test ${CMAKE_CURRENT_SOURCE_DIR}/assets/basalt-lockup-light.png
-                  ${CMAKE_CURRENT_SOURCE_DIR}/docs/assets/basalt-format.png)
+  granite_cpu_test(NAME inkling2_vision_test COMMAND inkling2_vision_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/transparent.png
+                  ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/opaque.png)
   # the image encoder on the real projector: CUDA against CPU per stage, the encode time, rows for an outside reference
   add_executable(inkling2_vision_parity src/models/inkling2/vision_parity.cpp src/models/inkling2/vision.cpp)
   target_include_directories(inkling2_vision_parity PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
