@@ -493,9 +493,9 @@ __global__ void __launch_bounds__(512) head_final_kernel(DsHead h, const Q81* __
     if (tid == 0) f.cnt = 0;
     exact_x(xh_g, xl_g, xh, xl, tid, 512);
     const int n = collect_tiles(f, n_tiles, cand, part, prev, conf + i);
-    if (n == 0) {   // never: the vocabulary has rows
-        if (tid == 0) ids[i] = *prev;
-        if (warp == 0) reinterpret_cast<uint4*>(w1_row)[lane] = reinterpret_cast<const uint4*>(w1 + (int64_t) *prev * kDsRank)[lane];
+    if (n == 0) {   // every row masked (never: the vocabulary has rows): collect_tiles picked token 0, not read back
+        if (tid == 0) ids[i] = 0;
+        if (warp == 0) reinterpret_cast<uint4*>(w1_row)[lane] = reinterpret_cast<const uint4*>(w1)[lane];
         return;
     }
     for (int c = warp; c < n; c += 16) {   // by token from here: the pick's tie goes to the lower token
