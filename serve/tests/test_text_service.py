@@ -61,7 +61,7 @@ class TextService(unittest.TestCase):
             c.close()
 
     def chat(self, content, **kw):
-        return {"model": "basalt", "messages": [{"role": "user", "content": content}], **kw}
+        return {"model": "granite", "messages": [{"role": "user", "content": content}], **kw}
 
     def test_usage_carries_the_engines_count_and_the_text_is_what_the_template_rendered(self):
         status, body = self.post("/v1/chat/completions", self.chat("hi", max_tokens=8))
@@ -72,7 +72,7 @@ class TextService(unittest.TestCase):
         self.assertIn("<|im_start|>user\nhi<|im_end|>", self.engine.seen_text)
 
     def test_anthropic_message_start_has_the_counted_input_tokens(self):
-        status, body = self.post("/v1/messages", {"model": "basalt", "max_tokens": 8, "stream": True,
+        status, body = self.post("/v1/messages", {"model": "granite", "max_tokens": 8, "stream": True,
                                                   "messages": [{"role": "user", "content": "hi"}]})
         self.assertEqual(status, 200, body)
         start = [json.loads(line[5:]) for line in body.splitlines() if line.startswith("data:")][0]
@@ -82,7 +82,7 @@ class TextService(unittest.TestCase):
 
     def test_responses_usage_carries_the_engines_count(self):
         for stream in (False, True):
-            status, body = self.post("/v1/responses", {"model": "basalt", "input": "hi " * 50, "max_output_tokens": 8,
+            status, body = self.post("/v1/responses", {"model": "granite", "input": "hi " * 50, "max_output_tokens": 8,
                                                        "stream": stream})
             self.assertEqual(status, 200, body)
             if stream:

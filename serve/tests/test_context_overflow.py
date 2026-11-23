@@ -34,7 +34,7 @@ class ContextOverflow(unittest.TestCase):
         self.svc.fit_max_tokens = False
 
     def post(self, path, key, prompt_tokens, max_tokens=None, stream=False):
-        body = {"model": "basalt", "input": "hi"} if path == "/v1/responses" else {"model": "basalt", "messages": [{"role": "user", "content": "hi"}]}
+        body = {"model": "granite", "input": "hi"} if path == "/v1/responses" else {"model": "granite", "messages": [{"role": "user", "content": "hi"}]}
         body["stream"] = stream
         if max_tokens is not None:
             body[key] = max_tokens

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn a single-model server config into the v2 shape with "models": prints it, or writes it to a new file.
 
-    python3 tools/migrations/config_v1_to_v2.py basalt_config.json [-o NEW.json]
+    python3 tools/migrations/config_v1_to_v2.py granite_config.json [-o NEW.json]
 
 The input is only read. What says which model it is goes in the model entry; the rest goes in the top-level "engine", where
 it applies to every model added later; what the whole server shares stays in "server".

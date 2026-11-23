@@ -362,7 +362,7 @@ class Assembler:
         self.seq = 0
         self.item = None                             # the open output item
         self.lps: list[dict] = []                    # the answer tokens' logprobs not yet in a delta
-        # Basalt's: a reasoning item's and each call item's tokens, on the item as `logprobs`
+        # granite's: a reasoning item's and each call item's tokens, on the item as `logprobs`
         self.want_lp = req.get(LOGPROBS_KEY) is not None
         self.lps_reasoning: list[dict] = []
         self.lps_tools: dict[int, list[dict]] = {}

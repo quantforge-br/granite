@@ -24,7 +24,7 @@ def openai_chunks(svc: Service, req: dict, ids, thinking, tools, max_new, cancel
     model = svc.model
 
     want_lp = req.get(LOGPROBS_KEY) is not None
-    # tokens' logprobs not yet sent with a chunk: the answer's (OpenAI's `content`), and Basalt's own
+    # tokens' logprobs not yet sent with a chunk: the answer's (OpenAI's `content`), and granite's own
     # `reasoning_content` and `tool_calls` (per call index), each riding the next chunk
     lps: list[dict] = []
     lps_reasoning: list[dict] = []

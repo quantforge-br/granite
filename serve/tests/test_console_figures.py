@@ -62,7 +62,7 @@ class Lifetime(unittest.TestCase):
         real = subprocess.Popen
         with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(
                 subprocess, "Popen", lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:], PARK], **kw)):
-            engine = ProcessEngine("basalt", [], log=str(Path(d.name) / "engine.log") if log else None)
+            engine = ProcessEngine("granite", [], log=str(Path(d.name) / "engine.log") if log else None)
         self.addCleanup(engine.close)
         return engine
 
@@ -135,7 +135,7 @@ class Totals(unittest.TestCase):
         self.addCleanup(self.httpd.shutdown)
 
     def post(self):
-        body = json.dumps({"model": "basalt", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 20}).encode()
+        body = json.dumps({"model": "granite", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 20}).encode()
         req = urllib.request.Request(self.base + "/v1/chat/completions", data=body, headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req).read()
 

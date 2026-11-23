@@ -71,7 +71,7 @@ class Served(unittest.TestCase):
         cls.httpd.server_close()
 
     def post(self, body):
-        body = {"model": "basalt", "max_tokens": 20, "stream": True,
+        body = {"model": "granite", "max_tokens": 20, "stream": True,
                 "messages": [{"role": "user", "content": "hello " * 12}], **body}
         req = urllib.request.Request(self.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
@@ -117,7 +117,7 @@ class PromptProgress(Served):
         httpd = serve(svc, port=0)
         try:
             req = urllib.request.Request(f"http://127.0.0.1:{httpd.server_address[1]}/v1/chat/completions",
-                                         data=json.dumps({"model": "basalt", "stream": True, "max_tokens": 5,
+                                         data=json.dumps({"model": "granite", "stream": True, "max_tokens": 5,
                                                           "return_progress": True,
                                                           "messages": [{"role": "user", "content": "hi"}]}).encode(),
                                          headers={"Content-Type": "application/json"})

@@ -36,7 +36,7 @@ from serve.util.text import ByteTokenizer  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 PNG = b"\x89PNG\r\n\x1a\n" + b"pixels"
 DATA = "data:image/png;base64," + base64.b64encode(PNG).decode()
-MODEL = "basalt"
+MODEL = "granite"
 LOCAL = ImageSources(local=True, why="")
 POLICY = "refused by server policy"
 posix_only = unittest.skipUnless(os.name == "posix", "POSIX paths and special files")
@@ -46,7 +46,7 @@ class RecordingVision(Vision):
     """The real read path, with the encoder replaced by a record of the bytes it was given."""
 
     def __init__(self):
-        self.dir = Path(tempfile.mkdtemp(prefix="basalt-vision-test-"))
+        self.dir = Path(tempfile.mkdtemp(prefix="granite-vision-test-"))
         self.got = []
 
     def encode(self, images):

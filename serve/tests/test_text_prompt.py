@@ -59,7 +59,7 @@ class TextPrompt(unittest.TestCase):
         real = subprocess.Popen
         with mock.patch.object(subprocess, "Popen", lambda cmd, **kw: real(
                 [sys.executable, str(script), "1" if text_prompt else "0", str(seen), *cmd[1:]], **kw)):
-            engine = ProcessEngine("basalt", [])
+            engine = ProcessEngine("granite", [])
         self.addCleanup(engine.close)
         return engine, seen
 

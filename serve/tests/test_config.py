@@ -142,7 +142,7 @@ class ConfigFile(unittest.TestCase):
         load_config_file(conf({"version": 2, "models": entry}), ap)
         for old in ({"server": {"model": "m.basalt"}, "engine": {"kv": "int8"}}, {"v": 1, "models": entry},
                     {"version": 1, "models": entry}, {}):
-            with self.assertRaisesRegex(ValueError, "Basalt requires v2 config, please upgrade", msg=str(old)):
+            with self.assertRaisesRegex(ValueError, "granite requires v2 config, please upgrade", msg=str(old)):
                 load_config_file(conf(old), ap)
         p = conf({"server": {"model": "m.basalt"}})
         with self.assertRaises(ValueError) as cm:
@@ -151,7 +151,7 @@ class ConfigFile(unittest.TestCase):
         self.assertEqual((words[0], words[2], words[3]), ("python3", str(Path(p).resolve()), "-o"))
         self.assertTrue(Path(words[1]).is_file())
         self.assertTrue(words[4].endswith(".v2.json"))
-        with self.assertRaisesRegex(ValueError, "this is a v3 config; this Basalt reads v2"):
+        with self.assertRaisesRegex(ValueError, "this is a v3 config; this granite reads v2"):
             load_config_file(conf({"version": 3, "models": entry}), ap)
         for bad in ("2", True, 2.5):
             with self.assertRaisesRegex(ValueError, "whole number"):
@@ -202,7 +202,7 @@ class ConfigFile(unittest.TestCase):
                          ({"models": [{"model": "b", "slot-full-context": 1}]}, "true or false"),
                          ({"models": [entry], "server": {"nope": 1}}, "not a server option"),
                          ({"models": [entry], "server": {"spec": 7}}, "not a server option \\(engine flags go under"),
-                         ({"models": [entry], "server": {"engine-bin": "/x/basalt"}}, "engine-bin is set by granite serve"),
+                         ({"models": [entry], "server": {"engine-bin": "/x/granite"}}, "engine-bin is set by granite serve"),
                          ({"models": [entry], "server": {"parallel": 2}}, "a model setting"),
                          ({"models": [entry], "server": {"model": "m"}}, "a model setting"),
                          ({"models": [entry], "server": {"port": [1]}}, "one value"),
@@ -619,7 +619,7 @@ class Startup(unittest.TestCase):
         entry = {"model": "m.basalt"}
         code, err = self.run_server({})
         self.assertEqual(code, 2)
-        self.assertIn("Basalt requires v2 config", err)
+        self.assertIn("granite requires v2 config", err)
         code, err = self.run_server({"models": [entry]})
         self.assertIn("the server needs --model and the engine binary", err)
         code, err = self.run_server({"models": [{**entry, "gpu": "a,b"}], "server": {"mock-engine": True}})

@@ -38,7 +38,7 @@ class UnparsedStdout(unittest.TestCase):
             out = io.StringIO()
             with contextlib.redirect_stdout(out), mock.patch.object(
                     subprocess, "Popen", lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:]], **kw)):
-                engine = ProcessEngine("basalt", [], log=str(log))
+                engine = ProcessEngine("granite", [], log=str(log))
                 self.addCleanup(engine.close)
                 list(engine.generate([1, 2, 3], 4, {}, threading.Event()))
             engine.close()

@@ -49,7 +49,7 @@ class Stopping(unittest.TestCase):
         self.svc.stop()
         self.engine.close()
         req = urllib.request.Request(self.base + "/v1/chat/completions", method="POST",
-                                     data=json.dumps({"model": "basalt", "messages": [{"role": "user", "content": "hi"}]}).encode(),
+                                     data=json.dumps({"model": "granite", "messages": [{"role": "user", "content": "hi"}]}).encode(),
                                      headers={"Content-Type": "application/json"})
         with self.assertRaises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(req, timeout=10)

@@ -51,7 +51,7 @@ class UntimedReads(unittest.TestCase):
                     mock.patch.object(process, "ENGINE_READY_S", 1.0):
                 t0 = time.monotonic()
                 with self.assertRaises(EngineStartError) as cm:
-                    ProcessEngine("basalt", [])
+                    ProcessEngine("granite", [])
             self.assertLess(time.monotonic() - t0, 30)
             self.assertIn("did not report READY within 1 s", str(cm.exception))
             procs[0].wait(10)                                   # killed, not left running
@@ -60,7 +60,7 @@ class UntimedReads(unittest.TestCase):
     def test_vision_encode_read_times_out(self):
         silent = Silent()
         v = Vision.__new__(Vision)
-        v.dir, v.lock, v.cache, v.cache_bytes, v.pinned = Path(tempfile.mkdtemp(prefix="basalt-vision-test-")), threading.Lock(), {}, 0, {}
+        v.dir, v.lock, v.cache, v.cache_bytes, v.pinned = Path(tempfile.mkdtemp(prefix="granite-vision-test-")), threading.Lock(), {}, 0, {}
         v.stopped = False
         v.proc = SimpleNamespace(stdin=io.StringIO(), stdout=silent, kill=silent.kill,
                                  poll=lambda: 1 if silent.killed else None)
@@ -79,8 +79,8 @@ class UntimedReads(unittest.TestCase):
         silent = Silent()
         proc = SimpleNamespace(stdin=io.StringIO(), stdout=silent, kill=silent.kill, poll=lambda: None)
         v = Vision.__new__(Vision)
-        v.spawn = (["basalt-vision"], None, None)
-        v.dir = Path(tempfile.mkdtemp(prefix="basalt-vision-test-"))
+        v.spawn = (["granite-vision"], None, None)
+        v.dir = Path(tempfile.mkdtemp(prefix="granite-vision-test-"))
         try:
             with mock.patch.object(vision.subprocess, "Popen", lambda *a, **k: proc), \
                     mock.patch.object(vision, "VISION_READY_S", 0.3):

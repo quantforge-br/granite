@@ -149,7 +149,7 @@ class PdfText(unittest.TestCase):
 
 
 class Pages(unittest.TestCase):
-    """A Basalt extension: "pages" on a document names the PDF pages to read."""
+    """A granite extension: "pages" on a document names the PDF pages to read."""
     BOOK = make_pdf(["Preface", "Chapter one\nThe router.", "Chapter two\nThe experts.", "Index"])
 
     def setUp(self):

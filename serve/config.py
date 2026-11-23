@@ -162,11 +162,11 @@ def read_config(path: str) -> dict:
     if isinstance(version, bool) or not isinstance(version, int):
         raise ValueError('"version" must be a whole number')
     if version > CONFIG_VERSION:
-        raise ValueError(f"this is a v{version} config; this Basalt reads v{CONFIG_VERSION}")
+        raise ValueError(f"this is a v{version} config; this granite reads v{CONFIG_VERSION}")
     if version < CONFIG_VERSION or "models" not in raw or "v" in raw:
         old = Path(path).resolve()
         new = old.with_name(f"{old.stem}.v{CONFIG_VERSION}{old.suffix}")
-        raise ValueError(f"Basalt requires v{CONFIG_VERSION} config, please upgrade: "
+        raise ValueError(f"granite requires v{CONFIG_VERSION} config, please upgrade: "
                          f"python3 {ROOT / 'tools/migrations/config_v1_to_v2.py'} {old} -o {new}")
     extra = set(raw) - {"version", "server", "engine", "models"}
     if extra:

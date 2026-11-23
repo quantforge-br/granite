@@ -12,7 +12,7 @@ from serve.engine import modelfile
 from serve.server import engine_args, gpus_in_play
 from model_file import ModelFile, ModelWriter  # noqa: E402
 
-META = {"name": "tiny-basalt",
+META = {"name": "tiny-granite",
         "gguf_kv": {"general.sampling.temp": 0.699999988079071, "general.sampling.top_p": 0.8999999761581421,
                     "general.sampling.top_k": 20, "general.sampling.xtc_threshold": 0.1}}
 SAMPLING = {"temperature": 0.7, "top_p": 0.9, "top_k": 20}
@@ -51,7 +51,7 @@ class Derivation(Tmp):
         cfg = modelfile.model_config(modelfile.ModelSpec(path), str(self.engine_bin))
         self.assertEqual(cfg["engine_bin"], str(self.engine_bin))
         self.assertEqual(cfg["args"], ["--model", path])
-        self.assertEqual(cfg["model_name"], "tiny-basalt")
+        self.assertEqual(cfg["model_name"], "tiny-granite")
         self.assertEqual(cfg["sampling"], SAMPLING)
         self.assertTrue(cfg["log"].startswith(str(self.dir / "cache")))
         self.assertNotIn("vision", cfg)

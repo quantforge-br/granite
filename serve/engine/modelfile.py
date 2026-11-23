@@ -105,7 +105,7 @@ def model_config(spec: ModelSpec, engine_bin: str) -> dict:
     args = ["--model", path]   # settings come from the engine defaults and the server
     args += words
     cdir.mkdir(parents=True, exist_ok=True)
-    cfg = {"engine_bin": os.path.abspath(engine_bin), "args": args, "model_name": spec.alias or meta.get("name") or "basalt",
+    cfg = {"engine_bin": os.path.abspath(engine_bin), "args": args, "model_name": spec.alias or meta.get("name") or "granite",
            "sampling": sampling_defaults(meta),
            "arch": (meta.get("gguf_kv") or {}).get("general.architecture"), "log": str(cdir / "engine.log"),
            "tokenizer": tokenizer_files(mf)}

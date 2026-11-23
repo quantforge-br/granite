@@ -46,7 +46,7 @@ def _unlink_quietly(path: Path) -> None:
 
 
 def model_plan(engine_bin: str, path: str, value, words: list[str]) -> dict:
-    """The engine's choice for the gpu setting (`basalt --gpu-plan`) for a model with its flags: the cards, main first, as
+    """The engine's choice for the gpu setting (`granite --gpu-plan`) for a model with its flags: the cards, main first, as
     "devices" (their CUDA_VISIBLE_DEVICES spelling) and "cards", plus the lines to print once. The engine parses the flags
     by the model's own rules first and loads nothing. ValueError with the engine's reason."""
     text = gpu_text(value)

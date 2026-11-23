@@ -52,7 +52,7 @@ class AutoFlagsLine(unittest.TestCase):
         self.addCleanup(patch.stop)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            engine = ProcessEngine("basalt", [])
+            engine = ProcessEngine("granite", [])
         self.addCleanup(engine.close)
         return engine, out, auto
 

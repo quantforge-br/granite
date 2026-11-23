@@ -42,7 +42,7 @@ class EngineInfo(unittest.TestCase):
             real = subprocess.Popen
             with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(
                     subprocess, "Popen", lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:]], **kw)):
-                engine = ProcessEngine("basalt", [], log=str(log))
+                engine = ProcessEngine("granite", [], log=str(log))
                 self.addCleanup(engine.close)
                 self.assertEqual(engine.info["elastic_kv_ceiling"], 50176)      # the startup value
                 self.assertEqual(engine.info["engine"], "fake")

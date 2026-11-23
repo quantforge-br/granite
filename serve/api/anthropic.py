@@ -24,7 +24,7 @@ def anthropic_events(svc: Service, req: dict, ids, thinking, tools, max_new, can
     if started:
         yield start()
     index, open_kind, used_tool = -1, None, False
-    # Basalt's logprobs (the Messages API has none): each delta carries the entries of its tokens, the thinking's,
+    # granite's logprobs (the Messages API has none): each delta carries the entries of its tokens, the thinking's,
     # the text's or its call's; what is left rides message_delta
     want_lp = req.get(LOGPROBS_KEY) is not None
     lps: dict = {"content": [], "reasoning": [], "tool": {}}
@@ -107,7 +107,7 @@ def anthropic_events(svc: Service, req: dict, ids, thinking, tools, max_new, can
 
 def anthropic_collect(events) -> dict:
     msg, blocks = None, []
-    lps, lps_reasoning, lps_tools, tool_n = None, [], {}, -1   # Basalt's logprobs, when the request asked
+    lps, lps_reasoning, lps_tools, tool_n = None, [], {}, -1   # granite's logprobs, when the request asked
     for item in events:
         if item is None:                           # a heartbeat
             continue

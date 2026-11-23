@@ -200,7 +200,7 @@ class Api(unittest.TestCase):
     tearDown = test_parallel.ParallelService.tearDown
 
     def post(self, body, stream=False):
-        body = {"model": "basalt", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 64,
+        body = {"model": "granite", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 64,
                 "reasoning_effort": "none", "stream": stream, **body}
         req = urllib.request.Request(self.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
@@ -264,7 +264,7 @@ class Api(unittest.TestCase):
 
     def test_responses_endpoint(self):
         self.start(0)
-        body = {"model": "basalt", "input": "hi", "max_output_tokens": 64, "reasoning": {"effort": "none"},
+        body = {"model": "granite", "input": "hi", "max_output_tokens": 64, "reasoning": {"effort": "none"},
                 "include": ["message.output_text.logprobs"], "top_logprobs": 2}
         req = urllib.request.Request(self.base + "/v1/responses", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
@@ -275,7 +275,7 @@ class Api(unittest.TestCase):
         self.check_entries("ok, done.", part["logprobs"], 2)
 
     def messages(self, body, stream=False):
-        body = {"model": "basalt", "max_tokens": 64, "messages": [{"role": "user", "content": "hi"}], "stream": stream, **body}
+        body = {"model": "granite", "max_tokens": 64, "messages": [{"role": "user", "content": "hi"}], "stream": stream, **body}
         req = urllib.request.Request(self.base + "/v1/messages", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=60) as r:
@@ -308,7 +308,7 @@ class Api(unittest.TestCase):
 
     def test_responses_streaming(self):
         self.start(0)
-        body = {"model": "basalt", "input": "hi", "max_output_tokens": 64, "reasoning": {"effort": "none"}, "stream": True,
+        body = {"model": "granite", "input": "hi", "max_output_tokens": 64, "reasoning": {"effort": "none"}, "stream": True,
                 "include": ["message.output_text.logprobs"], "top_logprobs": 1}
         req = urllib.request.Request(self.base + "/v1/responses", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})

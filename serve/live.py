@@ -65,7 +65,7 @@ class LiveRequests:
                 self.finished.popitem(last=False)
 
     def _find(self, request_id: str | None, session: str | None) -> LiveRequest:
-        """The live request named by its id (Basalt's or the client's x-client-request-id), else the session's newest."""
+        """The live request named by its id (granite's or the client's x-client-request-id), else the session's newest."""
         if request_id:
             req = self.live.get(request_id) or next((r for r in reversed(self.live.values())
                                                      if r.client_id == request_id), None)

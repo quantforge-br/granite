@@ -18,7 +18,7 @@ from serve.util.text import ByteTokenizer
 
 ROOT = Path(__file__).resolve().parents[2]
 CRLF = b"\r\n"
-REQ = json.dumps({"model": "basalt", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 20}).encode()
+REQ = json.dumps({"model": "granite", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 20}).encode()
 
 
 class BodyTimeout(unittest.TestCase):

@@ -80,7 +80,7 @@ class RequestLines(unittest.TestCase):
             out = io.StringIO()
             with contextlib.redirect_stdout(out), mock.patch.object(
                     subprocess, "Popen", lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:], done], **kw)):
-                engine = ProcessEngine("basalt", [], log=str(Path(d) / "engine.log"))
+                engine = ProcessEngine("granite", [], log=str(Path(d) / "engine.log"))
                 self.addCleanup(engine.close)
                 list(engine.generate([1, 2, 3], 4, {}, threading.Event()))
             return out.getvalue()

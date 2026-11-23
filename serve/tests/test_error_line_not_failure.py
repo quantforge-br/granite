@@ -47,7 +47,7 @@ class ErrorLineIsNotFailure(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             log, patch = self._engine(HEALTHY, d)
             with contextlib.redirect_stdout(io.StringIO()), patch:
-                engine = ProcessEngine("basalt", [], log=str(log))
+                engine = ProcessEngine("granite", [], log=str(log))
                 self.addCleanup(engine.close)
                 list(engine.generate([1, 2, 3], 4, {}, threading.Event()))
             engine.close()
@@ -59,7 +59,7 @@ class ErrorLineIsNotFailure(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             log, patch = self._engine(EXITS, d)
             with contextlib.redirect_stdout(io.StringIO()), patch, self.assertRaises(EngineStartError) as ctx:
-                ProcessEngine("basalt", [], log=str(log))
+                ProcessEngine("granite", [], log=str(log))
             self.assertIn("a swap failed (layer 3)", str(ctx.exception))
             self.assertNotIn("profile copy", str(ctx.exception))
 

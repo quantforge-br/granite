@@ -190,7 +190,7 @@ class EngineVideo(unittest.TestCase):
             real = subprocess.Popen
             with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(
                     subprocess, "Popen", lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:]], **kw)):
-                engine = ProcessEngine("basalt", [], log=str(log))
+                engine = ProcessEngine("granite", [], log=str(log))
                 self.addCleanup(engine.close)
                 self.assertEqual(engine.video, "on FFmpeg 8 (libavformat 62.3.100) from /lib/libavformat.so.62")
                 line = engine.encode_video(Path(d) / "a.mp4", Path(d) / "a.sve")

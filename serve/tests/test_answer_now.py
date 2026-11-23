@@ -107,8 +107,8 @@ class AnswerNowServer(unittest.TestCase):
     def chat_body(self, path, stream):
         msgs = [{"role": "user", "content": "2+2?"}]
         if path == "/v1/responses":
-            return {"model": "basalt", "input": "2+2?", "max_output_tokens": 20000, "stream": stream}
-        body = {"model": "basalt", "messages": msgs, "max_tokens": 20000, "stream": stream}
+            return {"model": "granite", "input": "2+2?", "max_output_tokens": 20000, "stream": stream}
+        body = {"model": "granite", "messages": msgs, "max_tokens": 20000, "stream": stream}
         if path == "/v1/messages":
             body["thinking"] = {"type": "enabled", "budget_tokens": 4096}
         return body

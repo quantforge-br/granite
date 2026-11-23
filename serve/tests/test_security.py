@@ -133,7 +133,7 @@ class OverHttp(unittest.TestCase):
             c.close()
 
     def chat_body(self):
-        return {"model": "basalt", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 64}
+        return {"model": "granite", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 64}
 
     # --- Host
     def test_rebinding_name_is_refused_everywhere(self):

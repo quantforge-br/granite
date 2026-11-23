@@ -95,7 +95,7 @@ class Service:
             names.append(path.replace("\\", "/").rsplit("/", 1)[-1])
         return names
 
-    def __init__(self, engine: Engine, tokenizer, template: ChatTemplate, model_name: str = "basalt",
+    def __init__(self, engine: Engine, tokenizer, template: ChatTemplate, model_name: str = "granite",
                  vision: Vision | None = None, sampling_defaults: dict | None = None,
                  fit_max_tokens: bool = False, grammar: bool = GRAMMAR_DEFAULT, grammar_engine: bool = True,
                  dialect: Dialect | None = None, video_max_tokens: int = VIDEO_MAX_TOKENS):

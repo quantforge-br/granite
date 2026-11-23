@@ -334,7 +334,7 @@ class ParallelService(unittest.TestCase):
         extra += ["--windows"] if windows else []
         with mock.patch.object(subprocess, "Popen",
                                lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:]], **kw)):
-            self.engine = ProcessEngine("basalt", extra)
+            self.engine = ProcessEngine("granite", extra)
         tok = ByteTokenizer()
         self.svc = Service(self.engine, tok, ChatTemplate.from_file(Path(__file__).resolve().parents[1] / "chat_template.jinja"))
         self.httpd = serve(self.svc, port=0)
@@ -350,7 +350,7 @@ class ParallelService(unittest.TestCase):
             self.tmp.cleanup()
 
     def chat(self, text, max_tokens=64):
-        body = {"model": "basalt", "messages": [{"role": "user", "content": text}], "max_tokens": max_tokens, "reasoning_effort": "none"}
+        body = {"model": "granite", "messages": [{"role": "user", "content": text}], "max_tokens": max_tokens, "reasoning_effort": "none"}
         req = urllib.request.Request(self.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=60) as r:
@@ -373,7 +373,7 @@ class ParallelService(unittest.TestCase):
     def test_a_prompt_over_the_context_is_refused_before_the_stream_starts(self):
         self.start(2, ready=1024)
         for stream in (False, True):
-            body = {"model": "basalt", "messages": [{"role": "user", "content": "long " * 1100}], "max_tokens": 16,
+            body = {"model": "granite", "messages": [{"role": "user", "content": "long " * 1100}], "max_tokens": 16,
                     "stream": stream}
             req = urllib.request.Request(self.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                          headers={"Content-Type": "application/json"})
@@ -654,7 +654,7 @@ class ParallelService(unittest.TestCase):
     def test_stop_strings_in_a_batch_slot(self):
         """A stop string cuts the answer in --batch mode too, and the slot is freed for the next request."""
         self.start(2)
-        body = {"model": "basalt", "messages": [{"role": "user", "content": "hi LONGREPLY"}], "max_tokens": 64, "reasoning_effort": "none",
+        body = {"model": "granite", "messages": [{"role": "user", "content": "hi LONGREPLY"}], "max_tokens": 64, "reasoning_effort": "none",
                 "stop": ["la la"]}
         req = urllib.request.Request(self.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
@@ -755,7 +755,7 @@ class ParallelService(unittest.TestCase):
         out = [None] * len(texts)
 
         def go(i):
-            body = {"model": "basalt", "messages": [{"role": "user", "content": texts[i]}], "max_tokens": max_tokens,
+            body = {"model": "granite", "messages": [{"role": "user", "content": texts[i]}], "max_tokens": max_tokens,
                     "reasoning_effort": "none", "stream": True, "stream_options": {"include_usage": True}}
             req = urllib.request.Request(self.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                          headers={"Content-Type": "application/json"})
@@ -780,7 +780,7 @@ class ParallelService(unittest.TestCase):
         out = [None] * len(texts)
 
         def go(i):
-            body = {"model": "basalt", "messages": [{"role": "user", "content": texts[i]}], "max_tokens": max_tokens,
+            body = {"model": "granite", "messages": [{"role": "user", "content": texts[i]}], "max_tokens": max_tokens,
                     "reasoning_effort": "none", "stream": True, "stream_options": {"include_usage": True}}
             req = urllib.request.Request(self.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                          headers={"Content-Type": "application/json"})
@@ -831,7 +831,7 @@ class ParallelService(unittest.TestCase):
     def convo(self, msgs, text, headers=None):
         """One more turn of the conversation `msgs`: its usage; the reply is added to `msgs`."""
         msgs.append({"role": "user", "content": text})
-        body = {"model": "basalt", "messages": msgs, "max_tokens": 16, "reasoning_effort": "none"}
+        body = {"model": "granite", "messages": msgs, "max_tokens": 16, "reasoning_effort": "none"}
         req = urllib.request.Request(self.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json", **(headers or {})})
         with urllib.request.urlopen(req, timeout=120) as r:
@@ -917,7 +917,7 @@ class ParallelService(unittest.TestCase):
     # ---- session affinity: the header picks the slot -----------------------------------------------------------------
     def chat_session(self, text, headers=None, max_tokens=64):
         """A chat completion carrying a session header (the flow id a client or its load balancer already sends)."""
-        body = {"model": "basalt", "messages": [{"role": "user", "content": text}], "max_tokens": max_tokens,
+        body = {"model": "granite", "messages": [{"role": "user", "content": text}], "max_tokens": max_tokens,
                 "reasoning_effort": "none"}
         req = urllib.request.Request(self.base + "/v1/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json", **(headers or {})})

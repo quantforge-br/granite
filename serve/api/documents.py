@@ -192,7 +192,7 @@ def _b64(value, what: str) -> bytes:
 
 # ------------------------------------------------------------------------------------------------ reading
 def _read(data: bytes, media: str, name: str, context: str | None, want=None) -> tuple:
-    """A document's items; `want` (a Basalt extension: "1-5,8") names the PDF pages to read, None all of them."""
+    """A document's items; `want` (a granite extension: "1-5,8") names the PDF pages to read, None all of them."""
     media = media.split(";")[0].strip().lower()
     pdf = data[:1024].lstrip().startswith(b"%PDF-")
     if media == "application/pdf" or (pdf and media in ("", "application/octet-stream")):

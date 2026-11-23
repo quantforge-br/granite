@@ -1,4 +1,4 @@
-"""ProcessEngine: one resident `basalt --serve` child process, driven over stdin and stdout.
+"""ProcessEngine: one resident `granite --serve` child process, driven over stdin and stdout.
 
 Protocol (one line each):
   * start: stdout `INFO k=v ...` lines, then `READY <ctx> [stop]` (stop: STOP is honoured mid-request).

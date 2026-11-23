@@ -45,7 +45,7 @@ class Migration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             src = Path(d) / "marked.json"
             src.write_text(json.dumps(marked))
-            with self.assertRaisesRegex(ValueError, "Basalt requires v2 config"):
+            with self.assertRaisesRegex(ValueError, "granite requires v2 config"):
                 load_config_file(str(src), build_parser())
         self.assertEqual(migrate.migrated(marked), migrate.migrated(OLD))
 
@@ -69,7 +69,7 @@ class Migration(unittest.TestCase):
             cfg = load_config_file(str(new), build_parser())
             self.assertEqual(len(cfg.models), 1)
             self.assertIn("--max-context", cfg.models[0].own_words)
-            with self.assertRaisesRegex(ValueError, "Basalt requires v2 config"):
+            with self.assertRaisesRegex(ValueError, "granite requires v2 config"):
                 load_config_file(str(src), build_parser())
 
     def test_an_output_file_must_be_new(self):

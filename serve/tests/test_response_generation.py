@@ -20,7 +20,7 @@ class RecoveryHttp(Server):
 
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         self.addCleanup(conn.close)
-        body = {"model": "basalt", "input": "hi", "max_output_tokens": 8, "reasoning": {"effort": "minimal"}}
+        body = {"model": "granite", "input": "hi", "max_output_tokens": 8, "reasoning": {"effort": "minimal"}}
         with patch.object(self.engine, "generate", side_effect=wait_for_cancel):
             conn.request("POST", "/v1/responses", json.dumps(body), {"Content-Type": "application/json"})
             conn.sock.shutdown(socket.SHUT_WR)
@@ -50,7 +50,7 @@ class RecoveryHttp(Server):
              patch.object(self.httpd.RequestHandlerClass, "end_headers", side_effect=fail_headers), \
              patch.object(self.httpd, "handle_error") as error:
             with self.assertRaises(http.client.RemoteDisconnected):
-                self.post({"model": "basalt", "input": "hi", "stream": True, "max_output_tokens": 8})
+                self.post({"model": "granite", "input": "hi", "stream": True, "max_output_tokens": 8})
         self.assertEqual(len(retained), 1)
         self.addCleanup(retained[0].close)
         self.addCleanup(prime.call_args.args[0].close)
@@ -58,7 +58,7 @@ class RecoveryHttp(Server):
         error.assert_not_called()
         self.assertTrue(self.svc.fifo.acquire(blocking=False))
         self.svc.fifo.release()
-        status, response = self.post({"model": "basalt", "input": "hi", "max_output_tokens": 8})
+        status, response = self.post({"model": "granite", "input": "hi", "max_output_tokens": 8})
         self.assertEqual(status, 200, response)
         self.assertIn(response["status"], ("completed", "incomplete"))
 
