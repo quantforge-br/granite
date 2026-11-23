@@ -23,11 +23,6 @@ struct CommonOptions {
     std::vector<int64_t> tokens;      // the prompt, PRE-TOKENIZED
     int64_t max_new = 16;
     int64_t max_context = kDefaultContext;
-    bool greedy = true;
-    uint64_t seed = 0;
-    int top_k = 20;
-    float top_p = 0.95f;
-    float temperature = 1.0f;
     /// The files the source tensors are read from: the model file, which serves them as a GGUF.
     std::vector<std::string> native_shards;
     int pool_workers = 0;         ///< >0 = the user's worker count; otherwise the start-up pick
