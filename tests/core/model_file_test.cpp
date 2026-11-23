@@ -62,7 +62,7 @@ void gguf_cases(const std::string& base) {
                           str("tokenizer.ggml.pre", "toypre"), strs("tokenizer.ggml.tokens", tokens),
                           strs("tokenizer.ggml.merges", {"a b"}), i32s("tokenizer.ggml.token_type", {1, 1, 1, 1, 3}),
                           str("tokenizer.chat_template", "{{ messages }}")};
-    const std::vector<Tensor> ts = {{"w.q8", {32, 3}, 8, 3}, {"w.f32", {5}, 0, 9}};
+    const std::vector<Tensor> ts = {{"w.q8", {32, 3}, 8, 3, {}}, {"w.f32", {5}, 0, 9, {}}};
     const Written w = write(path, kv, ts);
     granite::core::ModelFile m;
     std::string err;

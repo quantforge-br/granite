@@ -56,11 +56,12 @@ template <class F> std::vector<std::string> write_model(const fs::path& dir, F m
         if (i == 0) kv.push_back(fixture::str("general.architecture", "inkling2"));
         for (const auto& k : fixture::split_keys((uint64_t) i, 4, total)) kv.push_back(k);
         std::vector<Tensor> ts;
-        if (i == 1) ts = {{"output.weight", {64, 4}, Q8_0, 1}, {"token_embd.weight", {64, 4}, Q8_0, 2},
-                          {"blk.11.ffn_down_exps.weight", {32, 32, 2}, F32, 3}};
-        if (i == 2) ts = {{"blk.11.ffn_gate_exps.weight", {32, 32, 2}, F32, 4},
-                          {"blk.11.ffn_up_exps.weight", {32, 32, 2}, F32, 5}, {"blk.12.attn_q.weight", {32, 8}, F32, 6}};
-        if (i == 3) ts = {{"output_norm.weight", {32}, F32, 7}};
+        if (i == 1) ts = {{"output.weight", {64, 4}, Q8_0, 1, {}}, {"token_embd.weight", {64, 4}, Q8_0, 2, {}},
+                          {"blk.11.ffn_down_exps.weight", {32, 32, 2}, F32, 3, {}}};
+        if (i == 2) ts = {{"blk.11.ffn_gate_exps.weight", {32, 32, 2}, F32, 4, {}},
+                          {"blk.11.ffn_up_exps.weight", {32, 32, 2}, F32, 5, {}},
+                          {"blk.12.attn_q.weight", {32, 8}, F32, 6, {}}};
+        if (i == 3) ts = {{"output_norm.weight", {32}, F32, 7, {}}};
         uint64_t cut = 0;
         mutate(i, kv, ts, cut);
         const fs::path p = dir / shard_name(i + 1, 4);
@@ -162,7 +163,7 @@ int main(int argc, char** argv) {
     {
         TempDir d;
         const auto paths = write_model(d.path, [](int i, auto&, auto& ts, uint64_t&) {
-            if (i == 3) ts.push_back({"blk.11.ffn_up_exps.weight", {32, 32, 2}, F32, 9});
+            if (i == 3) ts.push_back({"blk.11.ffn_up_exps.weight", {32, 32, 2}, F32, 9, {}});
         }, 8);
         const std::string err = error_of(paths);
         check(err.find("in two shards") != std::string::npos && err.find(shard_name(3, 4)) != std::string::npos &&
