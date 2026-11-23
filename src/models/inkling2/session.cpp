@@ -59,6 +59,13 @@ constexpr int kTypeBF16 = 30;
 constexpr int kOutRows = 3072;           // the attention output's width (heads x head width)
 constexpr int kStage = 64;               // windows whose tokens and positions are in flight from the pinned ring at once
 
+// The full-attention visits' launch bound of a call whose last row sits at `last`: its keys rounded up to a power of two.
+int64_t full_keys_of(int64_t last) {
+    int64_t full_keys = 1024;
+    while (full_keys < last + 1) full_keys <<= 1;
+    return full_keys;
+}
+
 // The forward scratch: the rows of one call through the layers and the head. Every session of the model runs on the same
 // buffers (Shared below), one call at a time: each call syncs its stream before it returns, and a batch window syncs every
 // session's stream before it starts.
@@ -149,7 +156,9 @@ struct Shared {
         x.y_ = f(R * kProj);
         x.q_ = f(R * kHeads * kHeadDim); x.r_ = f(R * kHeads * kRel); x.sink_ = f(R * kHeads);
         x.o_ = f(R * E); x.resid_ = f(R * E); x.fin_ = f(R * E);
-        x.att_scr_ = alloc(attention_decode_scratch(kMaxRows, std::max<int64_t>(ctx, g.window)));
+        // the largest bound a launch passes: a full visit's at the context's last position (past `ctx` when it is no
+        // power of two), a ring's its window
+        x.att_scr_ = alloc(attention_decode_scratch(kMaxRows, std::max<int64_t>(full_keys_of(ctx - 1), g.window)));
         for (void*& q : x.xq_) q = alloc(bk::native_q8_1_bytes((int) E, kMaxRows));
         x.xo_ = alloc(bk::native_q8_1_bytes(kOutRows, kMaxRows));
         x.rlog_ = f(R * g.n_expert); x.rw_ = f(R * g.n_used); x.ids_ = (int32_t*) alloc((size_t) R * g.n_used * 4);
@@ -1101,13 +1110,6 @@ private:
         if (!layers(rows, head, stage(tokens, emb, rows, pos0, nullptr), err) || !check(err)) return false;
         dspark_.note(pos0, rows);   // DSPARK HOOK: the host's record of the rows the drafter took
         return true;
-    }
-
-    // The full-attention visits' launch bound of a call whose last row sits at `last`: its keys rounded up to a power of two.
-    static int64_t full_keys_of(int64_t last) {
-        int64_t full_keys = 1024;
-        while (full_keys < last + 1) full_keys <<= 1;
-        return full_keys;
     }
 
     // A call's inputs to the card: its tokens and positions (pos0.., or every row's own in `positions`), its first rows;
