@@ -245,11 +245,6 @@ if(BUILD_TESTING)
   target_link_libraries(adapter_builtin_test PRIVATE models)
   basalt_embed_manifest(adapter_builtin_test)
   basalt_gpu_test(NAME adapter_builtin_test COMMAND adapter_builtin_test)
-  # the split of a layer's RAM experts between the cards (no GPU)
-  add_executable(peer_take_test tests/prefill/peer_take_test.cpp)
-  target_include_directories(peer_take_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  basalt_embed_manifest(peer_take_test)
-  basalt_cpu_test(NAME peer_take_test COMMAND peer_take_test)
   # shared code must not include a model; models must not include each other
   # a check of the tree's text, in bash and python3: Linux's run covers it for every platform
   if(NOT WIN32)
@@ -266,7 +261,7 @@ endif()
 # Defined in cmake/platform.cmake, included above with `warnings`.
 
 # ---- core (GPU runtime) ---------------------------------------------
-add_library(core STATIC src/core/device.cu src/core/pinned.cu src/core/ram_load.cpp src/core/vmm.cpp src/core/elastic_array.cpp src/core/file_reads.cpp src/core/graph.cpp src/core/weights.cpp src/core/loader.cpp
+add_library(core STATIC src/core/device.cu src/core/ram_load.cpp src/core/vmm.cpp src/core/elastic_array.cpp src/core/graph.cpp src/core/weights.cpp src/core/loader.cpp
                              src/core/host_plan.cpp src/core/checkpoint_transfer.cpp src/core/staged_copy.cpp src/core/prompt_stage.cpp)
 target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # The selected runtime is PUBLIC because graph.cpp is a HOST translation unit that calls cudaGraphLaunch and
@@ -314,14 +309,10 @@ set_source_files_properties(src/kernels/cuda/native_mmvq.cu src/kernels/cuda/nat
 # already links `core` - putting `gdn_layer` in core would make the two mutually dependent.  A third
 # library is the honest shape of the dependency graph: core knows about devices and weights, kernels know
 # about arithmetic, and this one knows the ORDER the arithmetic happens in.
-# ---- tiers: the storage and transfer tier shared by the models (VRAM slots, RAM and file source, peer card) ----
-add_library(tiers STATIC src/core/expert_source.cpp src/core/expert_cache.cpp src/core/peer_experts.cpp src/core/conversation_store.cpp src/core/conversation_memory.cpp)
+# ---- tiers: what the models share of VRAM slots and conversation storage (expert cache, conversation store) ----
+add_library(tiers STATIC src/core/expert_cache.cpp src/core/conversation_store.cpp src/core/conversation_memory.cpp)
 target_include_directories(tiers PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(tiers PUBLIC core kernels kernels_cpu ${_gpu_runtime_target})
-# the routed-expert tier: slots, per-layer LRU, RAM tier with CPU compute, file reads, second cards
-add_library(expert_tier STATIC src/core/expert_tier.cpp)
-target_include_directories(expert_tier PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${_gpu_include_directories})
-target_link_libraries(expert_tier PUBLIC tiers peer_share mmq core kernels kernels_cpu platform ${_gpu_runtime_target})
 if(BUILD_TESTING)
 
   add_executable(host_registration_test tests/core/host_registration_test.cpp)
@@ -757,31 +748,6 @@ target_link_libraries(log_test PRIVATE warnings)
 basalt_embed_manifest(log_test)
 basalt_cpu_test(NAME log_test COMMAND log_test)
 set_tests_properties(log_test PROPERTIES TIMEOUT 60)
-# the expert tiers' admission and placement rules on synthetic id streams (no GPU)
-add_executable(tier_policy_test tests/core/tier_policy_test.cpp)
-target_include_directories(tier_policy_test PRIVATE include)
-basalt_embed_manifest(tier_policy_test)
-basalt_cpu_test(NAME tier_policy_test COMMAND tier_policy_test)
-add_executable(file_reads_test tests/core/file_reads_test.cpp src/core/file_reads.cpp)
-target_include_directories(file_reads_test PRIVATE include)
-target_compile_definitions(file_reads_test PRIVATE BASALT_TEST_TMPDIR="${CMAKE_CURRENT_BINARY_DIR}")
-target_link_libraries(file_reads_test PRIVATE platform Threads::Threads)
-basalt_embed_manifest(file_reads_test)
-basalt_cpu_test(NAME file_reads_test COMMAND file_reads_test)
-# the shared expert tier on a synthetic pack: slots follow a routing stream with an admission threshold (needs a GPU)
-add_executable(expert_tier_test tests/core/expert_tier_test.cpp)
-target_include_directories(expert_tier_test PRIVATE include ${_gpu_include_directories})
-target_compile_definitions(expert_tier_test PRIVATE BASALT_TEST_TMPDIR="${CMAKE_CURRENT_BINARY_DIR}")
-target_link_libraries(expert_tier_test PRIVATE expert_tier ${_gpu_runtime_target})
-basalt_embed_manifest(expert_tier_test)
-basalt_gpu_test(NAME expert_tier_test COMMAND expert_tier_test)
-set_tests_properties(expert_tier_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
-add_executable(exact_slots_test tests/core/exact_slots_test.cpp)
-target_include_directories(exact_slots_test PRIVATE include)
-target_link_libraries(exact_slots_test PRIVATE warnings)
-basalt_embed_manifest(exact_slots_test)
-basalt_cpu_test(NAME exact_slots_test COMMAND exact_slots_test)
-set_tests_properties(exact_slots_test PROPERTIES TIMEOUT 60)
 
 # basalt-probe's report: rates block and layout (CPU only)
 add_executable(probe_report_test tests/program/probe_report_test.cpp)
@@ -884,12 +850,6 @@ foreach(_t grammar_llama_parser_test grammar_llama_state_test grammar_llama_acce
   set_tests_properties(${_t} PROPERTIES TIMEOUT 300)
 endforeach()
 target_include_directories(grammar_llama_schema_test PRIVATE src/program/grammar)
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  add_executable(pinned_shared_test tests/core/pinned_shared_test.cpp)
-  target_link_libraries(pinned_shared_test PRIVATE core ${_gpu_runtime_target})
-  basalt_cpu_test(NAME pinned_shared_test COMMAND pinned_shared_test)
-endif()
 
 add_executable(loader_test tests/core/loader_test.cpp)
 target_link_libraries(loader_test PRIVATE core ${_gpu_runtime_target})
@@ -1063,10 +1023,6 @@ if(MSVC)
   target_compile_options(mmq PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/bigobj>)
 endif()
 target_link_libraries(mmq PUBLIC ggml_quants ${_gpu_runtime_target})
-# multi-GPU: a second card's share of a prompt chunk's routed experts, on the MMQ products
-add_library(peer_share STATIC src/prefill/peer_share.cpp)
-target_include_directories(peer_share PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${_gpu_include_directories})
-target_link_libraries(peer_share PUBLIC mmq kernels ${_gpu_runtime_target})
 # a decode window's products against FP8 and NVFP4 matrices (bf16 mma on the codes converted in registers)
 add_library(window_gemm STATIC src/kernels/cuda/window_gemm.cu src/kernels/cuda/window_gemm_f8.cu
                                src/kernels/cuda/window_gemm_nvfp4.cu)
@@ -1078,11 +1034,6 @@ if(BUILD_TESTING)
   target_link_libraries(prefill_cpu_share_test PRIVATE mmq kernels_cpu ${_gpu_runtime_target})
   basalt_gpu_test(NAME prefill_cpu_share_test COMMAND prefill_cpu_share_test)
   set_tests_properties(prefill_cpu_share_test PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
-  # a second card's share of a chunk's experts against the main card's MMQ and a double-precision reference (two GPUs)
-  add_executable(peer_share_parity tests/prefill/peer_share_parity.cu)
-  target_link_libraries(peer_share_parity PRIVATE peer_share core ggml_quants ${_gpu_runtime_target})
-  basalt_gpu_test(NAME peer_share_parity COMMAND peer_share_parity)
-  set_tests_properties(peer_share_parity PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
 endif()
 if(BUILD_TESTING)
   # NVFP4 experts through MMQ (tile loader, per-16-scale dot, scale tail in SwiGLU) against CPU references, with a
