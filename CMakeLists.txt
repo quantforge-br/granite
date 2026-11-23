@@ -866,9 +866,6 @@ if(BUILD_TESTING)
   target_include_directories(bf16_bits_test PRIVATE include)
   basalt_cpu_test(NAME bf16_bits_test COMMAND bf16_bits_test)
   # the residency check over several tables against hand-made tables (header-only, CPU)
-  add_executable(route_lossy_test tests/kernels/route_lossy_test.cpp)
-  target_include_directories(route_lossy_test PRIVATE include)
-  basalt_cpu_test(NAME route_lossy_test COMMAND route_lossy_test)
 endif()
 
 add_library(kernels_cpu STATIC src/kernels/cpu/expert.cpp src/kernels/cpu/pool.cpp

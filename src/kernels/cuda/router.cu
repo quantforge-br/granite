@@ -166,15 +166,12 @@ struct SelectScratch {
 // equal and a lower index); ranks below k are the selection, in rank order. The k-th largest warp maximum bounds the
 // k-th score from below (k distinct experts reach it), so only experts at or above it can rank below k, and they are
 // ranked among themselves.
-// kPrior (--route-prior): the experts `held` holds gain `prior` on the score the rank is taken from; their weights stay s.
-template <bool kPrior>
 __device__ void router_select_token(const float* __restrict__ logits, const float* __restrict__ bias, int n_expert,
                                     int k, float scale, int gate, int32_t* __restrict__ ids, float* __restrict__ weights,
-                                    SelectScratch& sh, const ResidentTabs& held, float prior) {
+                                    SelectScratch& sh) {
     const int e = threadIdx.x, lane = e & 31, warp = e >> 5, nw = n_expert >> 5;
     const float s = score(logits[e], gate);
-    float b = s + bias[e];
-    if (kPrior && held.held(e)) b += prior;
+    const float b = s + bias[e];
     float m = b;
 #pragma unroll
     for (int o = 16; o; o >>= 1) m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, o));
@@ -216,16 +213,14 @@ __device__ void router_select_token(const float* __restrict__ logits, const floa
     }
 }
 
-template <bool kPrior>
 __global__ void router_select_kernel(const float* __restrict__ logits, const float* __restrict__ bias, int n_expert,
-                                     int k, float scale, int gate, int32_t* __restrict__ ids, float* __restrict__ weights,
-                                     ResidentTabs held, float prior) {
+                                     int k, float scale, int gate, int32_t* __restrict__ ids, float* __restrict__ weights) {
     pdl_wait();
     pdl_launch_dependents();
     __shared__ SelectScratch sh;
     const int t = blockIdx.x;
-    router_select_token<kPrior>(logits + (size_t) t * n_expert, bias, n_expert, k, scale, gate, ids + (size_t) t * k,
-                                weights + (size_t) t * k, sh, held, prior);
+    router_select_token(logits + (size_t) t * n_expert, bias, n_expert, k, scale, gate, ids + (size_t) t * k,
+                        weights + (size_t) t * k, sh);
 }
 
 }  // namespace
@@ -257,12 +252,8 @@ void router_select(const float* logits, const float* bias, int n_tokens, const R
     if (a.n_expert % 32 || a.n_expert > kMaxExpert || a.k < 1 || a.k > 16 || a.k > a.n_expert)
         throw std::invalid_argument("router_select: unsupported geometry");
     cudaStream_t st = (cudaStream_t) stream;
-    if (a.prior > 0.0f && a.held.n > 0)
-        launch_pdl(router_select_kernel<true>, dim3(n_tokens), dim3(a.n_expert), 0, st, logits, bias, a.n_expert, a.k, a.weight_scale,
-                   (int) a.gate, ids, weights, a.held, a.prior);
-    else
-        launch_pdl(router_select_kernel<false>, dim3(n_tokens), dim3(a.n_expert), 0, st, logits, bias, a.n_expert, a.k, a.weight_scale,
-                   (int) a.gate, ids, weights, a.held, 0.0f);
+    launch_pdl(router_select_kernel, dim3(n_tokens), dim3(a.n_expert), 0, st, logits, bias, a.n_expert, a.k, a.weight_scale,
+               (int) a.gate, ids, weights);
     if (!stream) cudaStreamSynchronize(nullptr);
 }
 
