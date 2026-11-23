@@ -368,7 +368,7 @@ __global__ void __launch_bounds__(kDownSlices * 32) ctrl_down_whole_kernel(CtrlA
             dm += part[kDownSlices / 2 + k][j][t][0];
             sm += part[kDownSlices / 2 + k][j][t][1];
         }
-        a.scratch[((size_t) s * kDecodeRows + t) * a.rank + o0 + j] =
+        a.scratch[((size_t) s * kDecodeRows + t) * kCtrlRank + o0 + j] =
             dd * rsqrtf(sd / (float) kWidth + 1e-6f) + dm * rsqrtf(sm / (float) kWidth + 1e-6f);
     }
 }
@@ -378,21 +378,22 @@ __global__ void __launch_bounds__(kDownSlices * 32) ctrl_down_whole_kernel(CtrlA
 // outputs; the slices' partials go to the scratch, and the last of a group's kDownSlices blocks (counted in the group's
 // counter, which it resets) adds them.
 constexpr int kDownOut = 8;   // outputs a block
-static_assert(16 % kDownOut == 0, "a rank the controllers take (a multiple of 16) is whole groups");
+static_assert(kCtrlRank % kDownOut == 0, "the rank is whole groups");
 
-// The controllers' scratch after hid [kMaxStreams][kDecodeRows][rank] and gf [kMaxStreams][kDecodeRows][2 kWidth]: the
-// slices' dots [kMaxStreams][kDownSlices][kDecodeRows][rank], their sums of squares [kMaxStreams][rank / kDownOut]
-// [kDownSlices][kDecodeRows] (each group's own copy) and the groups' counters [kMaxStreams][rank / kDownOut]: their
+// The controllers' scratch after hid [kMaxStreams][kDecodeRows][kCtrlRank] and gf [kMaxStreams][kDecodeRows][2 kWidth]:
+// the slices' dots [kMaxStreams][kDownSlices][kDecodeRows][kCtrlRank], their sums of squares [kMaxStreams][kGroups]
+// [kDownSlices][kDecodeRows] (each group's own copy) and the groups' counters [kMaxStreams][kGroups]: their
 // offsets in floats, and the scratch's size.
 struct CtrlLayout {
     size_t dot, sq, done, size;
 };
-__host__ __device__ constexpr CtrlLayout ctrl_layout(int rank) {
-    const size_t dot = (size_t) kMaxStreams * kDecodeRows * ((size_t) rank + 2 * kWidth);
-    const size_t sq = dot + (size_t) kMaxStreams * kDownSlices * kDecodeRows * rank;
-    const size_t done = sq + (size_t) kMaxStreams * (rank / kDownOut) * kDownSlices * kDecodeRows;
-    return {dot, sq, done, done + (size_t) kMaxStreams * (rank / kDownOut)};
-}
+constexpr int kGroups = kCtrlRank / kDownOut;   // a stream's groups
+constexpr CtrlLayout kCtrl = [] {
+    const size_t dot = (size_t) kMaxStreams * kDecodeRows * (kCtrlRank + 2 * kWidth);
+    const size_t sq = dot + (size_t) kMaxStreams * kDownSlices * kDecodeRows * kCtrlRank;
+    const size_t done = sq + (size_t) kMaxStreams * kGroups * kDownSlices * kDecodeRows;
+    return CtrlLayout{dot, sq, done, done + (size_t) kMaxStreams * kGroups};
+}();
 
 template<int WARPS>
 __global__ void __launch_bounds__(WARPS * 32) ctrl_down_slice_kernel(CtrlArgs a, int rows) {
@@ -402,7 +403,6 @@ __global__ void __launch_bounds__(WARPS * 32) ctrl_down_slice_kernel(CtrlArgs a,
     __shared__ bool last;
     const int g = blockIdx.x, w = blockIdx.y, s = blockIdx.z, warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
     const int o0 = g * kDownOut + warp * kWarpOut;   // the warp's first output
-    const int groups = a.rank / kDownOut;
     const bool second = w >= kDownSlices / 2;
     const int c0 = (w % (kDownSlices / 2)) * kSlice;   // the slice's first channel in its half
     const uint32_t* wr = reinterpret_cast<const uint32_t*>(a.down[s] + (size_t) o0 * 2 * kWidth + (second ? kWidth : 0) + c0);
@@ -443,9 +443,8 @@ __global__ void __launch_bounds__(WARPS * 32) ctrl_down_slice_kernel(CtrlArgs a,
             }
         }
     }
-    const CtrlLayout l = ctrl_layout(a.rank);
-    float* const pdot = a.scratch + l.dot;
-    float* const psq = a.scratch + l.sq;
+    float* const pdot = a.scratch + kCtrl.dot;
+    float* const psq = a.scratch + kCtrl.sq;
     for (int t = warp; t < rows; t += WARPS) {   // warp t % WARPS: row t's sum of squares over the slice
         float q = 0.f;
 #pragma unroll
@@ -454,7 +453,7 @@ __global__ void __launch_bounds__(WARPS * 32) ctrl_down_slice_kernel(CtrlArgs a,
             q = fmaf(x.y, x.y, fmaf(x.x, x.x, q));
         }
         q = warp_sum(q);
-        if (lane == 0) psq[(((size_t) s * groups + g) * kDownSlices + w) * kDecodeRows + t] = q;
+        if (lane == 0) psq[(((size_t) s * kGroups + g) * kDownSlices + w) * kDecodeRows + t] = q;
     }
 #pragma unroll
     for (int t = 0; t < kDecodeRows; ++t) {
@@ -462,12 +461,12 @@ __global__ void __launch_bounds__(WARPS * 32) ctrl_down_slice_kernel(CtrlArgs a,
 #pragma unroll
         for (int j = 0; j < kWarpOut; ++j) {
             const float d = warp_sum(dot[j][t]);
-            if (lane == 0) pdot[(((size_t) s * kDownSlices + w) * kDecodeRows + t) * a.rank + o0 + j] = d;
+            if (lane == 0) pdot[(((size_t) s * kDownSlices + w) * kDecodeRows + t) * kCtrlRank + o0 + j] = d;
         }
     }
     __syncthreads();   // the block's partials are thread 0's to release
     if (threadIdx.x == 0) {
-        unsigned* done = reinterpret_cast<unsigned*>(a.scratch + l.done) + (size_t) s * groups + g;
+        unsigned* done = reinterpret_cast<unsigned*>(a.scratch + kCtrl.done) + (size_t) s * kGroups + g;
         unsigned prior;
         asm volatile("atom.acq_rel.gpu.global.add.u32 %0, [%1], 1;\n" : "=r"(prior) : "l"(done) : "memory");
         last = prior == (unsigned) (kDownSlices - 1);
@@ -477,9 +476,9 @@ __global__ void __launch_bounds__(WARPS * 32) ctrl_down_slice_kernel(CtrlArgs a,
     if (!last) return;
     if (threadIdx.x < rows * kDownOut) {
         const int t = threadIdx.x % rows, o = g * kDownOut + threadIdx.x / rows;
-        const float* dt = pdot + ((size_t) s * kDownSlices * kDecodeRows + t) * a.rank + o;   // slice 0's, then + slice
-        const float* qt = psq + ((size_t) s * groups + g) * kDownSlices * kDecodeRows + t;
-        const size_t dk = (size_t) kDecodeRows * a.rank;
+        const float* dt = pdot + ((size_t) s * kDownSlices * kDecodeRows + t) * kCtrlRank + o;   // slice 0's, + slice
+        const float* qt = psq + ((size_t) s * kGroups + g) * kDownSlices * kDecodeRows + t;
+        const size_t dk = (size_t) kDecodeRows * kCtrlRank;
         constexpr int kHalf = kDownSlices / 2;
         float dd = 0.f, sd = 0.f, dm = 0.f, sm = 0.f;
 #pragma unroll
@@ -489,7 +488,7 @@ __global__ void __launch_bounds__(WARPS * 32) ctrl_down_slice_kernel(CtrlArgs a,
             dm += __ldcg(dt + (kHalf + k) * dk);
             sm += __ldcg(qt + (kHalf + k) * kDecodeRows);
         }
-        a.scratch[((size_t) s * kDecodeRows + t) * a.rank + o] =
+        a.scratch[((size_t) s * kDecodeRows + t) * kCtrlRank + o] =
             dd * rsqrtf(sd / (float) kWidth + 1e-6f) + dm * rsqrtf(sm / (float) kWidth + 1e-6f);
     }
 }
@@ -501,15 +500,15 @@ __global__ void __launch_bounds__(256) ctrl_up_kernel(CtrlArgs a, int rows) {
     extern __shared__ float hs[];   // [rows][rank]
     const int s = blockIdx.y;
     const int row = blockIdx.x * 32 + (threadIdx.x >> 3), part = threadIdx.x & 7;
-    const int per = a.rank / 8;
-    const uint32_t* ur = reinterpret_cast<const uint32_t*>(a.up[s] + (size_t) row * a.rank + part * per);
+    const int per = kCtrlRank / 8;
+    const uint32_t* ur = reinterpret_cast<const uint32_t*>(a.up[s] + (size_t) row * kCtrlRank + part * per);
     uint32_t u0w[kUpWords];
 #pragma unroll
     for (int k = 0; k < kUpWords; ++k) u0w[k] = row < 2 * kWidth && k < per / 2 ? ur[k] : 0u;
     bk::pdl_wait();
     bk::pdl_launch_dependents();
-    const float* hid = a.scratch + (size_t) s * kDecodeRows * a.rank;
-    for (int i = threadIdx.x; i < rows * a.rank; i += blockDim.x) hs[i] = hid[i];
+    const float* hid = a.scratch + (size_t) s * kDecodeRows * kCtrlRank;
+    for (int i = threadIdx.x; i < rows * kCtrlRank; i += blockDim.x) hs[i] = hid[i];
     __syncthreads();
     float acc[kDecodeRows];
 #pragma unroll
@@ -524,7 +523,7 @@ __global__ void __launch_bounds__(256) ctrl_up_kernel(CtrlArgs a, int rows) {
 #pragma unroll
             for (int t = 0; t < kDecodeRows; ++t) {
                 if (t >= rows) break;
-                acc[t] = fmaf(u1, hs[t * a.rank + kk + 1], fmaf(u0, hs[t * a.rank + kk], acc[t]));
+                acc[t] = fmaf(u1, hs[t * kCtrlRank + kk + 1], fmaf(u0, hs[t * kCtrlRank + kk], acc[t]));
             }
         }
         for (int k = kUpWords; k < per / 2; ++k) {
@@ -534,11 +533,11 @@ __global__ void __launch_bounds__(256) ctrl_up_kernel(CtrlArgs a, int rows) {
 #pragma unroll
             for (int t = 0; t < kDecodeRows; ++t) {
                 if (t >= rows) break;
-                acc[t] = fmaf(u1, hs[t * a.rank + kk + 1], fmaf(u0, hs[t * a.rank + kk], acc[t]));
+                acc[t] = fmaf(u1, hs[t * kCtrlRank + kk + 1], fmaf(u0, hs[t * kCtrlRank + kk], acc[t]));
             }
         }
     }
-    float* gf = a.scratch + (size_t) kMaxStreams * kDecodeRows * a.rank;
+    float* gf = a.scratch + (size_t) kMaxStreams * kDecodeRows * kCtrlRank;
 #pragma unroll
     for (int t = 0; t < kDecodeRows; ++t) {
         if (t >= rows) break;
@@ -561,7 +560,8 @@ __global__ void __launch_bounds__(kThreads) ctrl_blend_kernel(CtrlArgs a) {
     bk::pdl_wait();
     bk::pdl_launch_dependents();
     __shared__ float red[kWarpsB + 1];
-    const float* gf = a.scratch + (size_t) kMaxStreams * kDecodeRows * a.rank + ((size_t) s * kDecodeRows + r) * 2 * kWidth;
+    const float* gf =
+        a.scratch + (size_t) kMaxStreams * kDecodeRows * kCtrlRank + ((size_t) s * kDecodeRows + r) * 2 * kWidth;
     float y[kPer];
 #pragma unroll
     for (int j = 0; j < kPer; ++j) {
@@ -738,24 +738,27 @@ void mix_norm(const MixNorm& a, int n_out, int rows, void* stream) {
     check("mix_norm");
 }
 
-size_t ctrl_scratch_floats(int rank) { return ctrl_layout(rank).size; }
+size_t ctrl_scratch_floats() { return kCtrl.size; }
 
 void controllers(const CtrlArgs& a, int streams, int rows, void* stream) {
     if (rows <= 0) return;
     check_rows(rows, "controllers");
-    if (streams < 1 || streams > kMaxStreams || a.rank <= 0 || a.rank % 16) throw std::runtime_error("inkling2 controllers: streams or rank");
+    if (streams < 1 || streams > kMaxStreams) throw std::runtime_error("inkling2 controllers: streams");
     cudaStream_t s = (cudaStream_t) stream;
     // The pick for the rows and streams measured fastest: a few rows read each input once for a block's outputs and need
     // no merge, more rows read it once for a group's; one stream's launches have a third of the blocks, so their blocks
     // take fewer outputs, and their slices more warps
-    const dim3 whole(kDownSlices * 32), slices((unsigned) (a.rank / kDownOut), kDownSlices, (unsigned) streams);
-    if (rows <= 2 && streams == 1) bk::launch_pdl(ctrl_down_whole_kernel<1, 2>, dim3((unsigned) a.rank, 1u), whole, 0, s, a, rows);
+    const dim3 whole(kDownSlices * 32), slices((unsigned) kGroups, kDownSlices, (unsigned) streams);
+    if (rows <= 2 && streams == 1)
+        bk::launch_pdl(ctrl_down_whole_kernel<1, 2>, dim3((unsigned) kCtrlRank, 1u), whole, 0, s, a, rows);
     else if (rows <= 4 && streams > 1)
-        bk::launch_pdl(ctrl_down_whole_kernel<4, 4>, dim3((unsigned) a.rank / 4, (unsigned) streams), whole, 0, s, a, rows);
+        bk::launch_pdl(ctrl_down_whole_kernel<4, 4>, dim3((unsigned) kCtrlRank / 4, (unsigned) streams), whole, 0, s, a,
+                       rows);
     else if (streams == 1) bk::launch_pdl(ctrl_down_slice_kernel<8>, slices, dim3(8 * 32), 0, s, a, rows);
     else bk::launch_pdl(ctrl_down_slice_kernel<4>, slices, dim3(4 * 32), 0, s, a, rows);
     check("controllers/down");
-    bk::launch_pdl(ctrl_up_kernel, dim3((unsigned) (2 * kWidth / 32), (unsigned) streams), dim3(256), (size_t) rows * a.rank * 4, s, a, rows);
+    bk::launch_pdl(ctrl_up_kernel, dim3((unsigned) (2 * kWidth / 32), (unsigned) streams), dim3(256),
+                   (size_t) rows * kCtrlRank * 4, s, a, rows);
     check("controllers/up");
     bk::launch_pdl(ctrl_blend_kernel, dim3((unsigned) rows, (unsigned) streams), dim3(kThreads), 0, s, a);
     check("controllers/blend");

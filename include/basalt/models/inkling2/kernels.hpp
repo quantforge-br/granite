@@ -25,6 +25,7 @@ constexpr int kConvRing = 16;       ///< positions a convolution ring keeps: a w
 constexpr int kMaxMix = 6;          ///< states one mix reads: the finished blocks and the partial
 constexpr int kDecodeRows = 8;      ///< rows of a decode window's fused kernels (the products take 8 columns at most)
 constexpr int kMaxStreams = 4;      ///< loop controllers one call runs side by side
+constexpr int kCtrlRank = 64;       ///< a loop controller's rank
 
 /// A layer's fused projection rows, in this order: q, r, gate, sink (read from the query input), k and the key
 /// convolution's per-token taps (from the key input), v and its taps (from the value input). A sliding-window layer has no
@@ -214,8 +215,8 @@ void mix_norm(const MixNorm& a, int n_out, int rows, void* stream);
 /// Up to kMaxStreams loop controllers over the same rows: stream s blends dest[s] with msg[s] (rows at r * kWidth),
 /// out = (1 - tanh f) dest + tanh g msg with [g | f] = up_s . (down_s . [rms(dest) | rms(msg)]), then norms the blend with
 /// norm[s] (eps) into q8_1 at q8[s]; stream 0's normed rows also in fp32 at norm_out when set. down_s is BF16
-/// [rank][2 kWidth], up_s BF16 [2 kWidth][rank] (the gain rows, then the forget rows). `scratch`: ctrl_scratch_floats,
-/// zeroed before its first call (it holds counters that every call leaves at 0).
+/// [kCtrlRank][2 kWidth], up_s BF16 [2 kWidth][kCtrlRank] (the gain rows, then the forget rows). `scratch`:
+/// ctrl_scratch_floats, zeroed before its first call (it holds counters that every call leaves at 0).
 struct CtrlArgs {
     const float* dest[kMaxStreams] = {};
     const float* msg[kMaxStreams] = {};
@@ -225,10 +226,9 @@ struct CtrlArgs {
     void* q8[kMaxStreams] = {};
     float* norm_out = nullptr;
     float* scratch = nullptr;
-    int rank = 0;
     float eps = 1e-6f;
 };
-size_t ctrl_scratch_floats(int rank);
+size_t ctrl_scratch_floats();
 void controllers(const CtrlArgs& a, int streams, int rows, void* stream);
 
 /// attn_prepare for a decode window: a block per row and key/value head.

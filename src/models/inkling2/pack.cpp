@@ -91,10 +91,10 @@ bool open_pack(const std::string& path, Pack& p, std::string& err) {
     if (g.n_embd != 2304 || g.n_head != 24 || g.n_head_kv != 8 || g.head_dim != 128 || g.rel != 16 || g.extent != 1024 ||
         g.window != g.extent || g.conv != 4 || g.n_expert > 512 || g.n_expert % 32 || g.n_used > 16 ||
         g.loop_start <= 0 || g.loop_start >= g.loop_end || g.loop_end > g.n_layers || g.loop_start % g.block ||
-        g.loop_end % g.block || g.loop_passes < 1 || g.gate_rank <= 0) {
+        g.loop_end % g.block || g.loop_passes < 1 || g.gate_rank != 64) {
         err = path + ": an Inkling 2 layout this engine does not run (width 2304, 24 query and 8 key/value heads of 128, "
                      "relative states of 16 over 1,024 positions, the window 1,024, convolutions of 4, a loop on block "
-                     "boundaries)";
+                     "boundaries, controllers of rank 64)";
         return false;
     }
     g.visits = loop_visits(g.n_layers, g.loop_start, g.loop_end, g.loop_passes);

@@ -883,12 +883,11 @@ void test_mix_norm() {
 }
 
 void test_controllers() {
-    const int R = 8, S = 3, rank = 64;
+    const int R = 8, S = 3, rank = kCtrlRank;
     std::vector<std::vector<float>> dest(S), msg(S), nw(S);
     std::vector<std::vector<uint16_t>> down(S), up(S);
     CtrlArgs a;
-    a.rank = rank;
-    a.scratch = zeros<float>(ctrl_scratch_floats(rank));
+    a.scratch = zeros<float>(ctrl_scratch_floats());
     auto bf16 = [](float f) {
         uint32_t u;
         std::memcpy(&u, &f, 4);

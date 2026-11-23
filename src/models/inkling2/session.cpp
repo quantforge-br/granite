@@ -154,9 +154,9 @@ struct Shared {
         x.emb_ = f(R * E);
         x.mix_ = f(3 * R * E);
         x.msg_ = f((int64_t) (g.loop_end - g.loop_start) * kStreams * R * E);
-        x.ctrl_scr_ = f((int64_t) ctrl_scratch_floats(g.gate_rank));
+        x.ctrl_scr_ = f((int64_t) ctrl_scratch_floats());
         // the controllers' counters start at 0 (the device's streams do not wait for the default one)
-        if (ok && (cudaMemset(x.ctrl_scr_, 0, ctrl_scratch_floats(g.gate_rank) * 4) != cudaSuccess ||
+        if (ok && (cudaMemset(x.ctrl_scr_, 0, ctrl_scratch_floats() * 4) != cudaSuccess ||
                    cudaDeviceSynchronize() != cudaSuccess))
             ok = false;
         x.nrm_ = f(R * E);
@@ -911,7 +911,6 @@ private:
                 ca.q8[s] = x.xq_[s];
             }
             ca.scratch = x.ctrl_scr_;
-            ca.rank = g_.gate_rank;
             ca.eps = g_.rms_eps;
             controllers(ca, 3, rows, k.stream);
         }
@@ -1033,7 +1032,6 @@ private:
             ca.q8[0] = x.xq_[0];
             ca.norm_out = nrm;
             ca.scratch = x.ctrl_scr_;
-            ca.rank = g_.gate_rank;
             ca.eps = g_.rms_eps;
             controllers(ca, 1, rows, k.stream);
         }
