@@ -489,6 +489,8 @@ __global__ void __launch_bounds__(256) swiglu_q8_1_entries_pdl_kernel(const floa
     }
 }
 
+// The launch as a programmatic dependent where the card and the kernel's build have griddepcontrol, else a plain launch
+// (the kernel's pdl_wait is then a no-op and stream order holds).
 template<typename... KArgs, typename... Args>
 void launch_dependent(void (*kernel)(KArgs...), dim3 grid, cudaStream_t s, Args... args) {
     cudaLaunchAttribute at[1];
@@ -500,6 +502,10 @@ void launch_dependent(void (*kernel)(KArgs...), dim3 grid, cudaStream_t s, Args.
     cfg.dynamicSmemBytes = 0;
     cfg.stream = s;
     cfg.attrs = at;
-    cfg.numAttrs = 1;
+#if defined(PDL_LAUNCH)
+    cfg.numAttrs = pdl_kernel_ok((const void*) kernel) ? 1 : 0;
+#else
+    cfg.numAttrs = 0;
+#endif
     (void) cudaLaunchKernelEx(&cfg, kernel, args...);   // an error stays for the caller's check
 }
