@@ -5,19 +5,17 @@
 
 namespace basalt::kernels::wgemm::detail {
 namespace {
-constexpr int CH = 256, ST = 4, MW = 1;
+constexpr int CH = 256, ST = 4;
 }
 
-const Kernel& nvfp4(int nt) {
-    static const Kernel k1 = make_kernel<64, 1, CH, ST, 1, MW>(), k2 = make_kernel<64, 1, CH, ST, 2, MW>(),
-                        k4 = make_kernel<64, 1, CH, ST, 4, MW>();
-    return nt > 2 ? k4 : nt > 1 ? k2 : k1;
+const Kernel& nvfp4() {
+    static const Kernel k = make_kernel<64, 1, CH, ST>();
+    return k;
 }
 
-const Kernel& nvfp4_swiglu(int nt) {
-    static const Kernel k1 = make_kernel<32, 2, CH, ST, 1, MW>(), k2 = make_kernel<32, 2, CH, ST, 2, MW>(),
-                        k4 = make_kernel<32, 2, CH, ST, 4, MW>();
-    return nt > 2 ? k4 : nt > 1 ? k2 : k1;
+const Kernel& nvfp4_swiglu() {
+    static const Kernel k = make_kernel<32, 2, CH, ST>();
+    return k;
 }
 
 }  // namespace basalt::kernels::wgemm::detail

@@ -143,15 +143,13 @@ int resident(const Kernel& k) {
     return per_sm * sm_count();
 }
 
-const Kernel& kernel_for(const Call& c, int nt) {
-    return c.epi == Epilogue::SwiGLU ? detail::nvfp4_swiglu(nt) : detail::nvfp4(nt);
-}
+const Kernel& kernel_for(const Call& c) { return c.epi == Epilogue::SwiGLU ? detail::nvfp4_swiglu() : detail::nvfp4(); }
 
-// The slice count from the call's shapes and the device alone (the T = 1..8 kernel's residency for every T): the fewest
-// rounds of items over the resident blocks times the chunks an item streams, plus its share of the slices' sums.
+// The slice count from the call's shapes and the device alone (the kernel's residency): the fewest rounds of items over
+// the resident blocks times the chunks an item streams, plus its share of the slices' sums.
 Plan plan_for(const Call& c) {
     Plan p;
-    p.k = &kernel_for(c, 1);
+    p.k = &kernel_for(c);
     const int nm = p.k->nm, rs = p.k->rs;
     p.tiles = 0;
     if (nm == 2) p.tiles = (int) ((c.m[0].rows + rs - 1) / rs);
@@ -225,7 +223,7 @@ void gemm(const Call& c, const void* act, int T, const Workspace& ws, void* stre
     const int64_t pr = part_rows(c);
     if (p.ks > 1 && ((size_t) p.ks * kRows * pr > ws.partial_floats || (size_t) p.tiles > ws.tickets_n))
         refuse("workspace too small", c);
-    const Kernel& k = kernel_for(c, T > 16 ? 4 : T > 8 ? 2 : 1);   // 8-column tiles; a row's sums are the same in any
+    const Kernel& k = *p.k;
     resident(k);   // its smem allowance
     Args a{};
     int t0 = 0;

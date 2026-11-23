@@ -2,15 +2,16 @@
 // kernel is instantiated here.
 //
 // A work item is RS rows of each of NM matrices (NM 2: a SwiGLU pair, gate rows in the first warps, up rows in the
-// others) over one slice of K; a warp owns 16 MW rows.  The grid is at most one wave of blocks, each taking items
-// blockIdx.x, + gridDim.x, ...: their chunks of CH values stream in order through shared memory as one sequence (cp.async,
-// ST stages, the first ones issued before the PDL wait since weights are constant), and each warp runs its rows over them on mma m16n8k16 with the window's rows as the columns, NT tiles of 8.  Thread (g, c) holds weight rows
-// g and g + 8 of its warp and activation column g of each tile; in every 64-value block of K it takes values
-// 16c .. 16c + 15 (exactly one UE4M3 group per row), step s's k-slots {2c, 2c+1} values 16c + 4s, +1 and
-// {2c+8, 2c+9} values 16c + 4s + 2, +3, and multiplies the same values of its activation column, so the sums are plain
-// dot products.  With several slices each block writes its sums to the workspace, and the last block of a row tile to
-// finish (a ticket) adds them in slice order and applies the epilogue.  The slice count depends on the call's shapes and
-// the device only, never on T: a column's bits are the same at any T and any NT.
+// others) over one slice of K; a warp owns 16 rows.  The grid is at most one wave of blocks, each taking items
+// blockIdx.x, + gridDim.x, ...: their chunks of CH values stream in order through shared memory as one sequence
+// (cp.async, ST stages, the first ones issued before the PDL wait since weights are constant), and each warp runs its rows
+// over them on mma m16n8k16 with the window's rows as the 8 columns.  Thread (g, c) holds weight rows g and g + 8 of its
+// warp and activation column g; in every 64-value block of K it takes values 16c .. 16c + 15 (exactly one UE4M3 group
+// per row), step s's k-slots {2c, 2c+1} values 16c + 4s, +1 and {2c+8, 2c+9} values 16c + 4s + 2, +3, and multiplies the
+// same values of its activation column, so the sums are plain dot products.  With several slices each block writes its
+// sums to the workspace, and the last block of a row tile to finish (a ticket) adds them in slice order and applies the
+// epilogue.  The slice count depends on the call's shapes and the device only, never on T: a column's bits are the same
+// at any T.
 //
 // Adapts the launch protocol of Infernix's decode products (Apache-2.0, by Ian Ranson and the Infernix contributors;
 // see THIRD_PARTY_LICENSES): weights staged before the PDL wait, dependents started once the weights are read.
@@ -39,7 +40,7 @@ struct Args {
     int64_t K, part_rows;
     int T, tiles, ks, cps, nchunks, epi;
     const uint16_t* act;   // bf16 rows
-    uint16_t* act_out;     // SwiGLU: h as the next product's bf16 rows ([16][rows]), or null
+    uint16_t* act_out;     // SwiGLU: h as the next product's bf16 rows ([kRows][rows]), or null
     float* partial;
     int32_t* tickets;
 };
@@ -85,12 +86,12 @@ __device__ __forceinline__ uint4 ld_nc16(const void* p) {
     return v;
 }
 
-template <int RS, int NM, int CH, int ST, int NT, int MW>
-__global__ void __launch_bounds__(Cfg<RS, NM, CH, ST>::kThreads / MW, 1) wgemm_kernel(const Args a) {
+template <int RS, int NM, int CH, int ST>
+__global__ void __launch_bounds__(Cfg<RS, NM, CH, ST>::kThreads, 1) wgemm_kernel(const Args a) {
     using C = Cfg<RS, NM, CH, ST>;
-    constexpr int KB = CH / 64;                       // 64-value blocks per chunk
-    constexpr int kWarpsPerM = RS / (16 * MW);        // warps per matrix
-    constexpr int kThreads = 32 * NM * kWarpsPerM;
+    constexpr int KB = CH / 64;                // 64-value blocks per chunk
+    constexpr int kWarpsPerM = RS / 16;        // warps per matrix
+    constexpr int kThreads = C::kThreads;
     extern __shared__ __align__(16) uint8_t smem[];
     __shared__ int last;
     __shared__ float xchg[NM == 2 ? RS * kRows : 1];   // SwiGLU: the up rows for the gate warps
@@ -157,13 +158,9 @@ __global__ void __launch_bounds__(Cfg<RS, NM, CH, ST>::kThreads / MW, 1) wgemm_k
 
     const int wm = NM == 1 ? 0 : warp / kWarpsPerM;   // this warp's matrix slot in the stage
     const int rw = warp % kWarpsPerM;
-    bool live[NT];
-    const uint16_t* xcol[NT];
-#pragma unroll
-    for (int t = 0; t < NT; ++t) {
-        live[t] = t * 8 + g < a.T;
-        xcol[t] = a.act + (int64_t) (t * 8 + g) * a.K + 16 * c;
-    }
+    const int r0l = rw * 16 + g, r1l = r0l + 8;        // this thread's rows in the item
+    const bool live = g < a.T;
+    const uint16_t* xcol = a.act + (int64_t) g * a.K + 16 * c;
     // T * (thread + 1) < 2^31: a zero the compiler cannot prove
     const E2m1Table e2m1 = e2m1_table((unsigned) (a.T * (int) (threadIdx.x + 1)) >> 31);
     int q = 0;   // chunks consumed
@@ -172,97 +169,69 @@ __global__ void __launch_bounds__(Cfg<RS, NM, CH, ST>::kThreads / MW, 1) wgemm_k
         const int64_t row0 = (int64_t) (tile - a.tile0[mi]) * RS;
         const int n = chunks_of(item);
         const int64_t k0 = (int64_t) slice * a.cps * CH;
-        float acc[MW][NT][4];
-#pragma unroll
-        for (int mt = 0; mt < MW; ++mt)
-#pragma unroll
-            for (int t = 0; t < NT; ++t) acc[mt][t][0] = acc[mt][t][1] = acc[mt][t][2] = acc[mt][t][3] = 0.0f;
+        float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-        // the activations of chunk i + 1 load while chunk i computes (not at NT 4: no registers to spare)
-        constexpr bool kAhead = NT <= 2;
-        uint4 na[KB][NT], nb[KB][NT];
+        // the activations of chunk i + 1 load while chunk i computes
+        uint4 na[KB], nb[KB];
         auto load_x = [&](int i) {
 #pragma unroll
-            for (int b = 0; b < KB; ++b)
-#pragma unroll
-                for (int t = 0; t < NT; ++t) {
-                    const uint16_t* xp = xcol[t] + k0 + i * CH + b * 64;
-                    na[b][t] = live[t] ? ld_nc16(xp) : make_uint4(0, 0, 0, 0);
-                    nb[b][t] = live[t] ? ld_nc16(xp + 8) : make_uint4(0, 0, 0, 0);
-                }
+            for (int b = 0; b < KB; ++b) {
+                const uint16_t* xp = xcol + k0 + i * CH + b * 64;
+                na[b] = live ? ld_nc16(xp) : make_uint4(0, 0, 0, 0);
+                nb[b] = live ? ld_nc16(xp + 8) : make_uint4(0, 0, 0, 0);
+            }
         };
-        if constexpr (kAhead) load_x(0);
+        load_x(0);
         for (int i = 0; i < n; ++i, ++q) {
             issue_next();
-            if constexpr (!kAhead) load_x(i);
-            uint4 xa[KB][NT], xb[KB][NT];
+            uint4 xa[KB], xb[KB];
 #pragma unroll
-            for (int b = 0; b < KB; ++b)
-#pragma unroll
-                for (int t = 0; t < NT; ++t) {
-                    xa[b][t] = na[b][t];
-                    xb[b][t] = nb[b][t];
-                }
-            if (kAhead && i + 1 < n) load_x(i + 1);
+            for (int b = 0; b < KB; ++b) {
+                xa[b] = na[b];
+                xb[b] = nb[b];
+            }
+            if (i + 1 < n) load_x(i + 1);
             cp_wait<ST - 1>();
             __syncthreads();
             const uint8_t* sm = smem + (q % ST) * C::kStage + wm * C::MB;
+            const uint8_t* q0 = sm + r0l * C::CB;
+            const uint8_t* q1 = sm + r1l * C::CB;
 #pragma unroll
-            for (int mt = 0; mt < MW; ++mt) {
-                const int r0l = (rw * MW + mt) * 16 + g, r1l = r0l + 8;
-                const uint8_t* q0 = sm + r0l * C::CB;
-                const uint8_t* q1 = sm + r1l * C::CB;
+            for (int b = 0; b < KB; ++b) {
+                const int pc = 2 * b + (c >> 1), half = (c & 1) * 8;
+                const uint2 w0 = *(const uint2*) (q0 + ((pc ^ swz<C::P>(r0l)) << 4) + half);
+                const uint2 w1 = *(const uint2*) (q1 + ((pc ^ swz<C::P>(r1l)) << 4) + half);
+                const uint8_t* ss = sm + RS * C::CB + b * RS * 4;
+                const unsigned s0 = ss[(r0l & 31) * C::kScalePiece + (r0l >> 5) * 4 + c];
+                const unsigned s1 = ss[(r1l & 31) * C::kScalePiece + (r1l >> 5) * 4 + c];
+                const unsigned sc0 = ue4m3_bf16x2(s0), sc1 = ue4m3_bf16x2(s1);
+                unsigned h0[8], h1[8];
+                e2m1x8_bf16x2_scaled(w0.x, sc0, e2m1, *reinterpret_cast<unsigned(*)[4]>(h0));
+                e2m1x8_bf16x2_scaled(w0.y, sc0, e2m1, *reinterpret_cast<unsigned(*)[4]>(h0 + 4));
+                e2m1x8_bf16x2_scaled(w1.x, sc1, e2m1, *reinterpret_cast<unsigned(*)[4]>(h1));
+                e2m1x8_bf16x2_scaled(w1.y, sc1, e2m1, *reinterpret_cast<unsigned(*)[4]>(h1 + 4));
+                const unsigned xw[8] = {xa[b].x, xa[b].y, xa[b].z, xa[b].w, xb[b].x, xb[b].y, xb[b].z, xb[b].w};
+                // step s: rows g, g + 8 at k-slots 2c.., then 2c + 8..
 #pragma unroll
-                for (int b = 0; b < KB; ++b) {
-                    const int pc = 2 * b + (c >> 1), half = (c & 1) * 8;
-                    const uint2 w0 = *(const uint2*) (q0 + ((pc ^ swz<C::P>(r0l)) << 4) + half);
-                    const uint2 w1 = *(const uint2*) (q1 + ((pc ^ swz<C::P>(r1l)) << 4) + half);
-                    const uint8_t* ss = sm + RS * C::CB + b * RS * 4;
-                    const unsigned s0 = ss[(r0l & 31) * C::kScalePiece + (r0l >> 5) * 4 + c];
-                    const unsigned s1 = ss[(r1l & 31) * C::kScalePiece + (r1l >> 5) * 4 + c];
-                    const unsigned sc0 = ue4m3_bf16x2(s0), sc1 = ue4m3_bf16x2(s1);
-                    unsigned h0[8], h1[8];
-                    e2m1x8_bf16x2_scaled(w0.x, sc0, e2m1, *reinterpret_cast<unsigned(*)[4]>(h0));
-                    e2m1x8_bf16x2_scaled(w0.y, sc0, e2m1, *reinterpret_cast<unsigned(*)[4]>(h0 + 4));
-                    e2m1x8_bf16x2_scaled(w1.x, sc1, e2m1, *reinterpret_cast<unsigned(*)[4]>(h1));
-                    e2m1x8_bf16x2_scaled(w1.y, sc1, e2m1, *reinterpret_cast<unsigned(*)[4]>(h1 + 4));
-                    unsigned a0[4], a1[4], a2[4], a3[4];   // step s: rows g, g + 8 at k-slots 2c.., then 2c + 8..
-#pragma unroll
-                    for (int s = 0; s < 4; ++s) {
-                        a0[s] = h0[2 * s];
-                        a1[s] = h1[2 * s];
-                        a2[s] = h0[2 * s + 1];
-                        a3[s] = h1[2 * s + 1];
-                    }
-#pragma unroll
-                    for (int t = 0; t < NT; ++t) {
-                        const unsigned xw[8] = {xa[b][t].x, xa[b][t].y, xa[b][t].z, xa[b][t].w,
-                                                xb[b][t].x, xb[b][t].y, xb[b][t].z, xb[b][t].w};
-#pragma unroll
-                        for (int s = 0; s < 4; ++s) mma(acc[mt][t], a0[s], a1[s], a2[s], a3[s], xw[2 * s], xw[2 * s + 1]);
-                    }
-                }
+                for (int s = 0; s < 4; ++s) mma(acc, h0[2 * s], h1[2 * s], h0[2 * s + 1], h1[2 * s + 1], xw[2 * s], xw[2 * s + 1]);
             }
             __syncthreads();
         }
         // (dependents were started at the top: see the trigger before the wait)
 
-        // ---- the item's epilogue: its slice's sums to the workspace, the last slice of the tile adds them in order
+        // ---- the item's epilogue: its slice's sums to the workspace, the last slice of the tile adds them in order;
+        // acc[j] is column 2c + (j & 1) of row r0l + 8 (j >> 1)
         const int mat = NM == 1 ? mi : wm;
         const int64_t rows = a.rows[mat];
         bool final_block = true;
         if (ks > 1) {
             float* part = a.partial + (int64_t) slice * kRows * a.part_rows + a.row_off[mat];
 #pragma unroll
-            for (int mt = 0; mt < MW; ++mt)
-#pragma unroll
-                for (int t = 0; t < NT; ++t)
-#pragma unroll
-                    for (int j = 0; j < 4; ++j) {
-                        const int col = t * 8 + 2 * c + (j & 1);
-                        const int64_t r = row0 + (rw * MW + mt) * 16 + g + 8 * (j >> 1);
-                        if (col < a.T && r < rows) part[col * a.part_rows + r] = acc[mt][t][j];
-                    }
+            for (int j = 0; j < 4; ++j) {
+                const int col = 2 * c + (j & 1);
+                const int64_t r = row0 + r0l + 8 * (j >> 1);
+                if (col < a.T && r < rows) part[col * a.part_rows + r] = acc[j];
+            }
             __threadfence();
             __syncthreads();
             if (threadIdx.x == 0) last = atomicAdd(a.tickets + tile, 1) == ks - 1;
@@ -274,23 +243,15 @@ __global__ void __launch_bounds__(Cfg<RS, NM, CH, ST>::kThreads / MW, 1) wgemm_k
                 // slice by slice, every element's load of a slice issued together (each element still sums its
                 // slices in order from 0)
 #pragma unroll
-                for (int mt = 0; mt < MW; ++mt)
-#pragma unroll
-                    for (int t = 0; t < NT; ++t)
-#pragma unroll
-                        for (int j = 0; j < 4; ++j) acc[mt][t][j] = 0.0f;
+                for (int j = 0; j < 4; ++j) acc[j] = 0.0f;
                 for (int k = 0; k < ks; ++k) {
                     const float* bk = base + (int64_t) k * kRows * a.part_rows;
 #pragma unroll
-                    for (int mt = 0; mt < MW; ++mt)
-#pragma unroll
-                        for (int t = 0; t < NT; ++t)
-#pragma unroll
-                            for (int j = 0; j < 4; ++j) {
-                                const int col = t * 8 + 2 * c + (j & 1);
-                                const int64_t r = row0 + (rw * MW + mt) * 16 + g + 8 * (j >> 1);
-                                if (col < a.T && r < rows) acc[mt][t][j] += __ldcg(bk + (int64_t) col * a.part_rows + r);
-                            }
+                    for (int j = 0; j < 4; ++j) {
+                        const int col = 2 * c + (j & 1);
+                        const int64_t r = row0 + r0l + 8 * (j >> 1);
+                        if (col < a.T && r < rows) acc[j] += __ldcg(bk + (int64_t) col * a.part_rows + r);
+                    }
                 }
                 if (threadIdx.x == 0) a.tickets[tile] = 0;
             }
@@ -301,50 +262,36 @@ __global__ void __launch_bounds__(Cfg<RS, NM, CH, ST>::kThreads / MW, 1) wgemm_k
             const float su = a.scale[1] ? *a.scale[1] : 1.0f, sg = a.scale[0] ? *a.scale[0] : 1.0f;
             if (wm == 1)
 #pragma unroll
-                for (int mt = 0; mt < MW; ++mt)
-#pragma unroll
-                    for (int t = 0; t < NT; ++t)
-#pragma unroll
-                        for (int j = 0; j < 4; ++j) {
-                            const int col = t * 8 + 2 * c + (j & 1);
-                            const int rl = (rw * MW + mt) * 16 + g + 8 * (j >> 1);
-                            if (col < a.T) xchg[rl * kRows + col] = acc[mt][t][j] * su;
-                        }
+                for (int j = 0; j < 4; ++j) {
+                    const int col = 2 * c + (j & 1), rl = r0l + 8 * (j >> 1);
+                    if (col < a.T) xchg[rl * kRows + col] = acc[j] * su;
+                }
             __syncthreads();
             if (wm == 0)
 #pragma unroll
-                for (int mt = 0; mt < MW; ++mt)
-#pragma unroll
-                    for (int t = 0; t < NT; ++t)
-#pragma unroll
-                        for (int j = 0; j < 4; ++j) {
-                            const int col = t * 8 + 2 * c + (j & 1);
-                            const int rl = (rw * MW + mt) * 16 + g + 8 * (j >> 1);
-                            if (col >= a.T || row0 + rl >= rows) continue;
-                            const float gv = acc[mt][t][j] * sg, uv = xchg[rl * kRows + col];
-                            const float hv = gv / (1.0f + expf(-gv)) * uv;
-                            if (a.y[0]) a.y[0][col * a.ld_y[0] + row0 + rl] = hv;
-                            if (a.act_out) a.act_out[col * rows + row0 + rl] = __bfloat16_as_ushort(__float2bfloat16_rn(hv));
-                        }
+                for (int j = 0; j < 4; ++j) {
+                    const int col = 2 * c + (j & 1), rl = r0l + 8 * (j >> 1);
+                    if (col >= a.T || row0 + rl >= rows) continue;
+                    const float gv = acc[j] * sg, uv = xchg[rl * kRows + col];
+                    const float hv = gv / (1.0f + expf(-gv)) * uv;
+                    if (a.y[0]) a.y[0][col * a.ld_y[0] + row0 + rl] = hv;
+                    if (a.act_out) a.act_out[col * rows + row0 + rl] = __bfloat16_as_ushort(__float2bfloat16_rn(hv));
+                }
             __syncthreads();   // xchg is free for the next item
         } else {
             const float sc = a.scale[mat] ? *a.scale[mat] : 1.0f;
             float* y = a.y[mat];
             const int64_t ld = a.ld_y[mat];
 #pragma unroll
-            for (int mt = 0; mt < MW; ++mt)
-#pragma unroll
-                for (int t = 0; t < NT; ++t)
-#pragma unroll
-                    for (int j = 0; j < 4; ++j) {
-                        const int col = t * 8 + 2 * c + (j & 1);
-                        const int64_t r = row0 + (rw * MW + mt) * 16 + g + 8 * (j >> 1);
-                        if (col >= a.T || r >= rows) continue;
-                        const float v = acc[mt][t][j] * sc;
-                        float* dst = y + col * ld + r;
-                        if (a.epi == (int) Epilogue::Add) *dst += v;
-                        else *dst = v;
-                    }
+            for (int j = 0; j < 4; ++j) {
+                const int col = 2 * c + (j & 1);
+                const int64_t r = row0 + r0l + 8 * (j >> 1);
+                if (col >= a.T || r >= rows) continue;
+                const float v = acc[j] * sc;
+                float* dst = y + col * ld + r;
+                if (a.epi == (int) Epilogue::Add) *dst += v;
+                else *dst = v;
+            }
         }
     }
     cp_wait<0>();

@@ -1,6 +1,6 @@
 // tests/kernels/window_gemm_parity.cpp - a decode window's products (window_gemm.hpp) at the Inkling 2 drafter's widths,
 // NVFP4 planes: against a double-precision reference on the bf16-packed activations, each row of a window bitwise the
-// same whatever the window's rows (1..32) and whatever the other rows hold, the Add and SwiGLU epilogues, a call of
+// same whatever the window's rows (1..8) and whatever the other rows hold, the Add and SwiGLU epilogues, a call of
 // several matrices, and the fused pack against rms_norm_rows followed by pack.
 // --bench: us per call and GB/s of weights, the weights rotated through copies larger than L2.  Exit 77 without a GPU.
 #include "basalt/kernels/dense_ops.hpp"
@@ -175,7 +175,7 @@ void parity(const Shape& sh) {
         for (size_t i = (size_t) T * sh.rows; i < yt.size(); ++i) diff += !std::isnan(yt[i]);   // rows past T untouched
         cudaFree(d_x2);
     }
-    std::printf("%-24s rows bitwise at T = 1..32: %s\n", sh.name, diff ? "DIFFER  FAIL" : "yes");
+    std::printf("%-24s rows bitwise at T = 1..8: %s\n", sh.name, diff ? "DIFFER  FAIL" : "yes");
     if (diff) ++fails;
     const std::vector<float> base((size_t) R * sh.rows, 0.5f);
     cudaMemcpy(d_y2, base.data(), base.size() * 4, cudaMemcpyHostToDevice);
@@ -246,7 +246,7 @@ void parity_swiglu(int64_t rows, int64_t K) {
     std::printf("%-24s SwiGLU vs double: %.3g%s\n", "FP4 gate+up", worst, ok ? "" : "  FAIL");
     if (!ok) ++fails;
     int diff = 0;
-    for (int T : {1, 3, 8, 9, 16, 17, 32}) {
+    for (int T : {1, 3, 5, 8}) {
         cudaMemset(d_h, 0xFF, (size_t) R * rows * 4);
         wg::gemm(c, act, T, ws, nullptr);
         const auto ht = down(d_h, (size_t) R * rows);
@@ -353,7 +353,7 @@ void bench_call(const char* name, int64_t rows, int64_t K, bool swiglu) {
     cudaEvent_t e0, e1;
     cudaEventCreate(&e0);
     cudaEventCreate(&e1);
-    for (int T : {1, 8, 16, 32}) {
+    for (int T : {1, 8}) {
         int it = 0;
         for (int i = 0; i < copies; ++i) {
             set(it++ % copies);

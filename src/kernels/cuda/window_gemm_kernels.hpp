@@ -6,15 +6,15 @@
 
 namespace basalt::kernels::wgemm::detail {
 
-/// The kernel for windows of up to 8 (nt 1), 16 (nt 2) or 32 (nt 4) rows.  Every nt of a kind has the same block shape.
-const Kernel& nvfp4(int nt);
-const Kernel& nvfp4_swiglu(int nt);
+/// The kernel for a call of one or several matrices, and for a SwiGLU pair.
+const Kernel& nvfp4();
+const Kernel& nvfp4_swiglu();
 
-template <int RS, int NM, int CH, int ST, int NT, int MW> Kernel make_kernel() {
+template <int RS, int NM, int CH, int ST> Kernel make_kernel() {
     using C = Cfg<RS, NM, CH, ST>;
     Kernel k;
-    k.fn = wgemm_kernel<RS, NM, CH, ST, NT, MW>;
-    k.threads = C::kThreads / MW;
+    k.fn = wgemm_kernel<RS, NM, CH, ST>;
+    k.threads = C::kThreads;
     k.smem = C::kSmem;
     k.rs = RS;
     k.ch = CH;
