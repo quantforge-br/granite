@@ -766,13 +766,14 @@ public:
         const CardShare sh = card_share(t, g_.n_expert, [&](int l, int e) { return m_.on_card(l, e); });
         return {(int64_t) sh.card, (int64_t) sh.all, 0, 0};
     }
-    std::vector<CardExperts> experts_by_card() const override {   // tensor parallelism: each card its half of every expert
+    // tensor parallelism: each card its half of every expert (half the slots) and a copy of the caches
+    std::vector<CardExperts> experts_by_card() const override {
         std::vector<CardExperts> out;
         for (int card = 0; card < m_.cards(); ++card) {
-            CardExperts ce{m_.card_device(card), 0, 0};
+            CardExperts ce{m_.card_device(card), 0, 0, card > 0};
             for (int l = 0; l < g_.n_layers; ++l) {
                 const LayerWeights& w = m_.layer(l, card);
-                ce.slots += g_.n_expert - w.n_spill;
+                ce.slots += (g_.n_expert - w.n_spill) / m_.cards();
                 ce.bytes += (uint64_t) (g_.n_expert - w.n_spill) * w.expert_stride;
             }
             out.push_back(ce);

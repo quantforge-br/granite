@@ -247,12 +247,13 @@ public:
     }
     std::vector<CardFacts> card_facts() override {
         std::vector<CardFacts> out;
-        for (const basalt::model::ModelSession::CardExperts& c : sessions_[0]->experts_by_card())
-            out.push_back({c.device, c.slots, 0.0, c.bytes, out.empty() ? -1 : 0});
-        // every session's KV is on the main card; a second card holds experts only
+        const std::vector<basalt::model::ModelSession::CardExperts> cards = sessions_[0]->experts_by_card();
+        for (const basalt::model::ModelSession::CardExperts& c : cards) out.push_back({c.device, c.slots, 0.0, c.bytes, 0});
+        // every session's KV is on the main card and on each card that holds a copy of it; another card holds experts only
         int64_t kv = 0;
         for (const auto& s : sessions_) kv = kv < 0 || s->kv_bytes() < 0 ? -1 : kv + s->kv_bytes();
-        if (!out.empty()) out[0].kv_bytes = kv;
+        for (size_t i = 0; i < out.size(); ++i)
+            if (i == 0 || cards[i].kv) out[i].kv_bytes = kv;
         return out;
     }
     bool capture_admit(uint64_t need, uint64_t floor) override {
