@@ -9,7 +9,7 @@ Status:
 
 - The build targets sm_86 only, and Inkling 2 Mini runs on one RTX 3090, its least routed experts in RAM when the context
   leaves no room for them.
-- The other upstream models (Qwen3.8-Flash-Next, Qwen3.8-27B, DeepSeek-V4.1-Flash, Hy4-flash, qwen4exp) are removed.
+- The other upstream models are removed.
 - Two alike cards run each window tensor parallel over P2P: each holds every dense weight and half of every expert, and
   each writes its partial sums into the other's memory ([GPUs](docs/configuration/gpus.md#two-cards)). The attention is not
   split.
