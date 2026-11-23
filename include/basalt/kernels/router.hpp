@@ -13,7 +13,7 @@ enum class RouterGate : int { SqrtSoftplus = 0, Sigmoid = 1 };
 
 struct RouterArgs {
     int n_expert = 384;               ///< multiple of 32, at most 512
-    int n_embd = 5120;                ///< multiple of 128
+    int n_embd = 2304;                ///< multiple of 128, at most 3072
     int k = 6;                        ///< at most 16
     float weight_scale = 1.5f;        ///< multiplies the normalised weights
     RouterGate gate = RouterGate::SqrtSoftplus;
