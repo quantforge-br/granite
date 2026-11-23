@@ -26,14 +26,20 @@ struct Kv {
     std::vector<std::string> strs;     ///< array of strings
     std::vector<int32_t> ints;         ///< array of i32
 };
-inline Kv str(const std::string& k, const std::string& v) { return Kv{k, 8, v, 0}; }
-inline Kv u16(const std::string& k, uint64_t v) { return Kv{k, 2, {}, v}; }
-inline Kv i32(const std::string& k, uint64_t v) { return Kv{k, 5, {}, v}; }
-inline Kv u32(const std::string& k, uint64_t v) { return Kv{k, 4, {}, v}; }
-inline Kv f32(const std::string& k, float v) { Kv x{k, 6}; x.f = v; return x; }
-inline Kv boolean(const std::string& k, bool v) { return Kv{k, 7, {}, v ? 1u : 0u}; }
-inline Kv strs(const std::string& k, std::vector<std::string> v) { Kv x{k, 9}; x.elem = 8; x.strs = std::move(v); return x; }
-inline Kv i32s(const std::string& k, std::vector<int32_t> v) { Kv x{k, 9}; x.elem = 5; x.ints = std::move(v); return x; }
+inline Kv kv(const std::string& k, uint32_t type) {
+    Kv x;
+    x.key = k;
+    x.type = type;
+    return x;
+}
+inline Kv str(const std::string& k, const std::string& v) { Kv x = kv(k, 8); x.s = v; return x; }
+inline Kv u16(const std::string& k, uint64_t v) { Kv x = kv(k, 2); x.u = v; return x; }
+inline Kv i32(const std::string& k, uint64_t v) { Kv x = kv(k, 5); x.u = v; return x; }
+inline Kv u32(const std::string& k, uint64_t v) { Kv x = kv(k, 4); x.u = v; return x; }
+inline Kv f32(const std::string& k, float v) { Kv x = kv(k, 6); x.f = v; return x; }
+inline Kv boolean(const std::string& k, bool v) { Kv x = kv(k, 7); x.u = v ? 1 : 0; return x; }
+inline Kv strs(const std::string& k, std::vector<std::string> v) { Kv x = kv(k, 9); x.elem = 8; x.strs = std::move(v); return x; }
+inline Kv i32s(const std::string& k, std::vector<int32_t> v) { Kv x = kv(k, 9); x.elem = 5; x.ints = std::move(v); return x; }
 
 struct Tensor {
     std::string name;
