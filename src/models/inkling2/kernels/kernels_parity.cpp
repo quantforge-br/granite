@@ -1165,6 +1165,49 @@ void test_moe_finish() {
                   (size_t) R * E * 4);
         same_bits("  two cards' parts: the ring", host(tp.ring, (size_t) kConvRing * E).data(), host(ring3, (size_t) kConvRing * E).data(),
                   (size_t) kConvRing * E * 4);
+        // the exchange's words (one card standing in for both): the sum counted as sent, its count already in the box ->
+        // the same bits, the count told to the other card's box; a box that never reaches the count -> the abort word set
+        // past the bound; once it is set, a wait gives up at once
+        uint32_t* words = zeros<uint32_t>(3);   // the sums sent, the box, the other card's box
+        void* word = nullptr;
+        cudaHostAlloc(&word, 4, cudaHostAllocMapped | cudaHostAllocPortable);
+        volatile uint32_t* const abort_word = static_cast<uint32_t*>(word);
+        *abort_word = 0;
+        const auto counts = [&] { return host(words, 3); };
+        moe_combine(a.rows, a.w, R, K, p0, nullptr, p0_peer, words);
+        const uint32_t one_sent = 1;
+        cudaMemcpy(words + 1, &one_sent, 4, cudaMemcpyHostToDevice);
+        MoeFinish xp = tp;
+        xp.xch.sent = words;
+        xp.xch.box = words + 1;
+        xp.xch.peer_box = words + 2;
+        xp.xch.abort = static_cast<uint32_t*>(word);
+        xp.ring = dev(ring);
+        xp.out = zeros<float>((size_t) R * E);
+        moe_finish(xp, R, nullptr);
+        same_bits("  the exchange's wait: the output", host(xp.out, (size_t) R * E).data(), host(tp.out, (size_t) R * E).data(),
+                  (size_t) R * E * 4);
+        std::vector<uint32_t> c = counts();
+        const bool told = c[0] == 1 && c[2] == 1 && *abort_word == 0;
+        std::printf("%-34s %s\n", "  the exchange's wait: the counts", told ? "ok" : "FAIL");
+        failures += !told;
+        const auto timed = [&] {
+            moe_combine(a.rows, a.w, R, K, p0, nullptr, p0_peer, words);
+            const auto t0 = std::chrono::steady_clock::now();
+            moe_finish(xp, R, nullptr);
+            cudaDeviceSynchronize();
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        };
+        const double bound_s = timed();
+        c = counts();
+        const bool gave_up = cudaGetLastError() == cudaSuccess && *abort_word != 0 && c[0] == 2 && c[2] == 2 && bound_s > 1.0;
+        std::printf("%-34s %s (%.2f s)\n", "  a wait past its bound", gave_up ? "ok" : "FAIL", bound_s);
+        failures += !gave_up;
+        const double after_s = timed();
+        const bool at_once = *abort_word != 0 && counts()[2] == 3 && after_s < 0.1;
+        std::printf("%-34s %s (%.4f s)\n", "  a wait once the word is set", at_once ? "ok" : "FAIL", after_s);
+        failures += !at_once;
+        cudaFreeHost(word);
     }
     MoeFinish one = a;
     one.rows = a.rows + (size_t) 3 * K * E; one.w = a.w + 3 * K; one.pos = a.pos + 3; one.resid = a.resid + 3 * E; one.out = zeros<float>(E);

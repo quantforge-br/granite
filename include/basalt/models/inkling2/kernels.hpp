@@ -172,8 +172,10 @@ void expert_read_ahead(const unsigned long long* blobs, const int32_t* n, uint64
 /// before the experts run. Reads only; `sink` (4 bytes) is written on a 2^-32 chance so the loads are kept.
 void expert_prefetch(const int32_t* ids, int n, const unsigned long long* blobs, uint64_t bytes, uint32_t* sink, void* stream);
 /// y[r] = sum_slot w[r][slot] * out[r * k + slot] in slot order (fp32); `y_peer` set: the same rows into it too (the
-/// other card's receive buffer under tensor parallelism, a peer address).
-void moe_combine(const float* out, const float* w, int rows, int k, float* y, void* stream, float* y_peer = nullptr);
+/// other card's receive buffer under tensor parallelism, a peer address); `sent` set: one more sum counted there (the
+/// card's Exchange::sent).
+void moe_combine(const float* out, const float* w, int rows, int k, float* y, void* stream, float* y_peer = nullptr,
+                 uint32_t* sent = nullptr);
 
 // ---- a decode window's fused glue (kernels/glue.cu): at most kDecodeRows rows --------------------------------------------
 //
@@ -262,6 +264,18 @@ struct PostAttn {
 };
 void post_attn(const PostAttn& a, int rows, void* stream);
 
+/// Tensor parallelism: the words of the cards' exchange of their experts' sums. Each card counts the sums it has sent
+/// (moe_combine) and tells the other card its count in that card's box; a card's finish waits until its box holds its
+/// own count, so the other card's sum of the same visit is in. A wait that passes its bound sets `abort` (mapped host
+/// memory, read by the host after each call) and falls through, as does every wait that has waited a moment once the
+/// word is set: the call ends with garbage rows and the host fails it.
+struct Exchange {
+    const uint32_t* sent = nullptr;   ///< the card's count of sums sent
+    const uint32_t* box = nullptr;    ///< the other card's count, written by it
+    uint32_t* peer_box = nullptr;     ///< the other card's box (a peer address)
+    uint32_t* abort = nullptr;
+};
+
 /// The experts' sum of each row (w[r][slot] * rows[r * k + slot], slot order), its convolution (the ring for the positions
 /// before the window) plus `resid` into `out`.
 struct MoeFinish {
@@ -271,6 +285,7 @@ struct MoeFinish {
     /// set (tensor parallelism): the experts' sum is part[0][r] + part[1][r], card 0's half experts' sum (moe_combine)
     /// and card 1's, in that order on both cards; rows and w unread
     const float* part[2] = {};
+    Exchange xch;                      ///< set (sent): part[] of the other card's is read once the exchange's wait passes
     const int32_t* pos = nullptr;
     const float* taps = nullptr;
     float* ring = nullptr;

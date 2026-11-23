@@ -542,8 +542,9 @@ __global__ void __launch_bounds__(kPrefetchThreads) expert_prefetch_kernel(const
 }
 
 __global__ void moe_combine_kernel(const float* __restrict__ out, const float* __restrict__ w, int k, float* __restrict__ y,
-                                   float* __restrict__ y_peer) {
+                                   float* __restrict__ y_peer, uint32_t* sent) {
     const int r = blockIdx.y, c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (sent && c == 0 && r == 0) *sent += 1;   // read by the card's finish, the kernel after
     if (c >= kWidth) return;
     float acc = 0.f;
     for (int s = 0; s < k; ++s) acc = fmaf(w[r * k + s], out[((size_t) r * k + s) * kWidth + c], acc);
@@ -656,9 +657,9 @@ void moe_plan(const int32_t* ids, int rows, int k, int n_expert, const unsigned 
     check("moe_plan");
 }
 
-void moe_combine(const float* out, const float* w, int rows, int k, float* y, void* stream, float* y_peer) {
+void moe_combine(const float* out, const float* w, int rows, int k, float* y, void* stream, float* y_peer, uint32_t* sent) {
     if (rows <= 0) return;
-    moe_combine_kernel<<<dim3((kWidth + 255) / 256, (unsigned) rows), 256, 0, (cudaStream_t) stream>>>(out, w, k, y, y_peer);
+    moe_combine_kernel<<<dim3((kWidth + 255) / 256, (unsigned) rows), 256, 0, (cudaStream_t) stream>>>(out, w, k, y, y_peer, sent);
     check("moe_combine");
 }
 

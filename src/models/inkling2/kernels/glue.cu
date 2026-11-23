@@ -677,12 +677,50 @@ __global__ void __launch_bounds__(kThreads) post_attn_kernel(PostAttn a) {
 
 // ---- experts -----------------------------------------------------------------------------------------------------------
 
+__device__ __forceinline__ void st_release_sys(uint32_t* p, uint32_t v) {
+    asm volatile("st.release.sys.global.u32 [%0], %1;" ::"l"(p), "r"(v) : "memory");
+}
+__device__ __forceinline__ uint32_t ld_acquire_sys(const uint32_t* p) {
+    uint32_t v;
+    asm volatile("ld.acquire.sys.global.u32 %0, [%1];" : "=r"(v) : "l"(p) : "memory");
+    return v;
+}
+__device__ __forceinline__ uint64_t global_ns() {
+    uint64_t t;
+    asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
+    return t;
+}
+
+// The exchange's wait (Exchange): until the box reaches `want` (counts wrap). It reads the abort word only once it has
+// waited kXchPollNs, and gives up past kXchBoundNs, setting the word.
+constexpr uint64_t kXchPollNs = 1000000ull, kXchBoundNs = 2000000000ull;
+__device__ __noinline__ void exchange_wait(Exchange x, uint32_t want) {
+    const uint64_t t0 = global_ns();
+    while ((int32_t) (ld_acquire_sys(x.box) - want) < 0) {
+        const uint64_t waited = global_ns() - t0;
+        if (waited < kXchPollNs) continue;
+        volatile uint32_t* const word = x.abort;
+        if (*word != 0) return;
+        if (waited > kXchBoundNs) {
+            *word = 1;
+            __threadfence_system();
+            return;
+        }
+    }
+}
+
 // Block (row, 256 channels), a thread a channel: the experts' weighted sums of this row and the rows before it in the
 // window that its convolution reads, the ring for the positions before the window, plus the residual; the ring takes this
 // row's sum.
 __global__ void __launch_bounds__(256) moe_finish_kernel(MoeFinish a) {
     const int r = blockIdx.x;
     const int c = blockIdx.y * 256 + threadIdx.x;
+    // the exchange: block 0 tells the other card this card's count first (its sum went out in the kernel before)
+    uint32_t want = 0;
+    if (a.xch.sent && threadIdx.x == 0) {
+        want = *a.xch.sent;
+        if (r == 0 && blockIdx.y == 0) st_release_sys(a.xch.peer_box, want);
+    }
     // a batch window's row: its conversation's ring, and its rows of the window from its segment's first
     const int sk = bk::seg_of(a.seg.at, r), first = a.seg.at.n > 0 ? a.seg.at.row0[sk] : 0;
     float* const ring = a.seg.at.n > 0 ? a.seg.c[sk].m_ring : a.ring;
@@ -693,6 +731,10 @@ __global__ void __launch_bounds__(256) moe_finish_kernel(MoeFinish a) {
         const int pj = a.pos[r] - 1 - (int) threadIdx.x;
         if (pj >= 0)
             bk::prefetch_l2(ring + (size_t) (pj % kConvRing) * kWidth + blockIdx.y * 256, 256 * 4);
+    }
+    if (a.xch.sent) {   // the other card's sum of this visit is in once the box holds this card's count
+        if (threadIdx.x == 0) exchange_wait(a.xch, want);
+        __syncthreads();
     }
     bk::pdl_wait();
     bk::pdl_launch_dependents();

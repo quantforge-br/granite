@@ -71,8 +71,9 @@ together (`tensor parallelism on CUDA0 and CUDA1`):
 - **Weights:** each card holds every dense weight and half of every routed expert: gate and up rows 0 to 575 on the first
   card, 576 to 1,151 on the second, with the matching half of each down row (about 7.36 GiB of experts a card).
 - **A layer:** both cards run the attention, the router and the mixes on the same rows, then their halves of the routed
-  experts. Each card writes its experts' sum into the other's memory, and both add the two sums, the first card's first, so
-  both cards hold the same bits (`--diag-tp-check` compares every cache after each call). Prompt chunks split the same way.
+  experts. Each card writes its experts' sum into the other's memory, then its count of sums sent, which the other card's
+  kernel waits for (a wait past two seconds fails the call); both add the two sums, the first card's first, so both cards
+  hold the same bits (`--diag-tp-check` compares every cache after each call). Prompt chunks split the same way.
 - **The head:** the first card holds every row (the drafter reads them all), the second a copy of the second half (about
   0.23 GiB). Each card runs its half of a window's head with the kernels one card runs, so every logit keeps its bits; the
   second runs its half as four products and copies each one's logits into the first card's while the next runs, so a

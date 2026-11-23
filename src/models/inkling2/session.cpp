@@ -94,6 +94,7 @@ struct Scratch {
     int32_t *io_d_ = nullptr, *tok_d_ = nullptr, *pos_d_ = nullptr;   // a call's tokens, then its positions
     float* part_ = nullptr;                     // tensor parallelism: the card's experts' sum [rows][E]
     float* recv_[2] = {};                       // and the other card's, by the exchange's parity
+    uint32_t* xch_ = nullptr;                   // and the exchange's words: [0] the sums sent, [1] the box (Exchange)
     float* hlog_ = nullptr;                     // and the card's head rows of a window, [rows][its rows] (split_head)
     static constexpr int kGuessExperts = 8;     // the experts a window's guess requests a visit (rows x kGuessExperts / rows)
     static constexpr int kGuessRows = 2;        // the widest window guessed (wider ones keep the read-ahead)
@@ -109,9 +110,11 @@ struct Shared {
     float* tap = nullptr;                   // DSPARK HOOK: the drafter's features of a call's rows (dspark_tap_bytes)
     model::BatchShared batch;
     std::vector<std::pair<int, void*>> bufs;   // (device, allocation)
+    uint32_t* xch_abort = nullptr;          // tensor parallelism: the exchange's abort word (Exchange), mapped host memory
     ~Shared() {
         prompt.reset();
         cpu.reset();
+        if (xch_abort) cudaFreeHost(xch_abort);
         int dev = 0;
         cudaGetDevice(&dev);
         for (auto [d, p] : bufs) {
@@ -127,6 +130,14 @@ struct Shared {
             const bool ok = alloc_scratch(m, x1, m.card_device(1), false, err);
             cudaSetDevice(m.device());
             if (!ok) return false;
+            void* p = nullptr;
+            if (cudaHostAlloc(&p, 4, cudaHostAllocMapped | cudaHostAllocPortable) != cudaSuccess) {
+                cudaGetLastError();
+                err = "cannot allocate the cards' exchange word";
+                return false;
+            }
+            xch_abort = static_cast<uint32_t*>(p);
+            *(volatile uint32_t*) xch_abort = 0;
         }
         if (!(cpu = CpuExperts::make(m, err)) && !err.empty()) return false;
         void* const st[2] = {streams[0], streams[1]};
@@ -190,6 +201,8 @@ struct Shared {
         if (m.cards() > 1) {
             x.part_ = f(R * E);
             for (float*& p : x.recv_) p = f(R * E);
+            x.xch_ = (uint32_t*) alloc(2 * 4);   // the counts start at 0, as the controllers' counters
+            if (ok && (cudaMemset(x.xch_, 0, 2 * 4) != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess)) ok = false;
             x.hlog_ = f(R * (g.n_vocab - m.head_first(first ? 0 : 1)));
         }
         if (first && m.dspark()) tap = (float*) alloc(dspark_tap_bytes(std::max(kMaxRows, kPromptChunk)));   // DSPARK HOOK
@@ -219,7 +232,6 @@ struct Lane {
     int32_t* rec_n = nullptr;                   // [visit] how many
     bool ra_on = false, pf_on = false;
     std::vector<VisitCache>* vc = nullptr;      // the session's caches on this card
-    cudaEvent_t sent = nullptr;                 // tensor parallelism: behind this card's experts' sum, written to both cards
 };
 
 // The current device for a scope.
@@ -262,14 +274,14 @@ public:
         cudaSetDevice(m_.device());
         for (cudaEvent_t e : stage_ev_)
             if (e) cudaEventDestroy(e);
-        for (cudaEvent_t e : {ra_ev_, ra_join_, gs_ev_, pf_ev_, pf_join_, fork_ev_, pre1_ev_, sent_[0]})
+        for (cudaEvent_t e : {ra_ev_, ra_join_, gs_ev_, pf_ev_, pf_join_, fork_ev_, pre1_ev_})
             if (e) cudaEventDestroy(e);
         if (ra_st_) cudaStreamDestroy(ra_st_);
         if (pf_st_) cudaStreamDestroy(pf_st_);
         if (stream_) cudaStreamDestroy(stream_);
         if (m_.cards() > 1) {
             OnCard on(m_.card_device(1));
-            for (cudaEvent_t e : {join_ev_, st1_ev_, sent_[1], hc_ev_, hc_join_})
+            for (cudaEvent_t e : {join_ev_, st1_ev_, hc_ev_, hc_join_})
                 if (e) cudaEventDestroy(e);
             if (hc_st_) cudaStreamDestroy(hc_st_);
             if (stream1_) cudaStreamDestroy(stream1_);
@@ -286,8 +298,7 @@ public:
             cudaEventCreateWithFlags(&pf_ev_, cudaEventDisableTiming) != cudaSuccess ||
             cudaEventCreateWithFlags(&pf_join_, cudaEventDisableTiming) != cudaSuccess ||
             cudaEventCreateWithFlags(&fork_ev_, cudaEventDisableTiming) != cudaSuccess ||
-            cudaEventCreateWithFlags(&pre1_ev_, cudaEventDisableTiming) != cudaSuccess ||
-            cudaEventCreateWithFlags(&sent_[0], cudaEventDisableTiming) != cudaSuccess) {
+            cudaEventCreateWithFlags(&pre1_ev_, cudaEventDisableTiming) != cudaSuccess) {
             err = "cannot create a stream";
             return false;
         }
@@ -298,7 +309,6 @@ public:
                 cudaStreamCreateWithFlags(&hc_st_, cudaStreamNonBlocking) != cudaSuccess ||
                 cudaEventCreateWithFlags(&join_ev_, cudaEventDisableTiming) != cudaSuccess ||
                 cudaEventCreateWithFlags(&st1_ev_, cudaEventDisableTiming) != cudaSuccess ||
-                cudaEventCreateWithFlags(&sent_[1], cudaEventDisableTiming) != cudaSuccess ||
                 cudaEventCreateWithFlags(&hc_ev_, cudaEventDisableTiming) != cudaSuccess ||
                 cudaEventCreateWithFlags(&hc_join_, cudaEventDisableTiming) != cudaSuccess) {
                 err = "cannot create a stream on CUDA" + std::to_string(m_.card_device(1));
@@ -367,13 +377,11 @@ public:
         static_cast<Scratch&>(*this) = sh_->x;
         lane_[0] = Lane{m_.device(), &sh_->x, stream_, ra_st_, pf_st_, ra_ev_, ra_join_, gs_ev_, pf_ev_, pf_join_, ex_tally_, rec_blobs_, rec_n_};
         lane_[0].vc = &vc_;
-        lane_[0].sent = sent_[0];
         if (tp) {
             lane_[1].device = m_.card_device(1);
             lane_[1].x = &sh_->x1;
             lane_[1].stream = stream1_;
             lane_[1].vc = &vc1_;
-            lane_[1].sent = sent_[1];
         }
         for (int card = 0; card < m_.cards(); ++card) {
             OnCard on(lane_[card].device);
@@ -808,10 +816,14 @@ public:
 private:
     int64_t expert_pairs() const { return (int64_t) g_.n_layers * g_.n_expert; }
 
-    // --diag-tp-check, after a call that returned `r` with both cards synced: every cache and ring of the second card
-    // against the first's, bitwise (a full visit's cells up to the session's position).
+    // After a call that returned `r` with both cards synced: a call whose exchange timed out fails (Exchange; so does
+    // every later one). --diag-tp-check: every cache and ring of the second card against the first's, bitwise (a full
+    // visit's cells up to the session's position).
     model::Result cards_agree(model::Result r) {
-        if (!r.ok() || m_.cards() < 2 || !m_.flags().diag_tp_check) return r;
+        if (!r.ok() || m_.cards() < 2) return r;
+        if (*(volatile const uint32_t*) sh_->xch_abort != 0)
+            return {model::Status::Error, "inkling2: tensor parallelism: a card waited too long for the other card's experts' sum"};
+        if (!m_.flags().diag_tp_check) return r;
         if (cudaStreamSynchronize(stream1_) != cudaSuccess || cudaStreamSynchronize(stream_) != cudaSuccess)
             return {model::Status::Error, "inkling2: a card failed before the tensor-parallel check"};
         const size_t kv_ring = (size_t) kConvRing * kKvHeads * kHeadDim * 4, e_ring = (size_t) kConvRing * g_.n_embd * 4;
@@ -1066,14 +1078,13 @@ private:
         bk::native_expert_grouped(L, x.ex_ptr_, x.ex_start_, x.ex_ng_, x.ex_dst_, x.ex_tok_, std::min(pairs, g_.n_expert), pairs, x.xq_[0], x.ex_scr_,
                                   x.ex_rows_, k.stream);
         if (on_cpu) sh_->cpu->finish(l, rows, x.ids_, x.ex_rows_, k.ex_tally + (size_t) l * g_.n_expert, k.stream);
-        if (m_.cards() > 1) {   // the card's experts' sum, here and into the other card's receive buffer
-            moe_combine(x.ex_rows_, x.rw_, rows, g_.n_used, x.part_, k.stream, lane_[1 - card].x->recv_[parity]);
-            cudaEventRecord(k.sent, k.stream);
-        }
+        if (m_.cards() > 1)   // the card's experts' sum, here and into the other card's receive buffer, counted as sent
+            moe_combine(x.ex_rows_, x.rw_, rows, g_.n_used, x.part_, k.stream, lane_[1 - card].x->recv_[parity], x.xch_);
     }
 
     // Visit `v`'s end on card `card`: the experts' sum (tensor parallelism: both cards' sums, card 0's first, once the other
-    // card's is in), the MLP's convolution and the residual into `out`, and into `tap` too when set.
+    // card's is in: the kernel waits for it, Exchange), the MLP's convolution and the residual into `out`, and into `tap`
+    // too when set.
     void finish_layer(int card, const Visit& v, int rows, float* out, float* tap, int parity) {
         Lane& k = lane_[card];
         const Scratch& x = *k.x;
@@ -1082,7 +1093,10 @@ private:
         mf.w = x.rw_;
         mf.k = g_.n_used;
         if (m_.cards() > 1) {
-            cudaStreamWaitEvent(k.stream, lane_[1 - card].sent, 0);
+            mf.xch.sent = x.xch_;
+            mf.xch.box = x.xch_ + 1;
+            mf.xch.peer_box = lane_[1 - card].x->xch_ + 1;
+            mf.xch.abort = sh_->xch_abort;
             mf.part[0] = card == 0 ? x.part_ : x.recv_[parity];
             mf.part[1] = card == 0 ? x.recv_[parity] : x.part_;
         }
@@ -1419,12 +1433,12 @@ private:
     Lane lane_[2];                           // each card's side of the forward (the first's: the members below)
     std::vector<VisitCache> vc_;
     // tensor parallelism: the second card's caches, stream and events (fork: the window's stream to the second card's;
-    // join: back; pre1/st1: a window's first rows on the second card; sent: behind each card's experts' sum)
+    // join: back; pre1/st1: a window's first rows on the second card)
     std::vector<VisitCache> vc1_;
     cudaStream_t stream1_ = nullptr;
     cudaStream_t hc_st_ = nullptr;                    // the second card's copies of its head rows (split_head)
     cudaEvent_t hc_ev_ = nullptr, hc_join_ = nullptr;
-    cudaEvent_t fork_ev_ = nullptr, join_ev_ = nullptr, pre1_ev_ = nullptr, st1_ev_ = nullptr, sent_[2] = {};
+    cudaEvent_t fork_ev_ = nullptr, join_ev_ = nullptr, pre1_ev_ = nullptr, st1_ev_ = nullptr;
     std::shared_ptr<Shared> sh_;             // the scratch, the prompt path and the batch graphs every session shares
     DsparkHook dspark_;                      // DSPARK HOOK
     Walk walk_;
