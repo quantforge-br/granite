@@ -1,8 +1,8 @@
 # Documents
 
 A message can carry a document, as on the hosted APIs: a PDF, an Office file or a text file, in a user turn or in a tool result. The model reads it on
-every model and every API. Claude Code's Read tool sends a PDF this way, so asking Claude Code to read a paper, a datasheet or a spec
-works against Basalt.
+every API. Claude Code's Read tool sends a PDF this way, so asking Claude Code to read a paper, a datasheet or a spec
+works against granite.
 
 | API | Part | Bytes |
 |---|---|---|
@@ -16,7 +16,7 @@ harness on the same machine can name the file instead of sending its bytes on ev
 
 ## Pages
 
-Basalt adds `"pages"` beside a document's other fields (`file.pages` in Chat Completions): pages and ranges such as `"1-5,8"`. Only
+granite adds `"pages"` beside a document's other fields (`file.pages` in Chat Completions): pages and ranges such as `"1-5,8"`. Only
 those pages are read, under their own numbers, and the frame says which (`read="1-5,8"`). With a path, a harness can hand the model
 pages 40-55 of a long manual without parsing it.
 
