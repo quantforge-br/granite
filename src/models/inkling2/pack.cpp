@@ -135,7 +135,11 @@ bool open_pack(const std::string& path, Pack& p, std::string& err) {
         p.tensors.emplace(name, std::move(r));
     }
 
-    p.experts_range = p.file.range("experts");
+    const core::ModelFile::Section* experts = p.file.find("experts");
+    if (!experts) {
+        err = path + ": no experts section";
+        return false;
+    }
     std::vector<uint8_t> text;
     if (!p.file.read("experts.layout", text, err)) return false;
     std::istringstream in(std::string(text.begin(), text.end()));
@@ -147,11 +151,12 @@ bool open_pack(const std::string& path, Pack& p, std::string& err) {
         std::istringstream ls(line);
         long long l, gu, dt;
         unsigned long long off, by;
-        if (!(ls >> l >> gu >> dt >> off >> by) || l < 0 || l >= g.n_layers || seen[(size_t) l]) {
+        if (!(ls >> l >> gu >> dt >> off >> by) || l < 0 || l >= g.n_layers || seen[(size_t) l] ||
+            off > experts->bytes || by * (uint64_t) g.n_expert > experts->bytes - off) {
             err = "experts.layout: bad line '" + line + "'";
             return false;
         }
-        p.experts[(size_t) l] = {(int) gu, (int) dt, off, by};
+        p.experts[(size_t) l] = {(int) gu, (int) dt, experts->offset + off, by};
         seen[(size_t) l] = true;
     }
     for (int l = 0; l < g.n_layers; ++l)
@@ -160,6 +165,13 @@ bool open_pack(const std::string& path, Pack& p, std::string& err) {
             return false;
         }
     return true;
+}
+
+bool Pack::experts_contiguous(int) const { return true; }
+
+void Pack::expert_spans(int l, int e, uint64_t at, uint64_t n, std::vector<BlobSpan>& out) const {
+    const ExpertLayer& el = experts[(size_t) l];
+    out.push_back({el.offset + (uint64_t) e * el.blob_bytes + at, n, nullptr});
 }
 
 }  // namespace granite::models::inkling2

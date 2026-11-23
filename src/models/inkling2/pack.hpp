@@ -50,9 +50,18 @@ struct TensorRef {
     uint64_t bytes = 0;
 };
 
+/// A piece of an expert's blob: `bytes` at file offset `off`, or the bytes at `mem` the Pack holds.
+struct BlobSpan {
+    uint64_t off = 0, bytes = 0;
+    const uint8_t* mem = nullptr;
+};
+
+/// A layer's experts.  An expert's blob is its gate rows, its up rows, its down rows and, for NVFP4, a 16-byte tail
+/// (kernels' native_expert_layout); the pack stores the layer's blobs one after another from `offset`.
 struct ExpertLayer {
     int gu_type = 0, d_type = 0;
-    uint64_t offset = 0, blob_bytes = 0;   ///< offset inside the experts section
+    uint64_t offset = 0;                   ///< absolute file offset of the first blob
+    uint64_t blob_bytes = 0;
 };
 
 struct Pack {
@@ -61,7 +70,6 @@ struct Pack {
     DsparkGeometry dspark;
     std::map<std::string, TensorRef> tensors;
     std::vector<ExpertLayer> experts;      ///< per layer
-    core::FileRange experts_range;
     core::FileRange vision;                ///< the vision/mmproj section (empty when the pack carries none)
 
     const TensorRef* find(const std::string& n) const {
@@ -69,6 +77,10 @@ struct Pack {
         return it == tensors.end() ? nullptr : &it->second;
     }
     const TensorRef* find(int layer, const char* suffix) const { return find("blk." + std::to_string(layer) + "." + suffix); }
+    /// Whether layer `l`'s blobs are one range of the file: n_expert blobs from experts[l].offset.
+    bool experts_contiguous(int l) const;
+    /// Appends the pieces of bytes [at, at + n) of expert `e`'s blob in layer `l` to `out`, in order.
+    void expert_spans(int l, int e, uint64_t at, uint64_t n, std::vector<BlobSpan>& out) const;
 };
 
 /// The visits of a model with `layers` layers whose layers [start, end) run `passes` times: the prelude, the passes, the

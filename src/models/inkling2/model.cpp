@@ -63,6 +63,32 @@ uint64_t expert_stride(int type, uint64_t blob) {
     const uint64_t unit = block / a * 16;
     return (blob + unit - 1) / unit * unit;
 }
+
+// Queues bytes [at, at + n) of expert `e`'s blob in layer `l` to `dev` on `device`, or to `host` when `dev` is null.
+void read_expert(const Pack& pack, int l, int e, uint64_t at, uint64_t n, int file, uint8_t* dev, int device, uint8_t* host,
+                 core::LoadPlan& to) {
+    std::vector<BlobSpan> spans;
+    pack.expert_spans(l, e, at, n, spans);
+    uint64_t done = 0;
+    for (const BlobSpan& s : spans) {
+        core::LoadItem it;
+        if (s.mem) {
+            it.from = s.mem;
+        } else {
+            it.file = file;
+            it.off = s.off;
+        }
+        it.bytes = s.bytes;
+        if (dev) {
+            it.dev = dev + done;
+            it.device = device;
+        } else {
+            it.host = host + done;
+        }
+        to.add(it);
+        done += s.bytes;
+    }
+}
 }  // namespace
 
 namespace {
@@ -532,25 +558,18 @@ model::Result InklingModel::load_experts(core::LoadPlan& reads, int file, uint64
                 return fail("out of device memory loading layer " + std::to_string(l) + "'s experts");
             }
             if (past) cudaMemset(w.experts + eb, 0, past);
-            if (w.expert_stride == el.blob_bytes) {
+            if (w.expert_stride == el.blob_bytes && pack_.experts_contiguous(l)) {
                 core::LoadItem it;
                 it.file = file;
-                it.off = pack_.experts_range.offset + el.offset;
+                it.off = el.offset;
                 it.bytes = eb;
                 it.dev = w.experts;
                 it.device = device_;
                 reads.add(it);
             } else {
-                cudaMemset(w.experts, 0, eb);
-                for (int e = 0; e < g.n_expert; ++e) {
-                    core::LoadItem it;
-                    it.file = file;
-                    it.off = pack_.experts_range.offset + el.offset + (uint64_t) e * el.blob_bytes;
-                    it.bytes = el.blob_bytes;
-                    it.dev = w.experts + (uint64_t) e * w.expert_stride;
-                    it.device = device_;
-                    reads.add(it);
-                }
+                if (w.expert_stride != el.blob_bytes) cudaMemset(w.experts, 0, eb);
+                for (int e = 0; e < g.n_expert; ++e)
+                    read_expert(pack_, l, e, 0, el.blob_bytes, file, w.experts + (uint64_t) e * w.expert_stride, device_, nullptr, reads);
             }
             experts += eb;
             // the experts' addresses, for the plan
@@ -581,19 +600,14 @@ model::Result InklingModel::load_experts(core::LoadPlan& reads, int file, uint64
             if (w.expert_stride != el.blob_bytes && r.own) cudaMemset(w.experts, 0, r.own);
             for (int e = 0; e < g.n_expert; ++e) {
                 const int s = slot[(size_t) e];
-                core::LoadItem it;
-                it.file = file;
-                it.off = pack_.experts_range.offset + el.offset + (uint64_t) e * el.blob_bytes;
-                it.bytes = el.blob_bytes;
                 if (s < keep) {
-                    it.dev = w.experts + (uint64_t) s * w.expert_stride;
-                    it.device = device_;
-                    table[(size_t) e] = (unsigned long long) it.dev;
+                    uint8_t* d = w.experts + (uint64_t) s * w.expert_stride;
+                    read_expert(pack_, l, e, 0, el.blob_bytes, file, d, device_, nullptr, reads);
+                    table[(size_t) e] = (unsigned long long) d;
                 } else {
-                    it.host = host + (uint64_t) (s - keep) * w.expert_stride;
+                    read_expert(pack_, l, e, 0, el.blob_bytes, file, nullptr, 0, host + (uint64_t) (s - keep) * w.expert_stride, reads);
                     table[(size_t) e] = 0;   // the CPU computes it (cpu_experts.hpp)
                 }
-                reads.add(it);
             }
             experts += (uint64_t) keep * w.expert_stride;
             int32_t* map = reinterpret_cast<int32_t*>(device_buf((uint64_t) g.n_expert * 4));
@@ -645,27 +659,16 @@ model::Result InklingModel::load_expert_halves(core::LoadPlan& reads, int file, 
             cudaMemset(w.experts, 0, eb + past);
             std::vector<unsigned long long> table((size_t) ne);
             for (int e = 0; e < ne; ++e) {
-                const uint64_t blob = pack_.experts_range.offset + el.offset + (uint64_t) e * el.blob_bytes;
                 uint8_t* h = w.experts + (uint64_t) e * w.expert_stride;
                 table[(size_t) e] = (unsigned long long) h;
-                core::LoadItem it;
-                it.file = file;
-                it.device = dev;
-                it.off = blob + (uint64_t) c * w.n_ff * L.gu_row;   // gate
-                it.bytes = (uint64_t) w.n_ff * L.gu_row;
-                it.dev = h;
-                reads.add(it);
-                it.off = blob + L.up_off + (uint64_t) c * w.n_ff * L.up_row;   // up
-                it.bytes = (uint64_t) w.n_ff * L.up_row;
-                it.dev = h + H.up_off;
-                reads.add(it);
+                const uint64_t fn = (uint64_t) w.n_ff;
+                read_expert(pack_, l, e, (uint64_t) c * fn * L.gu_row, fn * L.gu_row, file, h, dev, nullptr, reads);   // gate
+                read_expert(pack_, l, e, L.up_off + (uint64_t) c * fn * L.up_row, fn * L.up_row, file, h + H.up_off, dev, nullptr,
+                            reads);   // up
                 if (c == 0) {   // the whole down rows and tail, once
-                    core::LoadItem d;
-                    d.file = file;
-                    d.off = blob + L.down_off;
-                    d.bytes = L.bytes - L.down_off;
-                    d.host = down_stage_.get() + down_stage_at_[(size_t) l] + (uint64_t) e * d.bytes;
-                    reads.add(d);
+                    const uint64_t db = L.bytes - L.down_off;
+                    read_expert(pack_, l, e, L.down_off, db, file, nullptr, 0,
+                                down_stage_.get() + down_stage_at_[(size_t) l] + (uint64_t) e * db, reads);
                 }
             }
             experts += eb;
