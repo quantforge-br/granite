@@ -33,29 +33,12 @@ int main() {
                   "a model left out is refused with the option that adds it");
         }
     };
-#ifdef BASALT_MODEL_QWEN4EXP
-    expect("qwen4exp", true);
-#else
-    expect("qwen4exp", false);
-#endif
-#ifdef BASALT_MODEL_DEEPSEEK41
-    expect("deepseek41", true);
-#else
-    expect("deepseek41", false);
-#endif
-#ifdef BASALT_MODEL_QWEN35
-    expect("qwen35", true);
-#else
-    expect("qwen35", false);
-#endif
-#ifdef BASALT_MODEL_HY4FLASH
-    expect("hy4flash", true);
-    // and under the architecture its test pack (made from the AngelSlim GGUF) carries
-    check(model::find_adapter("hy_v4_flash") != nullptr, "hy4flash also answers to hy_v4_flash");
-    ++built;
-#else
-    expect("hy4flash", false);
-#endif
+    // Basalt's other models are not granite's: unknown architectures, refused as such
+    for (const char* arch : {"qwen4exp", "deepseek41", "qwen35", "hy4flash", "hy_v4_flash"}) {
+        check(model::find_adapter(arch) == nullptr, "a model granite does not ship is not registered");
+        check(model::unavailable_architecture(arch).find("no model adapter is registered") != std::string::npos,
+              "a model granite does not ship is refused as unknown");
+    }
 #ifdef BASALT_MODEL_INKLING2
     expect("inkling2", true);
 #else
