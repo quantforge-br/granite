@@ -1394,6 +1394,15 @@ __device__ __forceinline__ void row_dot_multi(const uint8_t* row, const block_q8
         if (EXACT_N || c < n) s[c] = warp_sum(s[c]);
 }
 
+// The block rows a grouped call's groups take, each row striding the groups: at most kFewGroups groups take kFewRows
+// of the launched rows and the others leave at once (fewer blocks, each running more of the groups); more groups take
+// every launched row. Each side measured faster at its counts. A group's outputs do not depend on its block, so the
+// same bits.
+constexpr int kFewGroups = 28, kFewRows = 8;
+__device__ __forceinline__ int group_rows(int ng) {
+    return ng <= kFewGroups && (int) gridDim.y > kFewRows ? kFewRows : (int) gridDim.y;
+}
+
 // 8-lane sub-warp row dot for K = nb * ipb == 40 (IQ4_NL or NVFP4 down with n_ff == 640):
 // 4 rows per warp (32 rows per 256-thread block), 100% active lanes, bitwise identical addition tree to row_dot_multi.
 template<int TY, int NC, bool EXACT_N = false, bool PRE = false>
@@ -1612,11 +1621,11 @@ __global__ void __launch_bounds__(256) native_gu_multi_kernel(const unsigned lon
                                                               const int32_t* __restrict__ ent_tok,
                                                               const block_q8_1* __restrict__ xq, NativeExpertLayout L,
                                                               float* __restrict__ gate, float* __restrict__ up) {
-    const int ng = *n_groups;
+    const int ng = *n_groups, gr = group_rows(ng);
     if constexpr (KC > 0) {
-        if (ng <= (int) gridDim.y) pdl_launch_dependents();   // one pass of groups: the dependents wait out one wave
+        if (ng <= gr) pdl_launch_dependents();   // one pass of groups: the dependents wait out one wave
     }
-    if (blockIdx.y >= ng) return;
+    if ((int) blockIdx.y >= min(ng, gr)) return;
     __shared__ alignas(16) uint32_t s_grid_buf[IqGridWords<TG, STAGE_GRID>::value];
     const uint32_t* s_grid = stage_iq_grid<TG, STAGE_GRID>(s_grid_buf, threadIdx.x, 256);
     const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
@@ -1627,7 +1636,7 @@ __global__ void __launch_bounds__(256) native_gu_multi_kernel(const unsigned lon
     const size_t w_off = (is_up ? L.up_off : 0) + (size_t) r * L.gu_row;
     const int nb = (int) (L.n_embd / Fmt<TG>::qk), xb = (int) (L.n_embd / 32);
     float* dst = is_up ? up : gate;
-    for (int g = blockIdx.y; g < ng; g += gridDim.y) {   // the group stride, as native_gu_kernel
+    for (int g = blockIdx.y; g < ng; g += gr) {   // the group stride
         const uint8_t* wr = (const uint8_t*) grp_ptr[g] + w_off;
         const int e0 = grp_start[g], e1 = grp_start[g + 1];
         [[maybe_unused]] const float sc = expert_out_scale<TG>(grp_ptr[g], L, is_up ? 1 : 0);
@@ -2425,8 +2434,8 @@ __global__ void __launch_bounds__(256) native_down_sub8_kernel(const unsigned lo
                                                                const int32_t* __restrict__ ent_dst,
                                                                const block_q8_1* __restrict__ hq, NativeExpertLayout L,
                                                                float* __restrict__ out) {
-    const int ng = *n_groups;
-    if (blockIdx.y >= ng) return;
+    const int ng = *n_groups, gr = group_rows(ng);
+    if ((int) blockIdx.y >= min(ng, gr)) return;
     if constexpr (DEP) {
         const int r0 = blockIdx.x * kDownSub8Rows, nr = min(kDownSub8Rows, (int) L.n_embd - r0);
         const uint8_t* p = (const uint8_t*) grp_ptr[blockIdx.y] + L.down_off + (size_t) r0 * L.d_row;
@@ -2439,7 +2448,7 @@ __global__ void __launch_bounds__(256) native_down_sub8_kernel(const unsigned lo
     if (r >= L.n_embd) return;   // whole 8-lane groups leave together: the shuffles stay within the group
     const int K = (int) (L.n_ff / Fmt<TD>::qk) * Fmt<TD>::ipb, hb = (int) (L.n_ff / 32);
     const size_t w_off = L.down_off + (size_t) r * L.d_row;
-    for (int g = blockIdx.y; g < ng; g += gridDim.y) {
+    for (int g = blockIdx.y; g < ng; g += gr) {
         const uint8_t* wr = (const uint8_t*) grp_ptr[g] + w_off;
         const int e0 = grp_start[g], e1 = grp_start[g + 1];
         [[maybe_unused]] const float sc = expert_out_scale<TD>(grp_ptr[g], L, 2);
