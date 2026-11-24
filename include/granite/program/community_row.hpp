@@ -43,6 +43,11 @@ std::string cpu_label(const std::string& raw_name, int physical_cores);
 /// (a name ending in a plain word carries no quant; the model's adapter names it, see community_quant).
 std::string pack_quant_label(const std::string& pack_name);
 
+/// The quant label of a GGUF from its file name, `BASENAME-LABEL.gguf` with `basename` its general.basename: LABEL by
+/// pack_quant_label's rules (the file's general.name and general.file_type do not name a mix). "unknown" when the name
+/// does not start that way.
+std::string gguf_quant_label(const std::string& path, const std::string& basename);
+
 /// A JSON string literal, quoted the way json.dumps(ensure_ascii=False) does.
 std::string json_quote(const std::string& s);
 

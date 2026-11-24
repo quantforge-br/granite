@@ -94,17 +94,23 @@ public:
         }
         return 0;
     }
-    // the pack's quantization label and the PCI bus ids of the cards this engine computes on, primary first: what a
+    // the file's quantization label and the PCI bus ids of the cards this engine computes on, primary first: what a
     // benchmark row records
     std::string identity_words() const {
-        const granite::core::Json* nm = model_file.meta().get("name");
         std::string ids;
         for (int d : granite::program::engine_gpu_order(o.peer_device, o.peer_devices, {})) {
             std::string bus;
             if (granite::core::device_pci_bus_id(d, bus)) ids += (ids.empty() ? "" : ",") + bus;
         }
-        std::string quant = granite::program::pack_quant_label(nm != nullptr && nm->is_string() ? nm->s : std::string());
-        if (quant == "unknown" && !o.community_quant.empty()) quant = o.community_quant;   // the model names it when the pack's name does not
+        const auto text = [](const granite::core::Json* j) { return j != nullptr && j->is_string() ? j->s : std::string(); };
+        std::string quant;
+        if (model_file.gguf()) {   // a GGUF's label is in its file name
+            const granite::core::Json* kv = model_file.meta().get("gguf_kv");
+            quant = granite::program::gguf_quant_label(model_file.path(), text(kv != nullptr ? kv->get("general.basename") : nullptr));
+        } else {
+            quant = granite::program::pack_quant_label(text(model_file.meta().get("name")));
+            if (quant == "unknown" && !o.community_quant.empty()) quant = o.community_quant;   // the model names it when the pack's name does not
+        }
         return "quant=" + quant + " gpus=" + ids + " ";
     }
     int init_after_input() override {

@@ -168,6 +168,17 @@ int main(int argc, char** argv) {
     check(pack_quant_label("Inkling 2 Mini") == "unknown" && pack_quant_label("Hy4-flash NVFP4") == "NVFP4" &&
               pack_quant_label("Foo Q8_0") == "Q8_0" && pack_quant_label("Foo BF16") == "BF16" && pack_quant_label("Foo UD-Mini") == "unknown",
           "pack_quant_label: a last word without a digit is no quant label");
+    check(gguf_quant_label("/m/Inkling-2-Mini-UD-Q4_K_XL.gguf", "Inkling-2-Mini") == "Q4_K_XL" &&
+              gguf_quant_label("models/gsq/Inkling-2-Mini-GSQ-RCO-IQ3_XS.gguf", "Inkling-2-Mini") == "GSQ-RCO-IQ3_XS" &&
+              gguf_quant_label("Inkling-2-Mini-BF16.gguf", "Inkling-2-Mini") == "BF16",
+          "gguf_quant_label: what follows the basename in the file name");
+    check(gguf_quant_label("Inkling-2-Mini.gguf", "Inkling-2-Mini") == "unknown" &&
+              gguf_quant_label("Inkling-2-Mini-.gguf", "Inkling-2-Mini") == "unknown" &&
+              gguf_quant_label("mini-q4.gguf", "Inkling-2-Mini") == "unknown" &&
+              gguf_quant_label("Inkling-2-MiniQ4.gguf", "Inkling-2-Mini") == "unknown" &&
+              gguf_quant_label("Inkling-2-Mini-Q4_K_M.gguf", "") == "unknown" &&
+              gguf_quant_label("Inkling-2-Mini-Final.gguf", "Inkling-2-Mini") == "unknown",
+          "gguf_quant_label: no basename prefix, no label or no digit is unknown");
     check(cpu_label("", 8).empty() && cpu_label("X", 0) == "X", "cpu_label: empty name, unknown cores");
 
     const auto links = parse_link_rates("noise\npcie_h2d 0000:01:00.0 55.3\npcie_h2d 0000:02:00.0 bad\npcie_h2d 0000:03:00.0 27.9\n");

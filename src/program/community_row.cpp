@@ -104,6 +104,16 @@ std::string pack_quant_label(const std::string& name) {
     return digit ? q : "unknown";
 }
 
+std::string gguf_quant_label(const std::string& path, const std::string& basename) {
+    std::string stem = path.substr(path.find_last_of('/') + 1);
+    const std::string ext = ".gguf";
+    if (stem.size() > ext.size() && stem.compare(stem.size() - ext.size(), ext.size(), ext) == 0) stem.resize(stem.size() - ext.size());
+    if (basename.empty() || stem.size() <= basename.size() + 1 || stem.compare(0, basename.size(), basename) != 0 ||
+        stem[basename.size()] != '-')
+        return "unknown";
+    return pack_quant_label(basename + " " + stem.substr(basename.size() + 1));
+}
+
 std::string community_row_text(const CommunityRow& r) {
     std::string t = "    {\n";
     t += "      \"submitter\": " + json_quote(r.submitter) + ",\n";

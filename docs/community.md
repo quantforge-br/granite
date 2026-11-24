@@ -15,8 +15,11 @@ The rows submitted to upstream Basalt before the fork, of its models and cards, 
 3. Review the row in `docs/community/benchmarks.json`, commit it and open a pull request. If the file already has a row of your setup (see below), the bench replaces that row in place, keeps its `notes` and says so; check the notes still apply. If the bench could not write the file, it prints the row and says where to paste it.
 
 The row records `model` (`Inkling-2-Mini`, the name the model's adapter reports for the pack's architecture, not its file
-name) and `kv`, the KV cache format the run used: Inkling 2 Mini runs its default, `fp16`. Rows of different models are not
-comparable.
+name), `quant` and `kv`, the KV cache format the run used: Inkling 2 Mini runs its default, `fp16`. Rows of different models
+are not comparable. `quant` is the format word at the end of the pack's name, or the adapter's `NVFP4` for the Inkling pack,
+whose name has none. For a GGUF it is the part of the file name after its `general.basename` (`Inkling-2-Mini-UD-Q4_K_XL.gguf`
+records `Q4_K_XL`, `Inkling-2-Mini-GSQ-RCO-IQ3_XS.gguf` records `GSQ-RCO-IQ3_XS`), since a GGUF's metadata does not name its
+mix; otherwise `unknown`.
 
 The bench refuses a row when the engine reports experts read from the SSD. Inkling 2 Mini reports none: its experts sit on the
 card or in page-locked RAM.
