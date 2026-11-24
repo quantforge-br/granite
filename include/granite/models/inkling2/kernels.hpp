@@ -143,6 +143,8 @@ size_t attention_decode_scratch(int rows, int64_t max_keys);
 /// window), with exp(sink[r][h]) beside them in the softmax's denominator. `max_keys` bounds the keys any row reads (it
 /// sizes the launch only: a row's keys split in slices fixed by its own key count). `out` may be null when q8 is set.
 void attention_decode(const AttnArgs& a, int rows, int64_t max_keys, void* scratch, float* out, void* stream);
+/// Diagnostic/test helper: unpack all 256 E4M3 byte codes via the branchless GPU converter into 256 raw IEEE FP16 bits.
+void e4m3_fast_unpack_all_256(uint16_t* out_h16, void* stream);
 
 /// out[r] = attn[r] * sigmoid(yq[r][kOffGate..]), the attention output gated by its own row's gate projection.
 void attn_gate(const float* attn, const float* yq, int rows, float* out, void* stream, int64_t yq_ld = kProjQ);

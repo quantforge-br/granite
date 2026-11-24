@@ -1539,16 +1539,112 @@ void test_batch_window() {
 
 }  // namespace
 
+void test_e4m3_fast_unpack() {
+    uint16_t* dout = zeros<uint16_t>(256);
+    e4m3_fast_unpack_all_256(dout, nullptr);
+    cudaDeviceSynchronize();
+    const std::vector<uint16_t> got = host(dout, 256);
+    bool finite_ok = true, nan_ok = true;
+    for (int b = 0; b < 256; ++b) {
+        const bool is_nan = (b & 0x7F) == 0x7F;
+        if (is_nan) {
+            const uint16_t want_nan_map = (b & 0x80) ? 0xDF80u : 0x5F80u;   // +/-480.0h
+            if (got[b] != want_nan_map) nan_ok = false;
+        } else {
+            const uint8_t u8 = (uint8_t) b;
+            const __half_raw hr = __nv_cvt_fp8_to_halfraw((__nv_fp8_storage_t) u8, __NV_E4M3);
+            if (got[b] != hr.x) {
+                std::printf("  e4m3 mismatch byte 0x%02x: got 0x%04x want 0x%04x\n", b, got[b], hr.x);
+                finite_ok = false;
+            }
+        }
+    }
+    std::printf("%-34s %s\n", "e4m3 fast unpack (254 finite)", finite_ok ? "bitwise" : "FAIL");
+    std::printf("%-34s %s\n", "e4m3 fast unpack (NaN->+-480h)", nan_ok ? "ok" : "FAIL");
+    failures += !finite_ok + !nan_ok;
+    cudaFree(dout);
+}
+
+void test_attention_krows_invariance() {
+    // Verify bitwise T=1..8 invariance across kRows in {1, 2, 4} for both FP16 and FP8, including far-tile kRel skip (pos > 2048).
+    const int maxR = 8;
+    const int p0 = 2990;
+    const int64_t cap = 3072;
+    std::vector<int> pos(maxR);
+    for (int r = 0; r < maxR; ++r) pos[r] = p0 + r;
+    const std::vector<float> q = randn((size_t) maxR * kHeads * kHeadDim, 0.8f);
+    const std::vector<float> rs = randn((size_t) maxR * kHeads * kRel, 1.0f);
+    const std::vector<float> sink = randn((size_t) maxR * kHeads, 2.0f);
+    const std::vector<float> table = randn((size_t) kRel * kExtent, 0.3f);
+    float *dq = dev(q), *drs = dev(rs), *dsink = dev(sink), *dt = dev(table);
+    int* dpos = dev(pos);
+    void* scr = zeros<uint8_t>(attention_decode_scratch(maxR, cap));
+
+    for (bool fp8 : {false, true}) {
+        const size_t n = (size_t) kKvHeads * cap * kHeadDim;
+        void *dk = nullptr, *dv = nullptr;
+        if (fp8) {
+            std::vector<uint8_t> k8(n), v8(n);
+            for (size_t i = 0; i < n; ++i) {
+                k8[i] = __nv_fp8_e4m3(randn(1, 0.6f)[0]).__x;
+                v8[i] = __nv_fp8_e4m3(randn(1, 1.0f)[0]).__x;
+            }
+            dk = dev(k8);
+            dv = dev(v8);
+        } else {
+            std::vector<uint16_t> kh(n), vh(n);
+            for (size_t i = 0; i < n; ++i) {
+                kh[i] = f2h(randn(1, 0.6f)[0]);
+                vh[i] = f2h(randn(1, 1.0f)[0]);
+            }
+            dk = dev(kh);
+            dv = dev(vh);
+        }
+        AttnArgs base;
+        base.q = dq; base.r = drs; base.sink = dsink; base.rel_table = dt; base.pos = dpos;
+        base.k_cache = dk; base.v_cache = dv; base.cap = cap; base.fp8 = fp8; base.window = 0;
+
+        // Reference: each row run alone (kRows=1)
+        std::vector<float> ref_alone((size_t) maxR * kHeads * kHeadDim);
+        float* out1 = zeros<float>((size_t) kHeads * kHeadDim);
+        for (int r = 0; r < maxR; ++r) {
+            AttnArgs o = base;
+            o.q = dq + (size_t) r * kHeads * kHeadDim;
+            o.r = drs + (size_t) r * kHeads * kRel;
+            o.sink = dsink + (size_t) r * kHeads;
+            o.pos = dpos + r;
+            attention_decode(o, 1, p0 + maxR, scr, out1, nullptr);
+            const std::vector<float> g = host(out1, (size_t) kHeads * kHeadDim);
+            std::copy(g.begin(), g.end(), ref_alone.begin() + (size_t) r * kHeads * kHeadDim);
+        }
+        bool all_ok = true;
+        float* outR = zeros<float>((size_t) maxR * kHeads * kHeadDim);
+        for (int R : {2, 3, 4, 5, 7, 8}) {
+            attention_decode(base, R, p0 + maxR, scr, outR, nullptr);
+            const std::vector<float> got = host(outR, (size_t) R * kHeads * kHeadDim);
+            if (std::memcmp(got.data(), ref_alone.data(), (size_t) R * kHeads * kHeadDim * 4) != 0) all_ok = false;
+        }
+        char label[64];
+        std::snprintf(label, sizeof label, "attention T=1..8 (%s, far)", fp8 ? "E4M3" : "FP16");
+        std::printf("%-34s %s\n", label, all_ok ? "bitwise" : "FAIL");
+        failures += !all_ok;
+        cudaFree(out1); cudaFree(outR); cudaFree(dk); cudaFree(dv);
+    }
+    cudaFree(dq); cudaFree(drs); cudaFree(dsink); cudaFree(dt); cudaFree(dpos); cudaFree(scr);
+}
+
 int main() {
     int n = 0;
     if (cudaGetDeviceCount(&n) != cudaSuccess || n == 0) {
         std::printf("no GPU\n");
         return 77;
     }
+    test_e4m3_fast_unpack();
     test_mix();
     test_ctrl();
     test_prepare();
     test_attention();
+    test_attention_krows_invariance();
     test_post_conv();
     test_experts();
     test_expert_halves(40);
