@@ -195,7 +195,7 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
     Smem& sm = *reinterpret_cast<Smem*>(smem_raw);
     const int tid = threadIdx.x, lane = tid & 31, w = tid >> 5;
     const int g = lane >> 2, tq = lane & 3;
-    const int kvh = blockIdx.y;
+    const int kvh = a.g0 + (int) blockIdx.y;
     const int i0 = (int) (gridDim.x - 1 - blockIdx.x) * kPos;   // the block's first row: the blocks with the most keys first
     const int64_t q0 = a.pos0 + i0;
     const int head = kvh * 3 + w / kWarpsPerHead;
@@ -431,7 +431,8 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
 
 void attention_prompt(const AttnPromptArgs& a, int rows, float* out, void* stream) {
     if (rows <= 0) return;
-    const dim3 grid((unsigned) ((rows + kPos - 1) / kPos), kKvHeads);
+    if (a.g0 < 0 || a.ng < 1 || a.g0 + a.ng > kKvHeads) throw std::runtime_error("inkling2 attention_prompt: groups");
+    const dim3 grid((unsigned) ((rows + kPos - 1) / kPos), (unsigned) a.ng);
     cudaStream_t s = (cudaStream_t) stream;
     static bool sized[kOptInDevices] = {};   // the opt-in is per device
     if (bool& z = sized[opt_in_device()]; !z) {

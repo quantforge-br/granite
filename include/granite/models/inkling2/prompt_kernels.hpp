@@ -29,6 +29,7 @@ struct AttnPromptArgs {
     bool fp8 = false;                  ///< unit-scale E4M3 codes instead of fp16
     int window = 0;                    ///< > 0: keys at distance < window only
     float scale = 0.08838834764831845f;
+    int g0 = 0, ng = kKvHeads;         ///< key/value groups [g0, g0 + ng) to compute (TP2 sharding)
 };
 
 /// out[i][h] = sum_j softmax_j(scale q.k_j + bias(p_i - p_j)) v_j over the keys at positions p_j <= p_i (and within the
@@ -68,8 +69,9 @@ void ctrl_up_blend_prompt(const float* dest, const float* msg, const float* hid,
 /// Fused RMSNorm + MMQ Q8_1 quantization (D4 layout) for kWidth-wide rows directly into xq.
 void rms_norm_q8_1_prompt(const float* x, const float* w, int rows, float eps, void* xq, void* stream);
 
-/// Fused attention sigmoid gate + MMQ Q8_1 quantization (D4 layout) for kHeads * kHeadDim-wide rows directly into xq.
-void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, int rows, void* xq, void* stream);
+/// Fused attention sigmoid gate + MMQ Q8_1 quantization (D4 layout) for the heads of groups [g0, g0 + ng) into xq.
+void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, int rows, void* xq, void* stream,
+                           int g0 = 0, int ng = kKvHeads);
 
 /// Deterministic vectorized weighted sum of k fp16 expert outputs per row into fp32 y[rows][kWidth].
 void moe_combine_f16(const uint16_t* out, const float* w, int rows, int k, float* y, void* stream);

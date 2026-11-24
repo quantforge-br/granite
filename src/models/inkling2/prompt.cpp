@@ -61,10 +61,11 @@ struct Bufs {
     float *yq = nullptr, *yk = nullptr, *yv = nullptr, *q = nullptr, *r = nullptr, *sink = nullptr, *attn = nullptr, *o = nullptr;
     void* xq = nullptr;          // the experts' q8_1 rows (their input, then H)
     float *gu = nullptr, *h = nullptr, *moe = nullptr;   // gu also holds the experts' outputs, h the sum
-    uint16_t* p2p_loc = nullptr;                         // TP2 symmetric FP16 local buffer
-    float* p2p_loc_sc = nullptr;                         // TP2 per-row power-of-2 scale (local)
-    uint16_t* recv_f16[2] = {};                          // TP2 symmetric FP16 peer receive buffers, by parity
-    float* recv_sc[2] = {};                              // TP2 per-row power-of-2 scale (peer), by parity
+    uint16_t* p2p_loc = nullptr;                         // TP2 symmetric FP16 local buffer (moe)
+    float* p2p_loc_sc = nullptr;                         // TP2 per-row power-of-2 scale (local moe)
+    float* recv_attn_f32[2] = {};                        // TP2 exact FP32 peer receive buffers (attn out), by parity
+    uint16_t* recv_f16[2] = {};                          // TP2 symmetric FP16 peer receive buffers (moe), by parity
+    float* recv_sc[2] = {};                              // TP2 per-row power-of-2 scale (moe), by parity
     void* xqd = nullptr;         // a dense product's q8_1 rows
     float* rlog = nullptr;
     float* rw = nullptr;
@@ -109,6 +110,7 @@ void carve(Carve& c, Bufs& b, const Geometry& g, int64_t F, bool tp) {
     if (tp) {
         b.p2p_loc = c.take<uint16_t>(R * E);
         b.p2p_loc_sc = c.take<float>(R);
+        for (float*& p : b.recv_attn_f32) p = c.take<float>(R * E);
         for (uint16_t*& p : b.recv_f16) p = c.take<uint16_t>(R * E);
         for (float*& p : b.recv_sc) p = c.take<float>(R);
     }
@@ -139,6 +141,7 @@ struct Lane {
     std::unique_ptr<mmq::Context> mmq;
     cudaStream_t stream = nullptr;
     const std::vector<VisitCache>* vc = nullptr;
+    cudaEvent_t sent_attn = nullptr;
     cudaEvent_t sent = nullptr;
 };
 
@@ -171,6 +174,7 @@ public:
         if (fork_) cudaEventDestroy(fork_);
         for (int c = 0; c < nc_; ++c) {
             cudaSetDevice(lane_[c].device);
+            if (lane_[c].sent_attn) cudaEventDestroy(lane_[c].sent_attn);
             if (lane_[c].sent) cudaEventDestroy(lane_[c].sent);
             lane_[c].mmq.reset();
             if (lane_[c].mem) cudaFree(lane_[c].mem);
@@ -201,7 +205,9 @@ public:
         const int E = g_.n_embd, F = (int) m_.layer(0, card).n_ff;
         Carve c;
         carve(c, ln.b, g_, F, nc_ > 1);
-        if (cudaMalloc(&ln.mem, c.at) != cudaSuccess || cudaEventCreateWithFlags(&ln.sent, cudaEventDisableTiming) != cudaSuccess) {
+        if (cudaMalloc(&ln.mem, c.at) != cudaSuccess ||
+            cudaEventCreateWithFlags(&ln.sent_attn, cudaEventDisableTiming) != cudaSuccess ||
+            cudaEventCreateWithFlags(&ln.sent, cudaEventDisableTiming) != cudaSuccess) {
             cudaGetLastError();
             err = "out of device memory for the prompt path (" + std::to_string(c.at >> 20) + " MiB on CUDA" + std::to_string(ln.device) + ")";
             return false;
@@ -220,7 +226,10 @@ public:
             mmq::load(type, rows);
             return true;
         };
-        if (!ready(8, kProj) || !ready(8, kProjQ) || !ready(8, kProjKV) || !ready(8, kKvHeads * kHeadDim) || !ready(8, E)) return false;
+        if (!ready(8, kProj) || !ready(8, kProjQ) || !ready(8, kProjKV) || !ready(8, 2 * kProjKV) ||
+            !ready(8, (kHeads / 2) * kHeadDim) || !ready(8, kHeads * kRel) || !ready(8, kHeads) ||
+            !ready(8, kKvHeads * kHeadDim) || !ready(8, E))
+            return false;
         for (int l = 0; l < g_.n_layers; ++l) {
             const LayerWeights& w = m_.layer(l, card);
             if (!ready(w.gu_type, 2 * w.n_ff) || !ready(w.d_type, E)) return false;
@@ -311,11 +320,15 @@ private:
         for (const Step& s : walk_.steps) {
             if (const int k = ds_->slot_of_visit(s.visit); k >= 0)   // the drafter's features: the visit's input rows
                 cudaMemcpyAsync(ds_->tap(k), buf(0, s.hid), (size_t) rows * E * 4, cudaMemcpyDeviceToDevice, strm(0));
-            // both cards' layers up to their experts' sums, then each adds the other's
+            // TP2: sharded attention + w.out_part P2P exchange, then MLP + MoE experts + P2P exchange
             const int parity = (int) (exchanges_++ & 1);
             for (int c = 0; c < nc_; ++c) {
                 OnCard on(lane_[c].device);
-                layer(c, s, rows, pos0, parity);
+                layer_attn(c, s, rows, pos0, parity);
+            }
+            for (int c = 0; c < nc_; ++c) {
+                OnCard on(lane_[c].device);
+                layer_mlp(c, s, rows, parity);
             }
             for (int c = 0; c < nc_; ++c) {
                 OnCard on(lane_[c].device);
@@ -348,8 +361,8 @@ private:
 
     // x (rows of `cols` values) as MMQ's q8_1 rows for products of `type`
     void quant(int c, const float* x, int cols, int rows, int type) { mmq::quantize(x, nullptr, b(c).xqd, type, cols, cols, rows, strm(c)); }
-    // y[rows][n_out] = W x for the rows quant() rounded: one Q8_0 matrix [n_out][cols] at w
-    void product(int c, const uint8_t* w, int n_out, int cols, int rows, float* y) {
+    // y[rows][n_out] = W x for the rows quant() rounded: one Q8_0 matrix [n_out][cols] at w (stride ld_dst, 0: n_out)
+    void product(int c, const uint8_t* w, int n_out, int cols, int rows, float* y, int ld_dst = 0) {
         mmq::Product p;
         p.w = w;
         p.type = 8;
@@ -363,7 +376,7 @@ private:
         p.total_rows = rows;
         p.max_rows = rows;
         p.dst = y;
-        p.ld_dst = n_out;
+        p.ld_dst = ld_dst ? ld_dst : n_out;
         lane_[c].mmq->run(p, strm(c));
     }
 
@@ -382,8 +395,9 @@ private:
         attnres_mix(st, w.msg_query, 4, rows, 1e-6f, b(c).msg, (int64_t) rows * g_.n_embd, strm(c));
     }
 
-    // Card c's visit of step s up to its experts' sum (with two cards, into the other's receive buffer too).
-    void layer(int c, const Step& s, int rows, int64_t pos0, int parity) {
+    // Card c's attention phase of step s: sharded Q/Gate projections, sharded attention_prompt and w.out_part under TP2
+    // (KV caches stay replicated across cards so persistence/cards_agree are untouched).
+    void layer_attn(int c, const Step& s, int rows, int64_t pos0, int parity) {
         const Visit& v = g_.visits[(size_t) s.visit];
         const int l = v.layer;
         const LayerWeights& w = m_.layer(l, c);
@@ -411,7 +425,8 @@ private:
             for (int j = 0; j < 3; ++j) in[j] = B.mix + (size_t) j * RE;
         }
         const bool one = !full && in[0] == in[1] && in[1] == in[2];
-        // the projections: fused RMSNorm + Q8_1 quantization directly into xqd, and fused Q+K+V when streams are shared
+        const int ng = kKvHeads / nc_, g0 = c * ng;
+        const int nh = ng * (kHeads / kKvHeads);
         const size_t row_bytes = (size_t) E / 32 * 34;
         if (one) {
             rms_norm_q8_1_prompt(in[0], w.attn_norm, rows, g_.rms_eps, B.xqd, strm(c));
@@ -452,6 +467,8 @@ private:
         ap.q = B.q;
         ap.r = B.r;
         ap.sink = B.sink;
+        ap.g0 = g0;
+        ap.ng = ng;
         attn_prepare(ap, rows, strm(c));
         AttnPromptArgs aa;
         aa.q = B.q;
@@ -468,10 +485,37 @@ private:
         aa.fp8 = fp8;
         aa.window = vc.ring ? g_.window : 0;
         aa.scale = 1.0f / std::sqrt((float) kHeadDim);
+        aa.g0 = g0;
+        aa.ng = ng;
         attention_prompt(aa, rows, B.attn, strm(c));
         if (vc.ring) stage_to_ring(B.k_stage, B.v_stage, kChunk, vc.k, vc.v, vc.cap, pos0, rows, g_.window, fp8 ? 1 : 2, strm(c));
-        attn_gate_q8_1_prompt(B.attn, B.yq, one ? kProj : kProjQ, rows, B.xqd, strm(c));
-        product(c, w.out, E, kOut, rows, B.o);
+        attn_gate_q8_1_prompt(B.attn, B.yq, one ? kProj : kProjQ, rows, B.xqd, strm(c), g0, ng);
+        if (nc_ > 1) {
+            product(c, w.out_part, E, nh * kHeadDim, rows, B.o);
+            cudaMemcpyPeerAsync(b(1 - c).recv_attn_f32[parity], lane_[1 - c].device, B.o, lane_[c].device,
+                                (size_t) rows * E * sizeof(float), strm(c));
+            cudaEventRecord(lane_[c].sent_attn, strm(c));
+        } else {
+            product(c, w.out, E, kOut, rows, B.o);
+        }
+    }
+
+    // Card c's MLP phase of step s: sums TP2 attention partial outputs exactly in FP32, runs post-attn conv and experts.
+    void layer_mlp(int c, const Step& s, int rows, int parity) {
+        const Visit& v = g_.visits[(size_t) s.visit];
+        const int l = v.layer;
+        const LayerWeights& w = m_.layer(l, c);
+        const int E = g_.n_embd;
+        const size_t RE = (size_t) rows * E;
+        const VisitCache& vc = (*lane_[c].vc)[(size_t) v.slot];
+        Bufs& B = b(c);
+        const float* hid = buf(c, s.hid);
+        const float* blocks[kMaxMix];
+        for (int i = 0; i < s.n_blocks; ++i) blocks[i] = buf(c, s.blocks[i]);
+        if (nc_ > 1) {
+            cudaStreamWaitEvent(strm(c), lane_[1 - c].sent_attn, 0);
+            bk::add_inplace(B.o, B.recv_attn_f32[parity], (int64_t) rows * E, strm(c));
+        }
         // the attention's convolution and the residual: a block's first layer starts a new sum
         const bool boundary = g_.boundary(l);
         post_conv(B.o, B.pos, w.attn_post_conv, vc.a_ring, boundary ? nullptr : hid, rows, B.resid, strm(c));

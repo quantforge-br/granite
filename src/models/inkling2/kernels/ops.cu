@@ -276,7 +276,8 @@ __global__ void __launch_bounds__(kThreads) attn_prepare_kernel(AttnPrep a) {
         store_kv4(cache, a.fp8, ((size_t) cell * kKvHeads + w) * kHeadDim + lane * 4,
                   val0 * f, val1 * f, val2 * f, val3 * f);
     }
-    // queries: warp w takes heads 3w .. 3w + 2
+    // queries: warp w takes heads 3w .. 3w + 2 (only this card's groups [g0, g0 + ng) under TP2)
+    if (w < a.g0 || w >= a.g0 + a.ng) return;
     for (int h = w * 3; h < w * 3 + 3; ++h) {
         const int i = lane * 4;
         const float4 yv = *reinterpret_cast<const float4*>(yq + kOffQ + h * kHeadDim + i);

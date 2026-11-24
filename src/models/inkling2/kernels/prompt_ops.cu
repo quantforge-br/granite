@@ -451,15 +451,17 @@ static_assert((kHeads * kHeadDim) % (4 * kGateQ8Threads) == 0, "kHeads * kHeadDi
 
 __global__ void __launch_bounds__(kGateQ8Threads)
     attn_gate_q8_1_prompt_kernel(const float* __restrict__ attn, const float* __restrict__ yq, int64_t yq_ld, int rows,
-                                 Q81MmqBlock* __restrict__ xq) {
+                                 int col0, int width, Q81MmqBlock* __restrict__ xq) {
     const int r = (int) blockIdx.x;
     const int c4 = (int) blockIdx.y * kGateQ8Threads + (int) threadIdx.x;
-    const int col = c4 * 4;
+    const int local_col = c4 * 4;
+    if (local_col >= width) return;
+    const int col = col0 + local_col;
     const float4 a = *reinterpret_cast<const float4*>(attn + (size_t) r * (kHeads * kHeadDim) + col);
     const float4 g = *reinterpret_cast<const float4*>(yq + (size_t) r * yq_ld + kOffGate + col);
     const float4 v = make_float4(a.x / (1.f + expf(-g.x)), a.y / (1.f + expf(-g.y)),
                                  a.z / (1.f + expf(-g.z)), a.w / (1.f + expf(-g.w)));
-    emit_q8_1_sub32(v, col, r, rows, xq);
+    emit_q8_1_sub32(v, local_col, r, rows, xq);
 }
 
 }  // namespace
@@ -471,11 +473,15 @@ void rms_norm_q8_1_prompt(const float* x, const float* w, int rows, float eps, v
     check("rms_norm_q8_1_prompt");
 }
 
-void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, int rows, void* xq, void* stream) {
+void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, int rows, void* xq, void* stream,
+                           int g0, int ng) {
     if (rows <= 0) return;
-    const dim3 grid((unsigned) rows, (unsigned) ((kHeads * kHeadDim) / (4 * kGateQ8Threads)));
+    if (g0 < 0 || ng < 1 || g0 + ng > kKvHeads) throw std::runtime_error("inkling2 attn_gate_q8_1_prompt: groups");
+    const int col0 = g0 * (kHeads / kKvHeads) * kHeadDim;
+    const int width = ng * (kHeads / kKvHeads) * kHeadDim;
+    const dim3 grid((unsigned) rows, (unsigned) ((width + 4 * kGateQ8Threads - 1) / (4 * kGateQ8Threads)));
     attn_gate_q8_1_prompt_kernel<<<grid, kGateQ8Threads, 0, (cudaStream_t) stream>>>(
-        attn, yq, yq_ld, rows, static_cast<Q81MmqBlock*>(xq));
+        attn, yq, yq_ld, rows, col0, width, static_cast<Q81MmqBlock*>(xq));
     check("attn_gate_q8_1_prompt");
 }
 

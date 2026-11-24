@@ -276,6 +276,18 @@ void test_attention_prompt() {
                 same_bits("  rows 37.. as a chunk of their own", g2.data(), &got[(size_t) 37 * kHeads * kHeadDim], g2.size() * 4);
                 cudaFree(out2);
             }
+            // TP2 sharding: halves (g0=0,ng=4 and g0=4,ng=4) match whole attention_prompt bitwise
+            {
+                float* out_sh = zeros<float>((size_t) R * kHeads * kHeadDim);
+                AttnPromptArgs h0 = a, h1 = a;
+                h0.g0 = 0; h0.ng = kKvHeads / 2;
+                h1.g0 = kKvHeads / 2; h1.ng = kKvHeads / 2;
+                attention_prompt(h0, R, out_sh, S);
+                attention_prompt(h1, R, out_sh, S);
+                const std::vector<float> gsh = host(out_sh, (size_t) R * kHeads * kHeadDim);
+                same_bits("  TP2 halves (g0/ng) == whole", gsh.data(), got.data(), got.size() * 4);
+                cudaFree(out_sh);
+            }
             if (window) {
                 cudaFree(dks);
                 cudaFree(dvs);
@@ -1030,6 +1042,63 @@ void test_p2p_f16_symmetric() {
     cudaStreamSynchronize(S);
     same_bits("pack_p2p_f16_scaled card0 == card1", host(sum01, (size_t) R * E).data(),
               host(sum10, (size_t) R * E).data(), (size_t) R * E * 4);
+
+    // Also verify P1.1 sharded attn_gate_q8_1_prompt (g0=0,4; ng=4) + w.out_part == unsharded w.out.
+    {
+        const int Rs = 256;
+        mmq::Context mmq_ctx;
+        std::vector<int32_t> idv(Rs), bv = {0, Rs};
+        std::iota(idv.begin(), idv.end(), 0);
+        int32_t *d_id = dev(idv), *d_b = dev(bv);
+
+        const int kOut = kHeads * kHeadDim;
+        const std::vector<float> att = randn((size_t) Rs * kOut, 0.7f);
+        const std::vector<float> yq = randn((size_t) Rs * kProjQ, 0.7f);
+        float *d_att = dev(att), *d_yq = dev(yq);
+        const size_t wout_row = (size_t) (kOut / 32) * 34, wpart_row = wout_row / 2;
+        std::vector<uint8_t> wout_h((size_t) E * wout_row);
+        for (size_t i = 0; i < wout_h.size(); ++i) wout_h[i] = (uint8_t) ((i * 37 + 13) & 0xFF);
+        for (int r = 0; r < E; ++r)
+            for (int b = 0; b < kOut / 32; ++b) {
+                const uint16_t d = 0x3400u;
+                std::memcpy(&wout_h[(size_t) r * wout_row + b * 34], &d, 2);
+            }
+        std::vector<uint8_t> wp0((size_t) E * wpart_row), wp1((size_t) E * wpart_row);
+        for (int r = 0; r < E; ++r) {
+            std::memcpy(&wp0[(size_t) r * wpart_row], &wout_h[(size_t) r * wout_row], wpart_row);
+            std::memcpy(&wp1[(size_t) r * wpart_row], &wout_h[(size_t) r * wout_row + wpart_row], wpart_row);
+        }
+        uint8_t *d_wout = dev(wout_h), *d_wp0 = dev(wp0), *d_wp1 = dev(wp1);
+        void *xq_all = zeros<uint8_t>(mmq::q8_bytes(Rs, kOut));
+        void *xq0 = zeros<uint8_t>(mmq::q8_bytes(Rs, kOut / 2));
+        void *xq1 = zeros<uint8_t>(mmq::q8_bytes(Rs, kOut / 2));
+        float *o_all = zeros<float>((size_t) Rs * E), *o0 = zeros<float>((size_t) Rs * E), *o1 = zeros<float>((size_t) Rs * E);
+        attn_gate_q8_1_prompt(d_att, d_yq, kProjQ, Rs, xq_all, S, 0, kKvHeads);
+        attn_gate_q8_1_prompt(d_att, d_yq, kProjQ, Rs, xq0, S, 0, kKvHeads / 2);
+        attn_gate_q8_1_prompt(d_att, d_yq, kProjQ, Rs, xq1, S, kKvHeads / 2, kKvHeads / 2);
+        auto run_mmq = [&](const uint8_t* w, int nr, int nc, void* xq, float* dst, int ld) {
+            mmq::Product p;
+            p.w = w; p.type = 8; p.w_rows = nr; p.w_cols = nc;
+            p.expert_bytes = mmq::matrix_bytes(8, nr, nc);
+            p.n = 1; p.xq = xq; p.bounds = d_b; p.ids = d_id;
+            p.total_rows = Rs; p.max_rows = Rs; p.dst = dst; p.ld_dst = ld;
+            mmq_ctx.run(p, S);
+        };
+        run_mmq(d_wout, E, kOut, xq_all, o_all, E);
+        run_mmq(d_wp0, E, kOut / 2, xq0, o0, E);
+        run_mmq(d_wp1, E, kOut / 2, xq1, o1, E);
+        cudaStreamSynchronize(S);
+        const std::vector<float> ha = host(o_all, (size_t) Rs * E);
+        const std::vector<float> h0 = host(o0, (size_t) Rs * E), h1 = host(o1, (size_t) Rs * E);
+        std::vector<float> hsum(ha.size());
+        for (size_t i = 0; i < ha.size(); ++i) hsum[i] = h0[i] + h1[i];
+        report("P1.1 attn_gate+out_part halves vs whole", hsum, ha, 1e-5);
+
+        cudaFree(d_id); cudaFree(d_b); cudaFree(d_att); cudaFree(d_yq);
+        cudaFree(d_wout); cudaFree(d_wp0); cudaFree(d_wp1);
+        cudaFree(xq_all); cudaFree(xq0); cudaFree(xq1);
+        cudaFree(o_all); cudaFree(o0); cudaFree(o1);
+    }
 
     cudaFree(do0); cudaFree(do1); cudaFree(dw0); cudaFree(dw1);
     cudaFree(l0); cudaFree(p0); cudaFree(l1); cudaFree(p1);
