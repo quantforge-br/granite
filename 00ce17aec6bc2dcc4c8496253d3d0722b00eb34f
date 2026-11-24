@@ -1,0 +1,4 @@
+Correction to this message: at n_ff 1152 the MXFP4 down product runs
+native_down_sub8_kernel<39, true, 0>, the 8-lane kernel that counts K at
+run time (KC = 0), not an unrolled one. Only NVFP4 has the unrolled form
+(KC = 72).
