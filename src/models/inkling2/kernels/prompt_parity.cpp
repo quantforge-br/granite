@@ -968,6 +968,75 @@ void test_dense() {
 }
 }  // namespace
 
+void test_p2p_f16_symmetric() {
+    const int R = 64, K = 8;
+    std::vector<float> out0 = randn((size_t) R * K * E, 1.5f);
+    std::vector<float> out1 = randn((size_t) R * K * E, 1.5f);
+    std::vector<float> w0 = randn((size_t) R * K, 0.4f, 0.5f);
+    std::vector<float> w1 = randn((size_t) R * K, 0.4f, 0.5f);
+    // Inject overflow-scale rows (> 32768) and exact +/-0.0 edge cases
+    w0[5 * K + 0] = 1.0f;
+    w1[5 * K + 0] = 1.0f;
+    for (int c = 0; c < E; ++c) {
+        out0[(size_t) (5 * K + 0) * E + c] = (c % 2 == 0 ? 1.f : -1.f) * 1.5e5f;
+        out1[(size_t) (5 * K + 0) * E + c] = (c % 2 == 0 ? -1.f : 1.f) * 9.0e4f;
+        out0[(size_t) (6 * K + 0) * E + c] = 0.0f;
+        out1[(size_t) (6 * K + 0) * E + c] = -0.0f;
+        for (int s = 1; s < K; ++s) {
+            out0[(size_t) (6 * K + s) * E + c] = 0.0f;
+            out1[(size_t) (6 * K + s) * E + c] = 0.0f;
+        }
+    }
+    float *do0 = dev(out0), *do1 = dev(out1), *dw0 = dev(w0), *dw1 = dev(w1);
+    uint16_t *l0 = zeros<uint16_t>((size_t) R * E), *p0 = zeros<uint16_t>((size_t) R * E);
+    uint16_t *l1 = zeros<uint16_t>((size_t) R * E), *p1 = zeros<uint16_t>((size_t) R * E);
+    float *s0 = zeros<float>(R), *sp0 = zeros<float>(R), *s1 = zeros<float>(R), *sp1 = zeros<float>(R);
+    float *sum01 = zeros<float>((size_t) R * E), *sum10 = zeros<float>((size_t) R * E);
+
+    moe_combine_p2p_f16(do0, dw0, R, K, l0, s0, p0, sp0, S);
+    moe_combine_p2p_f16(do1, dw1, R, K, l1, s1, p1, sp1, S);
+    add_p2p_f16_scaled(l0, s0, p1, sp1, sum01, R, E, S);   // card 0 order: local0 + peer1
+    add_p2p_f16_scaled(l1, s1, p0, sp0, sum10, R, E, S);   // card 1 order: local1 + peer0
+    cudaStreamSynchronize(S);
+
+    const std::vector<float> g01 = host(sum01, (size_t) R * E);
+    const std::vector<float> g10 = host(sum10, (size_t) R * E);
+    same_bits("moe_combine_p2p_f16 card0 == card1", g01.data(), g10.data(), g01.size() * 4);
+    const std::vector<float> hs0 = host(s0, R), hs1 = host(s1, R);
+    const bool scale_ok = (hs0[0] == 1.f) && (hs0[5] > 1.f) && (hs1[5] > 1.f) && std::isfinite(g01[5 * E]);
+    std::printf("%-44s %s\n", "moe_combine_p2p_f16 overflow pow2 scale", scale_ok ? "ok" : "FAIL");
+    failures += !scale_ok;
+
+    // CPU FP32 reference check (normal + overflow rows)
+    std::vector<double> ref((size_t) R * E, 0.0);
+    for (int r = 0; r < R; ++r)
+        for (int c = 0; c < E; ++c) {
+            double a = 0.0, b = 0.0;
+            for (int s = 0; s < K; ++s) {
+                a += (double) w0[r * K + s] * (double) out0[((size_t) r * K + s) * E + c];
+                b += (double) w1[r * K + s] * (double) out1[((size_t) r * K + s) * E + c];
+            }
+            ref[(size_t) r * E + c] = a + b;
+        }
+    report("moe_combine_p2p_f16 vs FP32 ref", g01, ref, 1e-3);
+
+    // Also test pack_p2p_f16_scaled commutativity
+    float* srcA = dev(g01);
+    float* srcB = dev(g10);
+    pack_p2p_f16_scaled(srcA, l0, s0, p0, sp0, R, E, S);
+    pack_p2p_f16_scaled(srcB, l1, s1, p1, sp1, R, E, S);
+    add_p2p_f16_scaled(l0, s0, p1, sp1, sum01, R, E, S);
+    add_p2p_f16_scaled(l1, s1, p0, sp0, sum10, R, E, S);
+    cudaStreamSynchronize(S);
+    same_bits("pack_p2p_f16_scaled card0 == card1", host(sum01, (size_t) R * E).data(),
+              host(sum10, (size_t) R * E).data(), (size_t) R * E * 4);
+
+    cudaFree(do0); cudaFree(do1); cudaFree(dw0); cudaFree(dw1);
+    cudaFree(l0); cudaFree(p0); cudaFree(l1); cudaFree(p1);
+    cudaFree(s0); cudaFree(sp0); cudaFree(s1); cudaFree(sp1);
+    cudaFree(sum01); cudaFree(sum10); cudaFree(srcA); cudaFree(srcB);
+}
+
 int main() {
     int n = 0;
     if (cudaGetDeviceCount(&n) != cudaSuccess || n == 0) {
@@ -975,6 +1044,7 @@ int main() {
         return 77;
     }
     cudaStreamCreate(&S);
+    test_p2p_f16_symmetric();
     test_dense();
     test_attention_prompt();
     test_router();

@@ -74,4 +74,19 @@ void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, in
 /// Deterministic vectorized weighted sum of k fp16 expert outputs per row into fp32 y[rows][kWidth].
 void moe_combine_f16(const uint16_t* out, const float* w, int rows, int k, float* y, void* stream);
 
+/// TP2 prefill symmetric P2P combine: sums k fp32 expert outputs per row, rounds BOTH local and peer outputs to the
+/// exact same fp16 representation (with deterministic per-row power-of-2 scale when |row_amax| > 32768) via 16-byte
+/// coalesced writes so both cards later sum identical operands (card0_bits == card1_bits).
+void moe_combine_p2p_f16(const float* out, const float* w, int rows, int k, uint16_t* y_local, float* scale_local,
+                         uint16_t* y_peer, float* scale_peer, void* stream);
+
+/// Symmetric P2P FP16 packer for arbitrary fp32 [rows][width] (width % 8 == 0, e.g. w.out_part): rounds to identical
+/// fp16 + per-row power-of-2 scale into both local and peer buffers via 16-byte writes.
+void pack_p2p_f16_scaled(const float* src, uint16_t* dst_local, float* scale_local, uint16_t* dst_peer, float* scale_peer,
+                         int rows, int width, void* stream);
+
+/// Commutative fp32 sum of two symmetric scaled fp16 arrays: out[r][c] = fp32(a[r][c]) * sa[r] + fp32(b[r][c]) * sb[r].
+void add_p2p_f16_scaled(const uint16_t* a, const float* sa, const uint16_t* b, const float* sb, float* out, int rows,
+                        int width, void* stream);
+
 }  // namespace granite::models::inkling2

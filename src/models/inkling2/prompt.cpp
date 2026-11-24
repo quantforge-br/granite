@@ -61,7 +61,10 @@ struct Bufs {
     float *yq = nullptr, *yk = nullptr, *yv = nullptr, *q = nullptr, *r = nullptr, *sink = nullptr, *attn = nullptr, *o = nullptr;
     void* xq = nullptr;          // the experts' q8_1 rows (their input, then H)
     float *gu = nullptr, *h = nullptr, *moe = nullptr;   // gu also holds the experts' outputs, h the sum
-    float* recv[2] = {};         // tensor parallelism: the other card's experts' sums, by the exchange's parity
+    uint16_t* p2p_loc = nullptr;                         // TP2 symmetric FP16 local buffer
+    float* p2p_loc_sc = nullptr;                         // TP2 per-row power-of-2 scale (local)
+    uint16_t* recv_f16[2] = {};                          // TP2 symmetric FP16 peer receive buffers, by parity
+    float* recv_sc[2] = {};                              // TP2 per-row power-of-2 scale (peer), by parity
     void* xqd = nullptr;         // a dense product's q8_1 rows
     float* rlog = nullptr;
     float* rw = nullptr;
@@ -103,8 +106,12 @@ void carve(Carve& c, Bufs& b, const Geometry& g, int64_t F, bool tp) {
     if (c.base && (uint8_t*) b.xq + mmq::q8_bytes((int64_t) P, (int64_t) E) > (uint8_t*) b.nrm)
         throw std::logic_error("inkling2 prompt: the experts' input rows overlap the MLP's normed rows");
     c.at = std::max(end_a, x.at);
-    if (tp)
-        for (float*& p : b.recv) p = c.take<float>(R * E);
+    if (tp) {
+        b.p2p_loc = c.take<uint16_t>(R * E);
+        b.p2p_loc_sc = c.take<float>(R);
+        for (uint16_t*& p : b.recv_f16) p = c.take<uint16_t>(R * E);
+        for (float*& p : b.recv_sc) p = c.take<float>(R);
+    }
     b.xqd = c.take<uint8_t>(mmq::q8_bytes((int64_t) R, std::max<int64_t>((int64_t) E, kOut)));
     b.rlog = c.take<float>(R * (size_t) g.n_expert);
     b.rw = c.take<float>(P);
@@ -488,7 +495,7 @@ private:
         Bufs& B = b(c);
         if (nc_ > 1) {
             cudaStreamWaitEvent(strm(c), lane_[1 - c].sent, 0);
-            bk::add_inplace(B.moe, B.recv[parity], (int64_t) rows * g_.n_embd, strm(c));
+            add_p2p_f16_scaled(B.p2p_loc, B.p2p_loc_sc, B.recv_f16[parity], B.recv_sc[parity], B.moe, rows, g_.n_embd, strm(c));
         }
         post_conv(B.moe, B.pos, w.ffn_post_conv, vc.m_ring, B.resid, rows, buf(c, s.out), strm(c));
     }
@@ -551,8 +558,13 @@ private:
         d.dst = B.gu;
         d.ld_dst = E;
         lane_[c].mmq->run(d, st);
-        moe_combine(B.gu, B.rw, rows, k, B.moe, st, nc_ > 1 ? b(1 - c).recv[parity] : nullptr);
-        if (nc_ > 1) cudaEventRecord(lane_[c].sent, st);
+        if (nc_ > 1) {
+            moe_combine_p2p_f16(B.gu, B.rw, rows, k, B.p2p_loc, B.p2p_loc_sc,
+                                b(1 - c).recv_f16[parity], b(1 - c).recv_sc[parity], st);
+            cudaEventRecord(lane_[c].sent, st);
+        } else {
+            moe_combine(B.gu, B.rw, rows, k, B.moe, st, nullptr);
+        }
     }
 
     InklingModel& m_;
