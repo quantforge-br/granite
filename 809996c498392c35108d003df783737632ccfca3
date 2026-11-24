@@ -1,0 +1,5 @@
+Correction to this message: the old stride was a multiple of 16 bytes
+and, only when the gate/up type was Q8_0 or NVFP4, of that type's block
+(34 or 36 bytes); for every other type, gate/up or down, it was a
+multiple of 16 bytes alone. A GSQ layer's stride was therefore whole
+blocks of neither of its types in general, not of its gate/up type.
