@@ -537,11 +537,11 @@ int main(int argc, char** argv) {
         cudaFree(dk); cudaFree(dv); cudaFree(c8.k); cudaFree(c8.v); cudaFree(c8.ks); cudaFree(c8.vs);
         cudaFree(dq); cudaFree(dout); cudaFree(dscr); cudaFree(dpos);
     }
-    // ---- gqa_window_attn (head_dim=128, block=true, KvInt8 g64) vs dequantized FP16 reference (P1.2 DSpark)
-    {
-        constexpr int WNH = 24, WNKV = 8, WHD = 128, WT = 8;
-        const int64_t cap = 4096, pos0 = 3100, hi = pos0 + WT, win = hi;
-        std::mt19937 wr(99);
+    // ---- gqa_window_attn (hd=128 & hd=256, block=true/false, wrap-around cap, KvInt8 g64) vs dequantized FP16 reference (P1.2)
+    for (const int WHD : {128, 256}) {
+        constexpr int WNH = 24, WNKV = 8, WT = 8;
+        const int64_t cap = 1024;
+        std::mt19937 wr(99 + WHD);
         std::normal_distribution<float> wn(0.0f, 0.5f);
         const size_t n = (size_t) cap * WNKV * WHD;
         std::vector<uint16_t> hk(n), hv(n), kd(n), vd(n);
@@ -585,17 +585,23 @@ int main(int argc, char** argv) {
         float *dq = dev<float>(hq.size()), *out_f16 = dev<float>(hq.size()), *out_i8 = dev<float>(hq.size());
         float* dscr = dev<float>(granite::kernels::gqa_decode_scratch_floats(cap, WT, WNH, WHD));
         ck(cudaMemcpy(dq, hq.data(), hq.size() * 4, cudaMemcpyHostToDevice), "copy");
-        granite::kernels::gqa_window_attn(dq, dk, dv, WNH, WNKV, WHD, pos0, WT, hi, win, cap, dscr, cap, out_f16, nullptr, true);
-        granite::kernels::gqa_window_attn(dq, nullptr, nullptr, WNH, WNKV, WHD, pos0, WT, hi, win, cap, dscr, cap, out_i8, nullptr, true, q8);
-        std::vector<float> hf16(hq.size()), hi8(hq.size());
-        ck(cudaMemcpy(hf16.data(), out_f16, hq.size() * 4, cudaMemcpyDeviceToHost), "copy");
-        ck(cudaMemcpy(hi8.data(), out_i8, hq.size() * 4, cudaMemcpyDeviceToHost), "copy");
-        const bool exact = std::memcmp(hf16.data(), hi8.data(), hq.size() * 4) == 0;
-        Err ew;
-        for (size_t i = 0; i < hq.size(); ++i) ew.add(hi8[i], hf16[i]);
-        std::printf("gqa_window_attn (hd=128, KvInt8 g64 vs dequant fp16): bitwise %s, max abs %.3g rel %.3g\n",
-                    exact ? "yes" : "NO", ew.abs, ew.rel);
-        if (!exact) ++fails;
+        // Test both non-wrap (pos0=700) and wrap-around crossing cap=1024 (pos0=1020, hi=1028), block=true and block=false
+        for (const int64_t pos0 : {(int64_t) 700, (int64_t) 1020}) {
+            const int64_t hi = pos0 + WT, win = 512;
+            for (const bool blk : {false, true}) {
+                granite::kernels::gqa_window_attn(dq, dk, dv, WNH, WNKV, WHD, pos0, WT, hi, win, cap, dscr, cap, out_f16, nullptr, blk);
+                granite::kernels::gqa_window_attn(dq, nullptr, nullptr, WNH, WNKV, WHD, pos0, WT, hi, win, cap, dscr, cap, out_i8, nullptr, blk, q8);
+                std::vector<float> hf16(hq.size()), hi8(hq.size());
+                ck(cudaMemcpy(hf16.data(), out_f16, hq.size() * 4, cudaMemcpyDeviceToHost), "copy");
+                ck(cudaMemcpy(hi8.data(), out_i8, hq.size() * 4, cudaMemcpyDeviceToHost), "copy");
+                const bool exact = std::memcmp(hf16.data(), hi8.data(), hq.size() * 4) == 0;
+                Err ew;
+                for (size_t i = 0; i < hq.size(); ++i) ew.add(hi8[i], hf16[i]);
+                std::printf("gqa_window_attn (hd=%d pos0=%lld blk=%d KvInt8 vs dequant fp16): bitwise %s, max abs %.3g\n",
+                            WHD, (long long) pos0, (int) blk, exact ? "yes" : "NO", ew.abs);
+                if (!exact) ++fails;
+            }
+        }
         cudaFree(dk); cudaFree(dv); cudaFree(q8.k); cudaFree(q8.v); cudaFree(q8.ks); cudaFree(q8.vs);
         cudaFree(dq); cudaFree(out_f16); cudaFree(out_i8); cudaFree(dscr);
     }
