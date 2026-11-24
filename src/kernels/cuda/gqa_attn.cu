@@ -1078,7 +1078,7 @@ void gqa_decode_attn_segs(const float* q, int n_head, int n_kv, const GqaSeg* se
 
 void gqa_window_attn(const float* q, const uint16_t* k_cache, const uint16_t* v_cache, int n_head, int n_kv, int head_dim,
                      int64_t pos0, int T, int64_t hi, int64_t window, int64_t cap, float* scratch, int64_t scratch_cells,
-                     float* out, void* stream, bool block) {
+                     float* out, void* stream, bool block, KvInt8 q8) {
     if (T < 1 || T > kGqaMaxWindow || n_kv < 1 || n_head % n_kv || n_head / n_kv > GMAX || window <= 0 ||
         (head_dim != 128 && head_dim != 256) || hi < pos0 + T) {
         granite::log::error("granite", "gqa_window_attn: invalid arguments");
@@ -1099,8 +1099,8 @@ void gqa_window_attn(const float* q, const uint16_t* k_cache, const uint16_t* v_
         granite::log::error("granite", "gqa_window_attn: the window passes its scratch");
         std::exit(1);
     }
-    if (head_dim == 128) launch_window<128>(q, k_cache, v_cache, n_head, n_kv, r, T, scratch, n_chunks, out, (cudaStream_t) stream);
-    else launch_window<256>(q, k_cache, v_cache, n_head, n_kv, r, T, scratch, n_chunks, out, (cudaStream_t) stream);
+    if (head_dim == 128) launch_window<128>(q, k_cache, v_cache, n_head, n_kv, r, T, scratch, n_chunks, out, (cudaStream_t) stream, q8);
+    else launch_window<256>(q, k_cache, v_cache, n_head, n_kv, r, T, scratch, n_chunks, out, (cudaStream_t) stream, q8);
 }
 
 void gqa_prompt_plan_device(int device) { plan_device.store(device, std::memory_order_relaxed); }

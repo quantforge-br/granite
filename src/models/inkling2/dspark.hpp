@@ -37,6 +37,7 @@
 #include "granite/model/adapter.hpp"
 #include "granite/models/inkling2/dspark_kernels.hpp"
 #include "granite/models/inkling2/kernels.hpp"
+#include "granite/kernels/gqa_attn.hpp"
 #include "granite/kernels/window_gemm.hpp"
 #include "granite/program/options.hpp"
 #include "models/inkling2/pack.hpp"
@@ -161,7 +162,8 @@ public:
 
 private:
     struct Cache {
-        uint16_t *k = nullptr, *v = nullptr;   ///< fp16 [cap][kv heads][head width], position p at cell p % cap
+        uint16_t *k = nullptr, *v = nullptr;   ///< fp16 [cap][kv heads][head width] (ring layers), position p at cell p % cap
+        granite::kernels::KvInt8 q8 = {};      ///< int8 g64 (full layers): codes [cap][kv heads][head width], fp16 scales [cap][kv heads][head width/64]
         int64_t cap = 0;
         bool ring = false;
     };
