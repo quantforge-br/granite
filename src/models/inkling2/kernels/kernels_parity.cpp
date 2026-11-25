@@ -1580,9 +1580,12 @@ void test_attention_krows_invariance() {
     int* dpos = dev(pos);
     void* scr = zeros<uint8_t>(attention_decode_scratch(maxR, cap));
 
-    for (bool fp8 : {false, true}) {
+    for (int mode = 0; mode < 3; ++mode) {   // 0: FP16, 1: E4M3, 2: KvInt8 g64
+        const bool fp8 = mode == 1, i8 = mode == 2;
         const size_t n = (size_t) kKvHeads * cap * kHeadDim;
         void *dk = nullptr, *dv = nullptr;
+        uint16_t *dks = nullptr, *dvs = nullptr;
+        std::vector<uint16_t> kh_deq, vh_deq;
         if (fp8) {
             std::vector<uint8_t> k8(n), v8(n);
             for (size_t i = 0; i < n; ++i) {
@@ -1591,6 +1594,24 @@ void test_attention_krows_invariance() {
             }
             dk = dev(k8);
             dv = dev(v8);
+        } else if (i8) {
+            std::vector<int8_t> k8(n), v8(n);
+            std::vector<uint16_t> ks(n / 64), vs(n / 64);
+            kh_deq.resize(n); vh_deq.resize(n);
+            for (size_t g = 0; g < n / 64; ++g) {
+                std::vector<float> fk = randn(64, 0.6f), fv = randn(64, 1.0f);
+                float ak = 0.f, av = 0.f;
+                for (int i = 0; i < 64; ++i) { ak = std::max(ak, std::fabs(fk[i])); av = std::max(av, std::fabs(fv[i])); }
+                ks[g] = f2h(ak / 127.f); vs[g] = f2h(av / 127.f);
+                const float sk = (float) h2d(ks[g]), sv = (float) h2d(vs[g]);
+                for (int i = 0; i < 64; ++i) {
+                    k8[g * 64 + i] = (int8_t) std::max(-127.f, std::min(127.f, sk > 0 ? std::rint(fk[i] / sk) : 0.f));
+                    v8[g * 64 + i] = (int8_t) std::max(-127.f, std::min(127.f, sv > 0 ? std::rint(fv[i] / sv) : 0.f));
+                    kh_deq[g * 64 + i] = f2h((float) k8[g * 64 + i] * sk);
+                    vh_deq[g * 64 + i] = f2h((float) v8[g * 64 + i] * sv);
+                }
+            }
+            dk = dev(k8); dv = dev(v8); dks = dev(ks); dvs = dev(vs);
         } else {
             std::vector<uint16_t> kh(n), vh(n);
             for (size_t i = 0; i < n; ++i) {
@@ -1602,7 +1623,8 @@ void test_attention_krows_invariance() {
         }
         AttnArgs base;
         base.q = dq; base.r = drs; base.sink = dsink; base.rel_table = dt; base.pos = dpos;
-        base.k_cache = dk; base.v_cache = dv; base.cap = cap; base.fp8 = fp8; base.window = 0;
+        base.k_cache = dk; base.v_cache = dv; base.k_scale = dks; base.v_scale = dvs;
+        base.cap = cap; base.fp8 = fp8; base.window = 0;
 
         // Reference: each row run alone (kRows=1)
         std::vector<float> ref_alone((size_t) maxR * kHeads * kHeadDim);
@@ -1625,9 +1647,21 @@ void test_attention_krows_invariance() {
             if (std::memcmp(got.data(), ref_alone.data(), (size_t) R * kHeads * kHeadDim * 4) != 0) all_ok = false;
         }
         char label[64];
-        std::snprintf(label, sizeof label, "attention T=1..8 (%s, far)", fp8 ? "E4M3" : "FP16");
+        std::snprintf(label, sizeof label, "attention T=1..8 (%s, far)", i8 ? "KvInt8" : fp8 ? "E4M3" : "FP16");
         std::printf("%-34s %s\n", label, all_ok ? "bitwise" : "FAIL");
         failures += !all_ok;
+        if (i8) {
+            // KvInt8 g64 must be bitwise identical to FP16 on the dequantized K/V cells!
+            void *dkd = dev(kh_deq), *dvd = dev(vh_deq);
+            AttnArgs fd = base;
+            fd.k_cache = dkd; fd.v_cache = dvd; fd.k_scale = nullptr; fd.v_scale = nullptr; fd.fp8 = false;
+            float* out_deq = zeros<float>((size_t) maxR * kHeads * kHeadDim);
+            attention_decode(fd, maxR, p0 + maxR, scr, out_deq, nullptr);
+            const std::vector<float> gdeq = host(out_deq, (size_t) maxR * kHeads * kHeadDim);
+            same_bits("attention KvInt8 == dequant FP16", ref_alone.data(), gdeq.data(), gdeq.size() * 4);
+            cudaFree(dkd); cudaFree(dvd); cudaFree(out_deq);
+            cudaFree(dks); cudaFree(dvs);
+        }
         cudaFree(out1); cudaFree(outR); cudaFree(dk); cudaFree(dv);
     }
     cudaFree(dq); cudaFree(drs); cudaFree(dsink); cudaFree(dt); cudaFree(dpos); cudaFree(scr);

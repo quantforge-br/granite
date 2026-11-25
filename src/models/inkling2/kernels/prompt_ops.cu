@@ -149,7 +149,8 @@ void remap_ids(int32_t* ids, int n, const int32_t* map, void* stream) {
 }
 
 void stage_to_ring(const void* k_stage, const void* v_stage, int64_t stage_cap, void* k_ring, void* v_ring, int64_t ring_cap,
-                   int64_t pos0, int rows, int keep, int elem, void* stream) {
+                   int64_t pos0, int rows, int keep, int elem, void* stream,
+                   const uint16_t* ks_stage, const uint16_t* vs_stage, uint16_t* ks_ring, uint16_t* vs_ring) {
     const int64_t end = pos0 + rows, first = end - keep > pos0 ? end - keep : pos0;
     const int n = (int) (end - first);
     if (n <= 0) return;
@@ -157,6 +158,12 @@ void stage_to_ring(const void* k_stage, const void* v_stage, int64_t stage_cap, 
     stage_to_ring_kernel<<<dim3((unsigned) n, 2), 128, 0, (cudaStream_t) stream>>>(
         static_cast<const uint4*>(k_stage), static_cast<const uint4*>(v_stage), stage_cap, static_cast<uint4*>(k_ring),
         static_cast<uint4*>(v_ring), ring_cap, first, pieces);
+    if (ks_stage && vs_stage && ks_ring && vs_ring) {
+        constexpr int kScalePieces = (kKvHeads * (kHeadDim / 64) * 2) / 16;   // 2 x 16B = 32B/row
+        stage_to_ring_kernel<<<dim3((unsigned) n, 2), 32, 0, (cudaStream_t) stream>>>(
+            reinterpret_cast<const uint4*>(ks_stage), reinterpret_cast<const uint4*>(vs_stage), stage_cap,
+            reinterpret_cast<uint4*>(ks_ring), reinterpret_cast<uint4*>(vs_ring), ring_cap, first, kScalePieces);
+    }
     check("stage_to_ring");
 }
 

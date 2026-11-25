@@ -61,6 +61,8 @@ void ctrl_blend(const float* dest, const float* msg, const float* gf, int rows, 
 struct SegCaches {
     void* k = nullptr;
     void* v = nullptr;
+    uint16_t* k_scale = nullptr;
+    uint16_t* v_scale = nullptr;
     float* k_ring = nullptr;
     float* v_ring = nullptr;
     float* a_ring = nullptr;
@@ -92,8 +94,10 @@ struct AttnPrep {
     float log_floor = 8192.f, log_alpha = 0.1f;
     float* k_ring = nullptr;           ///< the convolution inputs of the last kConvRing positions [kConvRing][1024], slot pos % kConvRing
     float* v_ring = nullptr;
-    void* k_cache = nullptr;           ///< [cap][kKvHeads][kHeadDim], position p in cell p % cap; fp16 or E4M3 (fp8 set)
+    void* k_cache = nullptr;           ///< [cap][kKvHeads][kHeadDim], position p in cell p % cap; fp16, E4M3 (fp8), or int8 (k_scale set)
     void* v_cache = nullptr;
+    uint16_t* k_scale = nullptr;       ///< non-null: KvInt8 g64 fp16 scales [cap][kKvHeads][kHeadDim/64]
+    uint16_t* v_scale = nullptr;
     int64_t cap = 0;
     bool fp8 = false;                  ///< unit-scale E4M3 codes (keys are clipped and values normed, so they fit)
     float* q = nullptr;                ///< out: the clipped (and scaled) queries [rows][kHeads][kHeadDim]
@@ -118,6 +122,8 @@ struct AttnArgs {
     const int32_t* pos = nullptr;      ///< [rows]
     const void* k_cache = nullptr;
     const void* v_cache = nullptr;
+    const uint16_t* k_scale = nullptr; ///< non-null: KvInt8 g64 fp16 scales [cap][kKvHeads][kHeadDim/64]
+    const uint16_t* v_scale = nullptr;
     int64_t cap = 0;                   ///< the cache's cells (a ring when window is set)
     bool fp8 = false;
     int window = 0;                    ///< > 0: keys at distance < window only (the cache is then a ring of cap >= window + rows)

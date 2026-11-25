@@ -3,6 +3,7 @@
 #include "granite/kernels/pdl.hpp"
 #include "granite/kernels/prefetch_l2.cuh"
 #include "granite/models/inkling2/kernels.hpp"
+#include "prep.cuh"
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
@@ -273,8 +274,13 @@ __global__ void __launch_bounds__(kThreads) attn_prepare_kernel(AttnPrep a) {
         const float f = which == 0 ? fminf(a.qk_clip / (sqrtf(ss) + 1e-6f), 1.f) : rsqrtf(ss / (float) kHeadDim + a.eps);
         const int64_t cell = p % a.cap;
         void* cache = which ? a.v_cache : a.k_cache;
-        store_kv4(cache, a.fp8, ((size_t) cell * kKvHeads + w) * kHeadDim + lane * 4,
-                  val0 * f, val1 * f, val2 * f, val3 * f);
+        uint16_t* scale = which ? a.v_scale : a.k_scale;
+        if (scale) {
+            prep::store_kv4_i8(cache, scale, cell, w, lane, val0 * f, val1 * f, val2 * f, val3 * f);
+        } else {
+            store_kv4(cache, a.fp8, ((size_t) cell * kKvHeads + w) * kHeadDim + lane * 4,
+                      val0 * f, val1 * f, val2 * f, val3 * f);
+        }
     }
     // queries: warp w takes heads 3w .. 3w + 2 (only this card's groups [g0, g0 + ng) under TP2)
     if (w < a.g0 || w >= a.g0 + a.ng) return;

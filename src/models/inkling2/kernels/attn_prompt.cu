@@ -40,26 +40,28 @@ struct KvTile {
     __half k[kKeys][kLd];
     __half v[kKeys][kLd];
 };
-struct RawFp8Tile {
+struct Raw8Tile {
     uint8_t k[kKeys][kHeadDim];
     uint8_t v[kKeys][kHeadDim];
+    uint16_t ks[kKeys][kHeadDim / 64];
+    uint16_t vs[kKeys][kHeadDim / 64];
 };
 // A tile beyond the bias's reach needs neither the band nor the exchange, so the next such tile streams into the
-// exchange's room while the block works on the current one (in FP8, raw_fp8 stages 8 KiB via cp.async on far tiles only;
-// near tiles keep gx untouched and unpack synchronously into t0).
+// exchange's room while the block works on the current one (in FP8/KvInt8, raw_8 stages 8.25 KiB via cp.async on far
+// tiles only; near tiles keep gx untouched and unpack synchronously into t0).
 struct Smem {
     KvTile t0;
     __half band[kBand][kBandLd];
     union {
         struct {
             KvTile t1;
-            RawFp8Tile raw_fp8;
+            Raw8Tile raw_8;
         } far_buf;
         float gx[kWarps][16][kGLd];
     } u;
 };
 static_assert(sizeof(Smem::u.far_buf) <= sizeof(float) * kWarps * 16 * kGLd,
-              "the second tile and raw FP8 staging fit in the exchange");
+              "the second tile and raw 8-bit staging fit in the exchange");
 
 void check(const char* what) {
     const cudaError_t e = cudaGetLastError();
@@ -99,9 +101,10 @@ __device__ __forceinline__ float quad_sum(float v) {
     v += __shfl_xor_sync(0xffffffffu, v, 1);
     return v + __shfl_xor_sync(0xffffffffu, v, 2);
 }
-// Stage raw E4M3 tile into smem via cp.async (far tiles only, where gx is unused).
-__device__ __forceinline__ void stage_raw_fp8(const AttnPromptArgs& a, RawFp8Tile& raw, int kvh, int64_t k0, int64_t lo,
-                                              int64_t hi, int tid) {
+// Stage raw 8-bit tile (E4M3 or KvInt8 g64) into smem via cp.async (far tiles only, where gx is unused).
+template <int kMode>
+__device__ __forceinline__ void stage_raw_8(const AttnPromptArgs& a, Raw8Tile& raw, int kvh, int64_t k0, int64_t lo,
+                                            int64_t hi, int tid) {
     constexpr int kPieces = kKeys * kHeadDim / 16;   // 256 x 16-byte pieces per K or V tile
     for (int c = tid; c < 2 * kPieces; c += kThreads) {
         const bool isv = c >= kPieces;
@@ -115,36 +118,71 @@ __device__ __forceinline__ void stage_raw_fp8(const AttnPromptArgs& a, RawFp8Til
         const uint8_t* src = base + ((size_t) (ok ? key % cap : 0) * kKvHeads + kvh) * kHeadDim + col;
         cp16(isv ? &raw.v[j][col] : &raw.k[j][col], src, ok);
     }
+    if constexpr (kMode == 2) {
+        if (tid < 2 * kKeys) {
+            const bool isv = tid >= kKeys;
+            const int j = isv ? tid - kKeys : tid;
+            const int64_t key = k0 + j;
+            const bool ok = key >= lo && key <= hi;
+            uint32_t sv = 0u;
+            if (ok) {
+                const bool fresh = key >= a.pos0;
+                const int64_t cap = fresh ? a.chunk_cap : a.cap;
+                const uint16_t* sbase = fresh ? (isv ? a.v_chunk_scale : a.k_chunk_scale) : (isv ? a.v_scale : a.k_scale);
+                sv = *reinterpret_cast<const uint32_t*>(sbase + ((size_t) (key % cap) * kKvHeads + kvh) * (kHeadDim / 64));
+            }
+            *reinterpret_cast<uint32_t*>(isv ? raw.vs[j] : raw.ks[j]) = sv;
+        }
+    }
 }
 
-// Convert staged raw E4M3 tile in smem into padded FP16 KvTile via branchless HMUL2 unpack.
-__device__ __forceinline__ void unpack_raw_fp8_to_tile(const RawFp8Tile& raw, KvTile& dst_tile, int tid) {
+__device__ __forceinline__ void unpack16_i8_to_h(uint4 u, float sc, __half* dst) {
+    int8_t b[16];
+    *reinterpret_cast<uint4*>(b) = u;
+    uint32_t h[8];
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        const __half2 h2 = __floats2half2_rn((float) b[2 * i] * sc, (float) b[2 * i + 1] * sc);
+        h[i] = *reinterpret_cast<const uint32_t*>(&h2);
+    }
+    *reinterpret_cast<uint4*>(dst) = make_uint4(h[0], h[1], h[2], h[3]);
+    *reinterpret_cast<uint4*>(dst + 8) = make_uint4(h[4], h[5], h[6], h[7]);
+}
+
+// Convert staged raw 8-bit tile in smem into padded FP16 KvTile.
+template <int kMode>
+__device__ __forceinline__ void unpack_raw_8_to_tile(const Raw8Tile& raw, KvTile& dst_tile, int tid) {
     constexpr int kPieces = kKeys * kHeadDim / 16;
     for (int c = tid; c < 2 * kPieces; c += kThreads) {
         const bool isv = c >= kPieces;
         const int rem = isv ? c - kPieces : c;
         const int j = rem / (kHeadDim / 16), col = (rem % (kHeadDim / 16)) * 16;
         const uint4 u = *reinterpret_cast<const uint4*>(isv ? &raw.v[j][col] : &raw.k[j][col]);
-        const uint32_t w[4] = {u.x, u.y, u.z, u.w};
-        uint32_t h[8];
-#pragma unroll
-        for (int i = 0; i < 4; ++i) {
-            __half2 h0, h1;
-            e4m3x4_to_h2x2_fast(w[i], h0, h1);
-            h[2 * i] = *reinterpret_cast<const uint32_t*>(&h0);
-            h[2 * i + 1] = *reinterpret_cast<const uint32_t*>(&h1);
-        }
         __half* dst = isv ? &dst_tile.v[j][col] : &dst_tile.k[j][col];
-        *reinterpret_cast<uint4*>(dst) = make_uint4(h[0], h[1], h[2], h[3]);
-        *reinterpret_cast<uint4*>(dst + 8) = make_uint4(h[4], h[5], h[6], h[7]);
+        if constexpr (kMode == 1) {
+            const uint32_t w[4] = {u.x, u.y, u.z, u.w};
+            uint32_t h[8];
+#pragma unroll
+            for (int i = 0; i < 4; ++i) {
+                __half2 h0, h1;
+                e4m3x4_to_h2x2_fast(w[i], h0, h1);
+                h[2 * i] = *reinterpret_cast<const uint32_t*>(&h0);
+                h[2 * i + 1] = *reinterpret_cast<const uint32_t*>(&h1);
+            }
+            *reinterpret_cast<uint4*>(dst) = make_uint4(h[0], h[1], h[2], h[3]);
+            *reinterpret_cast<uint4*>(dst + 8) = make_uint4(h[4], h[5], h[6], h[7]);
+        } else {
+            const float sc = __half2float(__ushort_as_half(isv ? raw.vs[j][col >> 6] : raw.ks[j][col >> 6]));
+            unpack16_i8_to_h(u, sc, dst);
+        }
     }
 }
 
-// One tile of keys and values into shared memory: key k0 + j at row j, zero outside [lo, hi].  fp16 tiles are requested
-// (cp.async, the caller commits and waits), near E4M3 tiles loaded & unpacked branchlessly without touching sm.u.gx.
-template <bool FP8>
+// One tile of keys and values into shared memory: key k0 + j at row j, zero outside [lo, hi].
+// kMode: 0 = FP16, 1 = FP8 E4M3, 2 = KvInt8 g64.
+template <int kMode>
 __device__ __forceinline__ void load_tile(const AttnPromptArgs& a, KvTile& sm, int kvh, int64_t k0, int64_t lo, int64_t hi, int tid) {
-    if constexpr (!FP8) {
+    if constexpr (kMode == 0) {
         constexpr int kPieces = kKeys * kHeadDim / 8;   // 16-byte pieces of one tile
         for (int c = tid; c < 2 * kPieces; c += kThreads) {
             const bool isv = c >= kPieces;
@@ -167,29 +205,39 @@ __device__ __forceinline__ void load_tile(const AttnPromptArgs& a, KvTile& sm, i
             const int64_t key = k0 + j;
             const bool ok = key >= lo && key <= hi;
             uint4 u = make_uint4(0u, 0u, 0u, 0u);
+            float sc = 0.f;
             if (ok) {
                 const bool fresh = key >= a.pos0;
                 const int64_t cap = fresh ? a.chunk_cap : a.cap;
+                const size_t row = (size_t) (key % cap) * kKvHeads + kvh;
                 const uint8_t* base = static_cast<const uint8_t*>(fresh ? (isv ? a.v_chunk : a.k_chunk) : (isv ? a.v_cache : a.k_cache));
-                u = *reinterpret_cast<const uint4*>(base + ((size_t) (key % cap) * kKvHeads + kvh) * kHeadDim + col);
-            }
-            const uint32_t w[4] = {u.x, u.y, u.z, u.w};
-            uint32_t h[8];
-#pragma unroll
-            for (int i = 0; i < 4; ++i) {
-                __half2 h0, h1;
-                e4m3x4_to_h2x2_fast(w[i], h0, h1);
-                h[2 * i] = *reinterpret_cast<const uint32_t*>(&h0);
-                h[2 * i + 1] = *reinterpret_cast<const uint32_t*>(&h1);
+                u = *reinterpret_cast<const uint4*>(base + row * kHeadDim + col);
+                if constexpr (kMode == 2) {
+                    const uint16_t* sbase = fresh ? (isv ? a.v_chunk_scale : a.k_chunk_scale) : (isv ? a.v_scale : a.k_scale);
+                    sc = __half2float(__ushort_as_half(sbase[row * (kHeadDim / 64) + (col >> 6)]));
+                }
             }
             __half* dst = isv ? &sm.v[j][col] : &sm.k[j][col];
-            *reinterpret_cast<uint4*>(dst) = make_uint4(h[0], h[1], h[2], h[3]);
-            *reinterpret_cast<uint4*>(dst + 8) = make_uint4(h[4], h[5], h[6], h[7]);
+            if constexpr (kMode == 1) {
+                const uint32_t w[4] = {u.x, u.y, u.z, u.w};
+                uint32_t h[8];
+#pragma unroll
+                for (int i = 0; i < 4; ++i) {
+                    __half2 h0, h1;
+                    e4m3x4_to_h2x2_fast(w[i], h0, h1);
+                    h[2 * i] = *reinterpret_cast<const uint32_t*>(&h0);
+                    h[2 * i + 1] = *reinterpret_cast<const uint32_t*>(&h1);
+                }
+                *reinterpret_cast<uint4*>(dst) = make_uint4(h[0], h[1], h[2], h[3]);
+                *reinterpret_cast<uint4*>(dst + 8) = make_uint4(h[4], h[5], h[6], h[7]);
+            } else {
+                unpack16_i8_to_h(u, sc, dst);
+            }
         }
     }
 }
 
-template <bool FP8>
+template <int kMode>
 __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnPromptArgs a, const int rows, float* __restrict__ out) {
     extern __shared__ __align__(16) unsigned char smem_raw[];
     Smem& sm = *reinterpret_cast<Smem*>(smem_raw);
@@ -243,17 +291,17 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
     bool ready = false;   // FP16: current tile prefetched; FP8: current far tile staged in u.far_buf.raw_fp8
     for (int64_t k0 = lo / kKeys * kKeys; k0 <= hi; k0 += kKeys) {
         const KvTile* kt_ptr = &sm.t0;
-        if constexpr (!FP8) {
+        if constexpr (kMode == 0) {
             __syncthreads();   // every warp is done with the previous tile
             if (!ready) {
                 cur = 0;
-                load_tile<false>(a, sm.t0, kvh, k0, lo, hi, tid);
+                load_tile<0>(a, sm.t0, kvh, k0, lo, hi, tid);
                 asm volatile("cp.async.commit_group;\n" ::: "memory");
             }
             // a far tile followed by a far tile: the next one is requested into the other room before this one is used
             const bool next = far(k0) && k0 + kKeys <= hi && far(k0 + kKeys);
             if (next) {
-                load_tile<false>(a, cur ? sm.t0 : sm.u.far_buf.t1, kvh, k0 + kKeys, lo, hi, tid);
+                load_tile<0>(a, cur ? sm.t0 : sm.u.far_buf.t1, kvh, k0 + kKeys, lo, hi, tid);
                 asm volatile("cp.async.commit_group;\ncp.async.wait_group 1;\n" ::: "memory");
             } else {
                 asm volatile("cp.async.wait_group 0;\n" ::: "memory");
@@ -265,26 +313,26 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
             if (far(k0)) {
                 if (!ready) {
                     __syncthreads();
-                    stage_raw_fp8(a, sm.u.far_buf.raw_fp8, kvh, k0, lo, hi, tid);
+                    stage_raw_8<kMode>(a, sm.u.far_buf.raw_8, kvh, k0, lo, hi, tid);
                     asm volatile("cp.async.commit_group;\ncp.async.wait_group 0;\n" ::: "memory");
                     __syncthreads();
                 } else {
-                    // wait for previous iteration's async prefetch of k0 into raw_fp8, and for all warps to finish reading t0
+                    // wait for previous iteration's async prefetch of k0 into raw_8, and for all warps to finish reading t0
                     asm volatile("cp.async.wait_group 0;\n" ::: "memory");
                     __syncthreads();
                 }
-                unpack_raw_fp8_to_tile(sm.u.far_buf.raw_fp8, sm.t0, tid);
-                __syncthreads();   // t0 populated and raw_fp8 completely read
+                unpack_raw_8_to_tile<kMode>(sm.u.far_buf.raw_8, sm.t0, tid);
+                __syncthreads();   // t0 populated and raw_8 completely read
                 const bool next_far = k0 + kKeys <= hi && far(k0 + kKeys);
                 if (next_far) {
-                    stage_raw_fp8(a, sm.u.far_buf.raw_fp8, kvh, k0 + kKeys, lo, hi, tid);
+                    stage_raw_8<kMode>(a, sm.u.far_buf.raw_8, kvh, k0 + kKeys, lo, hi, tid);
                     asm volatile("cp.async.commit_group;\n" ::: "memory");
                 }
                 ready = next_far;
             } else {
                 // Near tile: gx is active in sm.u, so never touch sm.u.far_buf; ready is guaranteed false here.
                 __syncthreads();
-                load_tile<true>(a, sm.t0, kvh, k0, lo, hi, tid);
+                load_tile<kMode>(a, sm.t0, kvh, k0, lo, hi, tid);
                 ready = false;
             }
         }
@@ -296,7 +344,7 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
                 const int64_t d = q0 - k0 - (kKeys - 1) + b;
                 sm.band[b][t] = __float2half_rn(d >= 0 && d < kExtent ? a.rel_table[(size_t) t * kExtent + d] : 0.f);
             }
-        if constexpr (!FP8) __syncthreads();
+        if constexpr (kMode == 0) __syncthreads();
         else if (!far(k0)) __syncthreads();
 
         // a warp none of whose rows sees a key of the tile skips it; one whose rows see every key needs no mask
@@ -436,12 +484,14 @@ void attention_prompt(const AttnPromptArgs& a, int rows, float* out, void* strea
     cudaStream_t s = (cudaStream_t) stream;
     static bool sized[kOptInDevices] = {};   // the opt-in is per device
     if (bool& z = sized[opt_in_device()]; !z) {
-        cudaFuncSetAttribute(attn_prompt_kernel<true>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) sizeof(Smem));
-        cudaFuncSetAttribute(attn_prompt_kernel<false>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) sizeof(Smem));
+        cudaFuncSetAttribute(attn_prompt_kernel<0>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) sizeof(Smem));
+        cudaFuncSetAttribute(attn_prompt_kernel<1>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) sizeof(Smem));
+        cudaFuncSetAttribute(attn_prompt_kernel<2>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int) sizeof(Smem));
         z = true;
     }
-    if (a.fp8) attn_prompt_kernel<true><<<grid, kThreads, sizeof(Smem), s>>>(a, rows, out);
-    else attn_prompt_kernel<false><<<grid, kThreads, sizeof(Smem), s>>>(a, rows, out);
+    if (a.k_scale) attn_prompt_kernel<2><<<grid, kThreads, sizeof(Smem), s>>>(a, rows, out);
+    else if (a.fp8) attn_prompt_kernel<1><<<grid, kThreads, sizeof(Smem), s>>>(a, rows, out);
+    else attn_prompt_kernel<0><<<grid, kThreads, sizeof(Smem), s>>>(a, rows, out);
     check("attention_prompt");
 }
 

@@ -591,11 +591,16 @@ __global__ void __launch_bounds__(128) prepare_kernel(AttnPrep a) {
         const SegCaches& sc = a.seg.c[k];
         float* ring = w ? (b ? sc.v_ring : a.v_ring) : (b ? sc.k_ring : a.k_ring);
         void* cache = w ? (b ? sc.v : a.v_cache) : (b ? sc.k : a.k_cache);
+        uint16_t* scale = w ? (b ? sc.v_scale : a.v_scale) : (b ? sc.k_scale : a.k_scale);
         float val[4], raw[4], f;
         prep::kv_row(a, r, p, g, w, lane, wt, val, raw, f, ring, b ? a.seg.at.row0[k] : 0);
-        const size_t cell = ((size_t) (p % a.cap) * kKvHeads + g) * kHeadDim + lane * 4;
+        if (scale) {
+            prep::store_kv4_i8(cache, scale, p % a.cap, g, lane, val[0] * f, val[1] * f, val[2] * f, val[3] * f);
+        } else {
+            const size_t cell = ((size_t) (p % a.cap) * kKvHeads + g) * kHeadDim + lane * 4;
 #pragma unroll
-        for (int u = 0; u < 4; ++u) prep::store_kv(cache, a.fp8, cell + u, val[u] * f);
+            for (int u = 0; u < 4; ++u) prep::store_kv(cache, a.fp8, cell + u, val[u] * f);
+        }
         *reinterpret_cast<float4*>(ring + (size_t) (p % kConvRing) * (kKvHeads * kHeadDim) + g * kHeadDim + lane * 4) =
             make_float4(raw[0], raw[1], raw[2], raw[3]);
         return;

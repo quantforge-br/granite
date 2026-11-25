@@ -320,7 +320,8 @@ public:
         bool ok = true;
         auto f = [&](int64_t n) { return (float*) alloc((size_t) n * 4, ok); };
         const int64_t E = g_.n_embd, R = kMaxRows;
-        const size_t elem = m_.cache_fp8() ? 1 : 2;
+        const size_t elem = (m_.cache_fp8() || m_.cache_int8()) ? 1 : 2;
+        const bool i8 = m_.cache_int8();
         const int64_t ctx = m_.context();
         int max_slot = 0;
         for (const Visit& v : g_.visits) max_slot = std::max(max_slot, v.slot);
@@ -345,6 +346,11 @@ public:
                 } else {
                     c.k = alloc(bytes, ok);
                     c.v = alloc(bytes, ok);
+                }
+                if (i8) {
+                    const size_t sbytes = (size_t) kKvHeads * (size_t) c.cap * (kHeadDim / 64) * 2;
+                    c.ks = (uint16_t*) alloc(sbytes, ok);
+                    c.vs = (uint16_t*) alloc(sbytes, ok);
                 }
                 c.k_ring = f((int64_t) kConvRing * kKvHeads * kHeadDim);
                 c.v_ring = f((int64_t) kConvRing * kKvHeads * kHeadDim);
@@ -602,8 +608,11 @@ public:
     // the convolutions' rings by checkpoint (running_state). A window ring holds window + kMaxRows positions and a
     // convolution ring kConvRing, so a checkpoint at `pos` is intact while the session has not run more than kMaxRows
     // rows past it.
-    size_t elem() const { return m_.cache_fp8() ? 1 : 2; }
+    size_t elem() const { return (m_.cache_fp8() || m_.cache_int8()) ? 1 : 2; }
     uint64_t cell_bytes() const { return (uint64_t) kKvHeads * kHeadDim * elem(); }
+    size_t scale_bytes_of(const VisitCache& c) const {
+        return m_.cache_int8() ? (size_t) kKvHeads * (size_t) c.cap * (kHeadDim / 64) * 2 : 0;
+    }
 
     // The elastic KV: before a run reaches `positions`, the full visits' caches back them (in steps of kElasticKvStep cells),
     // and when the card has no room the RAM experts' card copies go back to RAM first, the least routed first. False when
@@ -651,7 +660,7 @@ public:
 
     size_t running_bytes() const override {
         size_t n = 0;
-        for (const VisitCache& c : vc_) n += (c.ring ? 2 * kv_bytes_of(c) : 0) + conv_ring_bytes();
+        for (const VisitCache& c : vc_) n += (c.ring ? 2 * (kv_bytes_of(c) + scale_bytes_of(c)) : 0) + conv_ring_bytes();
         return n + dspark_.running_bytes();   // DSPARK HOOK
     }
 
@@ -665,6 +674,10 @@ public:
             if (c.ring) {
                 to.push_back({c.k, kv_bytes_of(c)});
                 to.push_back({c.v, kv_bytes_of(c)});
+                if (m_.cache_int8()) {
+                    to.push_back({c.ks, scale_bytes_of(c)});
+                    to.push_back({c.vs, scale_bytes_of(c)});
+                }
             }
             to.push_back({c.k_ring, kv_ring});
             to.push_back({c.v_ring, kv_ring});
@@ -689,6 +702,10 @@ public:
                 if (a.ring) {
                     copy(b.k, a.k, kv_bytes_of(a));
                     copy(b.v, a.v, kv_bytes_of(a));
+                    if (m_.cache_int8()) {
+                        copy(b.ks, a.ks, scale_bytes_of(a));
+                        copy(b.vs, a.vs, scale_bytes_of(a));
+                    }
                 }
                 copy(b.k_ring, a.k_ring, kv_ring);
                 copy(b.v_ring, a.v_ring, kv_ring);
@@ -700,12 +717,13 @@ public:
         return {};
     }
 
-    int cell_format() const { return m_.cache_fp8() ? 1 : 3; }   // 3: fp16 rows, 1: unit-scale E4M3
+    int cell_format() const { return m_.cache_int8() ? 4 : m_.cache_fp8() ? 1 : 3; }   // 3: fp16, 1: E4M3, 4: int8 g64
 
     size_t cells_bytes(int64_t positions) const override {
         size_t n = 0;
+        const size_t per = (size_t) kKvHeads * kHeadDim * elem() + (m_.cache_int8() ? (size_t) kKvHeads * (kHeadDim / 64) * 2 : 0);
         for (const VisitCache& c : vc_)
-            if (!c.ring) n += 2 * (size_t) positions * kKvHeads * kHeadDim * elem();
+            if (!c.ring) n += 2 * (size_t) positions * per;
         return n + dspark_.cells_bytes(positions);   // DSPARK HOOK
     }
 
@@ -715,6 +733,7 @@ public:
         cudaStreamSynchronize(stream_);
         kv.clear();
         const size_t run = (size_t) positions * kKvHeads * kHeadDim * elem();
+        const size_t srun = m_.cache_int8() ? (size_t) positions * kKvHeads * (kHeadDim / 64) * 2 : 0;
         for (const VisitCache& c : vc_) {
             if (c.ring) continue;
             core::ConversationKv k;
@@ -725,12 +744,17 @@ public:
             k.head_dim = kHeadDim;
             k.k.resize_for_overwrite(run);
             k.v.resize_for_overwrite(run);
+            if (srun) {
+                k.k_scale.resize_for_overwrite(srun);
+                k.v_scale.resize_for_overwrite(srun);
+            }
             const auto down = [](const void* dev, core::ConversationBuffer& to) {
                 return to.visit(0, to.size(), [&](uint8_t* p, size_t n, size_t at) {
                     return cudaMemcpy(p, (const uint8_t*) dev + at, n, cudaMemcpyDeviceToHost) == cudaSuccess;
                 });
             };
-            if (!down(c.k, k.k) || !down(c.v, k.v)) return {model::Status::Error, "inkling2: reading a cache back failed"};
+            if (!down(c.k, k.k) || !down(c.v, k.v) || (srun && (!down(c.ks, k.k_scale) || !down(c.vs, k.v_scale))))
+                return {model::Status::Error, "inkling2: reading a cache back failed"};
             kv.push_back(std::move(k));
         }
         if (!dspark_.save_cells(kv, positions, stream_)) return {model::Status::Error, "inkling2: reading the drafter's cache back failed"};   // DSPARK HOOK
@@ -742,24 +766,28 @@ public:
         if (std::string e; !ensure_positions(positions, e)) return {model::Status::Refused, "inkling2: " + e};
         cudaStreamSynchronize(stream_);
         const size_t run = (size_t) positions * kKvHeads * kHeadDim * elem();
+        const size_t srun = m_.cache_int8() ? (size_t) positions * kKvHeads * (kHeadDim / 64) * 2 : 0;
         size_t i = 0;
         for (size_t slot = 0; slot < vc_.size(); ++slot) {
             const VisitCache& c = vc_[slot];
             if (c.ring) continue;
             if (i >= kv.size() || kv[i].format != cell_format() || kv[i].cells != positions || kv[i].heads != kKvHeads ||
-                kv[i].k.size() < run || kv[i].v.size() < run)
+                kv[i].k.size() < run || kv[i].v.size() < run || (srun && (kv[i].k_scale.size() < srun || kv[i].v_scale.size() < srun)))
                 return {model::Status::Error, "inkling2: a parked conversation has other caches"};
             // on the card's stream: a copy from pageable memory may return before its bytes land, and the session's
             // streams do not wait for the default one
-            const auto up = [&](void* dev, const core::ConversationBuffer& from, cudaStream_t st) {
-                return from.visit(0, run, [&](const uint8_t* p, size_t n, size_t at) {
+            const auto up = [&](void* dev, const core::ConversationBuffer& from, size_t nbytes, cudaStream_t st) {
+                return from.visit(0, nbytes, [&](const uint8_t* p, size_t n, size_t at) {
                     return cudaMemcpyAsync((uint8_t*) dev + at, p, n, cudaMemcpyHostToDevice, st) == cudaSuccess;
                 });
             };
-            if (!up(c.k, kv[i].k, stream_) || !up(c.v, kv[i].v, stream_)) return {model::Status::Error, "inkling2: writing a cache back failed"};
+            if (!up(c.k, kv[i].k, run, stream_) || !up(c.v, kv[i].v, run, stream_) ||
+                (srun && (!up(c.ks, kv[i].k_scale, srun, stream_) || !up(c.vs, kv[i].v_scale, srun, stream_))))
+                return {model::Status::Error, "inkling2: writing a cache back failed"};
             if (m_.cards() > 1) {   // both cards hold the caches
                 OnCard on(m_.card_device(1));
-                if (!up(vc1_[slot].k, kv[i].k, stream1_) || !up(vc1_[slot].v, kv[i].v, stream1_))
+                if (!up(vc1_[slot].k, kv[i].k, run, stream1_) || !up(vc1_[slot].v, kv[i].v, run, stream1_) ||
+                    (srun && (!up(vc1_[slot].ks, kv[i].k_scale, srun, stream1_) || !up(vc1_[slot].vs, kv[i].v_scale, srun, stream1_))))
                     return {model::Status::Error, "inkling2: writing a cache back to the second card failed"};
             }
             ++i;
@@ -773,7 +801,7 @@ public:
 
     int64_t kv_bytes() const override {
         int64_t n = 0;
-        for (const VisitCache& c : vc_) n += 2 * (int64_t) kv_bytes_of(c);
+        for (const VisitCache& c : vc_) n += 2 * (int64_t) (kv_bytes_of(c) + scale_bytes_of(c));
         return n;
     }
 
@@ -810,7 +838,8 @@ public:
         const std::string n = std::to_string(expert_pairs() - m_.spill().spilled);
         uint64_t ram = 0;
         for (int l = 0; l < g_.n_layers; ++l) ram += (uint64_t) m_.layer(l).n_spill * m_.layer(l).expert_stride;
-        return "expert_slots=" + n + " expert_slots_primary=" + n + " ram_experts_mib=" + std::to_string(ram >> 20) + (m_.cache_fp8() ? " kv=fp8 " : " kv=fp16 ") +
+        return "expert_slots=" + n + " expert_slots_primary=" + n + " ram_experts_mib=" + std::to_string(ram >> 20) +
+               (m_.cache_int8() ? " kv=int8 " : m_.cache_fp8() ? " kv=fp8 " : " kv=fp16 ") +
                program::spill_words({0, expert_pairs(), 0});
     }
 
@@ -1011,6 +1040,8 @@ private:
         ap.v_ring = c.v_ring;
         ap.k_cache = c.k;
         ap.v_cache = c.v;
+        ap.k_scale = c.ks;
+        ap.v_scale = c.vs;
         ap.cap = c.cap;
         ap.fp8 = m_.cache_fp8();
         ap.q = x.q_;
@@ -1025,6 +1056,8 @@ private:
         aa.pos = x.pos_d_;
         aa.k_cache = c.k;
         aa.v_cache = c.v;
+        aa.k_scale = c.ks;
+        aa.v_scale = c.vs;
         aa.cap = c.cap;
         aa.fp8 = m_.cache_fp8();
         aa.window = c.ring ? g_.window : 0;
@@ -1187,7 +1220,7 @@ private:
         s.at = view_->w.device_segs();
         for (int i = 0; i < view_->n; ++i) {
             const VisitCache& c = (*static_cast<const Session*>(view_->ss[i])->lane_[card].vc)[(size_t) slot];
-            s.c[i] = {c.k, c.v, c.k_ring, c.v_ring, c.a_ring, c.m_ring};
+            s.c[i] = {c.k, c.v, c.ks, c.vs, c.k_ring, c.v_ring, c.a_ring, c.m_ring};
         }
         return s;
     }

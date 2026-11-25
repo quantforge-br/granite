@@ -60,8 +60,8 @@ public:
     }
 
     std::optional<int> finish_flags(program::CommonOptions& o) const override {
-        if (!o.kv.empty() && o.kv != "fp16" && o.kv != "fp8") {
-            granite::log::error("granite inkling2", "--kv %s: the attention caches are fp16 (the default) or fp8", o.kv.c_str());
+        if (!o.kv.empty() && o.kv != "fp16" && o.kv != "fp8" && o.kv != "int8") {
+            granite::log::error("granite inkling2", "--kv %s: the attention caches are fp16 (the default), int8 or fp8", o.kv.c_str());
             return 2;
         }
         dspark_finish_flags(o);   // DSPARK HOOK

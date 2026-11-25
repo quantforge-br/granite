@@ -101,12 +101,16 @@ struct RowSlice {
     int p, lo, sc_lo, sc_hi;
     const uint8_t* k;
     const uint8_t* v;
+    const uint16_t* ks;
+    const uint16_t* vs;
 };
 
 struct StageGroup {
     int sc_lo, passes, p_min, c_hi_max;
     const uint8_t* kb;
     const uint8_t* vb;
+    const uint16_t* ksb;
+    const uint16_t* vsb;
 };
 
 template <int kMTiles>
@@ -134,7 +138,8 @@ __device__ __forceinline__ int partition_stages_mma(const RowSlice* rk, int n_ro
         if (!rk[k].on) continue;
         int found = -1;
         for (int g = 0; g < n_stages; ++g) {
-            if (sg[g].kb == rk[k].k && sg[g].vb == rk[k].v && sg[g].sc_lo == rk[k].sc_lo) {
+            if (sg[g].kb == rk[k].k && sg[g].vb == rk[k].v && sg[g].ksb == rk[k].ks && sg[g].vsb == rk[k].vs &&
+                sg[g].sc_lo == rk[k].sc_lo) {
                 found = g;
                 sg[g].p_min = min(sg[g].p_min, rk[k].p);
                 sg[g].c_hi_max = max(sg[g].c_hi_max, rk[k].sc_hi);
@@ -148,6 +153,8 @@ __device__ __forceinline__ int partition_stages_mma(const RowSlice* rk, int n_ro
             sg[found].c_hi_max = rk[k].sc_hi;
             sg[found].kb = rk[k].k;
             sg[found].vb = rk[k].v;
+            sg[found].ksb = rk[k].ks;
+            sg[found].vsb = rk[k].vs;
         }
         grp[k] = found;
     }
@@ -168,9 +175,22 @@ __device__ __forceinline__ uint4 e4m3x8_to_h2x4(uint2 u) {
     return out;
 }
 
-template <bool FP8, int kMTiles, int kMinBlocks>
+// Dequantize 8 int8 codes (uint2) * fp16 scale into 8 fp16 values (uint4).
+__device__ __forceinline__ uint4 i8x8_to_h2x4(uint2 u, uint16_t sc_h16) {
+    const float sc = __half2float(__ushort_as_half(sc_h16));
+    int8_t b[8];
+    *reinterpret_cast<uint2*>(b) = u;
+    __half2 h[4];
+#pragma unroll
+    for (int e = 0; e < 4; ++e) h[e] = __floats2half2_rn((float) b[2 * e] * sc, (float) b[2 * e + 1] * sc);
+    return *reinterpret_cast<const uint4*>(h);
+}
+
+// kMode: 0 = FP16, 1 = FP8 E4M3, 2 = KvInt8 g64.
+template <int kMode, int kMTiles, int kMinBlocks>
 __global__ void __launch_bounds__(kThreads, kMinBlocks)
     attn_split_mma_kernel(AttnArgs a, int rows, int z, float* __restrict__ part_ml, float* __restrict__ part_acc) {
+    constexpr bool kEightBit = (kMode != 0);
     constexpr int R = kMaxRowsBlock<kMTiles>;
     constexpr int M = kMTiles * 16;
     constexpr int NT = kHeadDim / 32;   // 4 N-tiles of 8 dims per warp
@@ -187,8 +207,9 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
     bk::pdl_wait();
     bk::pdl_launch_dependents();
 
-    constexpr int kRowBytes = FP8 ? kHeadDim : kHeadDim * 2;
+    constexpr int kRowBytes = kEightBit ? kHeadDim : kHeadDim * 2;
     constexpr size_t kCell = (size_t) kKvHeads * kRowBytes;
+    constexpr size_t kScaleCell = (size_t) kKvHeads * (kHeadDim / 64);
     const int cap = (int) a.cap;
 
     if (tid == 0) {
@@ -208,6 +229,13 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
             const SegCaches& sc = a.seg.c[bk::seg_of(a.seg.at, r)];
             sm.rk[k].k = static_cast<const uint8_t*>(a.seg.at.n > 0 ? sc.k : a.k_cache) + (size_t) kvh * kRowBytes;
             sm.rk[k].v = static_cast<const uint8_t*>(a.seg.at.n > 0 ? sc.v : a.v_cache) + (size_t) kvh * kRowBytes;
+            if constexpr (kMode == 2) {
+                sm.rk[k].ks = (a.seg.at.n > 0 ? sc.k_scale : a.k_scale) + (size_t) kvh * (kHeadDim / 64);
+                sm.rk[k].vs = (a.seg.at.n > 0 ? sc.v_scale : a.v_scale) + (size_t) kvh * (kHeadDim / 64);
+            } else {
+                sm.rk[k].ks = nullptr;
+                sm.rk[k].vs = nullptr;
+            }
         }
         sm.n_stages = partition_stages_mma<R>(sm.rk, n_rows, sm.grp, sm.sg);
     }
@@ -245,8 +273,9 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
 #pragma unroll
         for (int n = 0; n < NT; ++n) acc[mt][n][0] = acc[mt][n][1] = acc[mt][n][2] = acc[mt][n][3] = 0.f;
 
-    using Word = std::conditional_t<FP8, uint2, uint4>;
+    using Word = std::conditional_t<kEightBit, uint2, uint4>;
     Word pk[NI], pv[NI];
+    uint16_t psk[NI], psv[NI];
 
     const auto fetch = [&](const StageGroup& st, int c0, int key_hi) {
         const int cell0 = c0 % cap;
@@ -258,12 +287,18 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
             if (c0 + cell < key_hi) {
                 int ce = cell0 + cell;
                 if (ce >= cap) ce -= cap;
-                const size_t off = (size_t) ce * kCell + (size_t) d8 * (FP8 ? 1 : 2);
+                const size_t off = (size_t) ce * kCell + (size_t) d8 * (kEightBit ? 1 : 2);
                 pk[j] = *reinterpret_cast<const Word*>(st.kb + off);
                 pv[j] = *reinterpret_cast<const Word*>(st.vb + off);
+                if constexpr (kMode == 2) {
+                    const size_t soff = (size_t) ce * kScaleCell + (size_t) (d8 >> 6);
+                    psk[j] = st.ksb[soff];
+                    psv[j] = st.vsb[soff];
+                }
             } else {
-                if constexpr (FP8) pk[j] = pv[j] = make_uint2(0u, 0u);
+                if constexpr (kEightBit) pk[j] = pv[j] = make_uint2(0u, 0u);
                 else pk[j] = pv[j] = make_uint4(0u, 0u, 0u, 0u);
+                if constexpr (kMode == 2) psk[j] = psv[j] = 0u;
             }
         }
     };
@@ -275,9 +310,12 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
             const int cell = idx >> 4;
             const int d8 = (idx & 15) * 8;
             uint4 kw, vw;
-            if constexpr (FP8) {
+            if constexpr (kMode == 1) {
                 kw = e4m3x8_to_h2x4(pk[j]);
                 vw = e4m3x8_to_h2x4(pv[j]);
+            } else if constexpr (kMode == 2) {
+                kw = i8x8_to_h2x4(pk[j], psk[j]);
+                vw = i8x8_to_h2x4(pv[j], psv[j]);
             } else {
                 kw = pk[j];
                 vw = pv[j];
@@ -460,11 +498,11 @@ int launch_splits(int64_t max_keys) {
     return (int) std::min<int64_t>(kMaxSplits, std::max<int64_t>(1, (max_keys + kChunk - 1) / kChunk + 1));
 }
 
-template <bool FP8, int kMTiles, int kMinBlocks>
+template <int kMode, int kMTiles, int kMinBlocks>
 void launch_split_mma(const AttnArgs& a, int rows, int z, float* part_ml, float* part_acc, cudaStream_t s) {
     constexpr int R = kMaxRowsBlock<kMTiles>;
     const dim3 grid((unsigned) ((rows + R - 1) / R), (unsigned) a.ng, (unsigned) z);
-    bk::launch_pdl(attn_split_mma_kernel<FP8, kMTiles, kMinBlocks>, grid, dim3(kThreads), 0, s,
+    bk::launch_pdl(attn_split_mma_kernel<kMode, kMTiles, kMinBlocks>, grid, dim3(kThreads), 0, s,
                    a, rows, z, part_ml, part_acc);
 }
 
@@ -494,12 +532,18 @@ void attention_decode(const AttnArgs& a, int rows, int64_t max_keys, void* scrat
     float* part_acc = part_ml + (size_t) rows * kHeads * z * 2;
     if (a.cap < kChunk) throw std::runtime_error("inkling2 attention_decode: the cache holds fewer cells than a chunk");
     if (a.g0 < 0 || a.ng < 1 || a.g0 + a.ng > kKvHeads) throw std::runtime_error("inkling2 attention_decode: groups");
-    if (a.fp8) {
-        if (rows <= 5) launch_split_mma<true, 1, 3>(a, rows, z, part_ml, part_acc, s);
-        else launch_split_mma<true, 2, 2>(a, rows, z, part_ml, part_acc, s);
+    if (a.seg.at.n > 0 && rows > kDecodeRows)
+        throw std::runtime_error("inkling2 attention_decode: rows > kDecodeRows with batch segments");
+    const bool i8 = a.seg.at.n > 0 ? (a.seg.c[0].k_scale != nullptr) : (a.k_scale != nullptr);
+    if (i8) {
+        if (rows <= 5) launch_split_mma<2, 1, 3>(a, rows, z, part_ml, part_acc, s);
+        else launch_split_mma<2, 2, 2>(a, rows, z, part_ml, part_acc, s);
+    } else if (a.fp8) {
+        if (rows <= 5) launch_split_mma<1, 1, 3>(a, rows, z, part_ml, part_acc, s);
+        else launch_split_mma<1, 2, 2>(a, rows, z, part_ml, part_acc, s);
     } else {
-        if (rows <= 5) launch_split_mma<false, 1, 3>(a, rows, z, part_ml, part_acc, s);
-        else launch_split_mma<false, 2, 2>(a, rows, z, part_ml, part_acc, s);
+        if (rows <= 5) launch_split_mma<0, 1, 3>(a, rows, z, part_ml, part_acc, s);
+        else launch_split_mma<0, 2, 2>(a, rows, z, part_ml, part_acc, s);
     }
     check("attention_decode");
     bk::launch_pdl(attn_combine_kernel, dim3((unsigned) rows, (unsigned) (kGroup * a.ng)), dim3(kHeadDim), 0, s, a, z, (const float*) part_ml,

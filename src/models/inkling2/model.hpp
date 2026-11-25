@@ -90,7 +90,10 @@ public:
     int card_device(int card) const { return card == 0 ? device_ : second_; }
     int sessions() const { return flags_.sessions > 0 ? flags_.sessions : 1; }
     const model::LoadRequest& flags() const { return flags_; }
-    bool cache_fp8() const { return fp8_; }
+    enum class KvMode : uint8_t { Fp16 = 0, Fp8 = 1, Int8 = 2 };
+    KvMode cache_kv() const { return kv_; }
+    bool cache_fp8() const { return kv_ == KvMode::Fp8; }
+    bool cache_int8() const { return kv_ == KvMode::Int8; }
     /// [vision] The image encoder: staged with --vision, else it refuses pictures. One per model; ENC runs between requests
     /// and windows, so nothing reads the experts while it holds their memory (lend_room).
     ImageEncoder& encoder() const { return vis_; }
@@ -182,7 +185,7 @@ private:
     model::LoadRequest flags_;
     int device_ = 0, fd_ = -1;
     int ldev_ = 0;                           ///< the card the weights being planned load to
-    bool fp8_ = false;
+    KvMode kv_ = KvMode::Fp16;
     int64_t ctx_ = kDefaultContext;
     mutable ImageEncoder vis_;   // [vision]
     std::unique_ptr<DsparkWeights> dspark_;   // DSPARK HOOK
@@ -219,8 +222,8 @@ private:
 /// A session over `model`; null with `err` set.
 std::unique_ptr<model::ModelSession> make_session(InklingModel& model, std::string& err);
 
-/// The device bytes a session takes for `context` positions (fp8: one byte a cached value), its drafter aside.
-uint64_t session_bytes(const Geometry& g, int64_t context, bool fp8);
+/// The device bytes a session takes for `context` positions, its drafter aside.
+uint64_t session_bytes(const Geometry& g, int64_t context, InklingModel::KvMode kv);
 /// The device bytes every session shares once on a card: the forward's scratch, the prompt path, the drafter's tap (the
 /// first card's).
 uint64_t shared_bytes(const Geometry& g, bool drafter);

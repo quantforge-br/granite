@@ -22,9 +22,13 @@ struct AttnPromptArgs {
     int64_t pos0 = 0;                  ///< row i at position pos0 + i
     const void* k_cache = nullptr;     ///< keys before pos0: [cap][kKvHeads][kHeadDim], position p in cell p % cap
     const void* v_cache = nullptr;
+    const uint16_t* k_scale = nullptr; ///< non-null: KvInt8 g64 fp16 scales [cap][kKvHeads][kHeadDim/64]
+    const uint16_t* v_scale = nullptr;
     int64_t cap = 0;
     const void* k_chunk = nullptr;     ///< keys from pos0 on: [chunk_cap][kKvHeads][kHeadDim], position p in cell p % chunk_cap
     const void* v_chunk = nullptr;     ///< (a full layer passes its cache again; a sliding-window layer the chunk's stage)
+    const uint16_t* k_chunk_scale = nullptr;
+    const uint16_t* v_chunk_scale = nullptr;
     int64_t chunk_cap = 0;
     bool fp8 = false;                  ///< unit-scale E4M3 codes instead of fp16
     int window = 0;                    ///< > 0: keys at distance < window only
@@ -55,7 +59,9 @@ void prompt_rows(int32_t* pos, int64_t pos0, int rows, int32_t* bounds, void* st
 /// (cell p % ring_cap): positions max(pos0, end - keep) .. end - 1, end = pos0 + rows. A cell is [kKvHeads][kHeadDim] of
 /// `elem` bytes a value (fp16 or E4M3).
 void stage_to_ring(const void* k_stage, const void* v_stage, int64_t stage_cap, void* k_ring, void* v_ring, int64_t ring_cap,
-                   int64_t pos0, int rows, int keep, int elem, void* stream);
+                   int64_t pos0, int rows, int keep, int elem, void* stream,
+                   const uint16_t* ks_stage = nullptr, const uint16_t* vs_stage = nullptr,
+                   uint16_t* ks_ring = nullptr, uint16_t* vs_ring = nullptr);
 
 /// Fused prompt loop controller down projection: RMS-normalizes dest and msg independently and computes
 /// hid[r][o] = w_down[o][0..kWidth) . rms(dest[r]) + w_down[o][kWidth..2*kWidth) . rms(msg[r]).

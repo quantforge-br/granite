@@ -72,6 +72,7 @@ struct Bufs {
     int32_t *ids = nullptr, *bounds = nullptr, *tok = nullptr, *dst = nullptr, *exp = nullptr;
     void* sort_scr = nullptr;
     void *k_stage = nullptr, *v_stage = nullptr;
+    uint16_t *ks_stage = nullptr, *vs_stage = nullptr;
     int32_t *pos = nullptr, *tokd = nullptr, *ident = nullptr, *dbounds = nullptr;
 };
 
@@ -126,6 +127,9 @@ void carve(Carve& c, Bufs& b, const Geometry& g, int64_t F, bool tp) {
     const size_t stage = (size_t) kKvHeads * R * kHeadDim * 2;   // fp16 at most
     b.k_stage = c.take<uint8_t>(stage);
     b.v_stage = c.take<uint8_t>(stage);
+    const size_t stage_sc = (size_t) kKvHeads * R * (kHeadDim / 64);
+    b.ks_stage = c.take<uint16_t>(stage_sc);
+    b.vs_stage = c.take<uint16_t>(stage_sc);
     b.pos = c.take<int32_t>(R);
     b.tokd = c.take<int32_t>(R);
     b.ident = c.take<int32_t>(P);
@@ -442,6 +446,7 @@ private:
         }
         // convolutions, clips and the keys: a sliding-window visit stages the chunk's own, a full visit writes its cells
         const bool fp8 = m_.cache_fp8();
+        const bool i8 = m_.cache_int8();
         AttnPrep ap;
         ap.yq = B.yq;
         ap.yk = one ? B.yq + kProjQ : B.yk;
@@ -462,6 +467,8 @@ private:
         ap.v_ring = vc.v_ring;
         ap.k_cache = vc.ring ? B.k_stage : vc.k;
         ap.v_cache = vc.ring ? B.v_stage : vc.v;
+        ap.k_scale = i8 ? (vc.ring ? B.ks_stage : vc.ks) : nullptr;
+        ap.v_scale = i8 ? (vc.ring ? B.vs_stage : vc.vs) : nullptr;
         ap.cap = vc.ring ? kChunk : vc.cap;
         ap.fp8 = fp8;
         ap.q = B.q;
@@ -478,9 +485,13 @@ private:
         aa.pos0 = pos0;
         aa.k_cache = vc.k;
         aa.v_cache = vc.v;
+        aa.k_scale = vc.ks;
+        aa.v_scale = vc.vs;
         aa.cap = vc.cap;
         aa.k_chunk = ap.k_cache;
         aa.v_chunk = ap.v_cache;
+        aa.k_chunk_scale = ap.k_scale;
+        aa.v_chunk_scale = ap.v_scale;
         aa.chunk_cap = ap.cap;
         aa.fp8 = fp8;
         aa.window = vc.ring ? g_.window : 0;
@@ -488,7 +499,9 @@ private:
         aa.g0 = g0;
         aa.ng = ng;
         attention_prompt(aa, rows, B.attn, strm(c));
-        if (vc.ring) stage_to_ring(B.k_stage, B.v_stage, kChunk, vc.k, vc.v, vc.cap, pos0, rows, g_.window, fp8 ? 1 : 2, strm(c));
+        if (vc.ring)
+            stage_to_ring(B.k_stage, B.v_stage, kChunk, vc.k, vc.v, vc.cap, pos0, rows, g_.window, (fp8 || i8) ? 1 : 2, strm(c),
+                          i8 ? B.ks_stage : nullptr, i8 ? B.vs_stage : nullptr, vc.ks, vc.vs);
         attn_gate_q8_1_prompt(B.attn, B.yq, one ? kProj : kProjQ, rows, B.xqd, strm(c), g0, ng);
         if (nc_ > 1) {
             product(c, w.out_part, E, nh * kHeadDim, rows, B.o);

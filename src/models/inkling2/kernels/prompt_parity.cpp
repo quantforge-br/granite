@@ -300,6 +300,48 @@ void test_attention_prompt() {
             cudaFree(dt);
             cudaFree(out);
         }
+    // KvInt8 g64 prompt attention parity (full with far + near tiles): bitwise vs dequantized FP16 prompt attention!
+    {
+        const int R = 160;
+        const int64_t pos0 = 2400, cap = pos0 + R;
+        const size_t n = (size_t) kKvHeads * cap * kHeadDim;
+        std::vector<int8_t> k8(n), v8(n);
+        std::vector<uint16_t> ks(n / 64), vs(n / 64), kd(n), vd(n);
+        for (size_t g = 0; g < n / 64; ++g) {
+            std::vector<float> fk = randn(64, 0.7f), fv = randn(64, 0.9f);
+            float ak = 0.f, av = 0.f;
+            for (int i = 0; i < 64; ++i) { ak = std::max(ak, std::fabs(fk[i])); av = std::max(av, std::fabs(fv[i])); }
+            ks[g] = f2h(ak / 127.f); vs[g] = f2h(av / 127.f);
+            const float sk = (float) h2d(ks[g]), sv = (float) h2d(vs[g]);
+            for (int i = 0; i < 64; ++i) {
+                k8[g * 64 + i] = (int8_t) std::max(-127.f, std::min(127.f, sk > 0 ? std::rint(fk[i] / sk) : 0.f));
+                v8[g * 64 + i] = (int8_t) std::max(-127.f, std::min(127.f, sv > 0 ? std::rint(fv[i] / sv) : 0.f));
+                kd[g * 64 + i] = f2h((float) k8[g * 64 + i] * sk);
+                vd[g * 64 + i] = f2h((float) v8[g * 64 + i] * sv);
+            }
+        }
+        int8_t *dk8 = dev(k8), *dv8 = dev(v8);
+        uint16_t *dks = dev(ks), *dvs = dev(vs), *dkd = dev(kd), *dvd = dev(vd);
+        float *dq = dev(randn((size_t) R * kHeads * kHeadDim, 0.8f));
+        float *drs = dev(randn((size_t) R * kHeads * kRel, 1.0f));
+        float *dsink = dev(randn((size_t) R * kHeads, 0.4f));
+        float *dt = dev(randn((size_t) kRel * kExtent, 0.3f));
+        float *o_i8 = zeros<float>((size_t) R * kHeads * kHeadDim), *o_f16 = zeros<float>((size_t) R * kHeads * kHeadDim);
+        AttnPromptArgs a;
+        a.q = dq; a.r = drs; a.sink = dsink; a.rel_table = dt; a.pos0 = pos0;
+        a.k_cache = dk8; a.v_cache = dv8; a.k_scale = dks; a.v_scale = dvs; a.cap = cap;
+        a.k_chunk = dk8; a.v_chunk = dv8; a.k_chunk_scale = dks; a.v_chunk_scale = dvs; a.chunk_cap = cap;
+        attention_prompt(a, R, o_i8, S);
+        AttnPromptArgs b = a;
+        b.k_cache = dkd; b.v_cache = dvd; b.k_scale = nullptr; b.v_scale = nullptr;
+        b.k_chunk = dkd; b.v_chunk = dvd; b.k_chunk_scale = nullptr; b.v_chunk_scale = nullptr;
+        attention_prompt(b, R, o_f16, S);
+        cudaStreamSynchronize(S);
+        same_bits("attention_prompt KvInt8 == dequant FP16", host(o_i8, (size_t) R * kHeads * kHeadDim).data(),
+                  host(o_f16, (size_t) R * kHeads * kHeadDim).data(), (size_t) R * kHeads * kHeadDim * 4);
+        cudaFree(dk8); cudaFree(dv8); cudaFree(dks); cudaFree(dvs); cudaFree(dkd); cudaFree(dvd);
+        cudaFree(dq); cudaFree(drs); cudaFree(dsink); cudaFree(dt); cudaFree(o_i8); cudaFree(o_f16);
+    }
     // timing: a 2,048-row chunk of a window layer, and of a full layer after 8K and 32K positions
     for (const int64_t ctx : {(int64_t) 0, (int64_t) 8192, (int64_t) 32768}) {
         const int R = 2048;

@@ -600,6 +600,41 @@ int main(int argc, char** argv) {
                 std::printf("gqa_window_attn (hd=%d pos0=%lld blk=%d KvInt8 vs dequant fp16): bitwise %s, max abs %.3g\n",
                             WHD, (long long) pos0, (int) blk, exact ? "yes" : "NO", ew.abs);
                 if (!exact) ++fails;
+                if (pos0 == 1020) {
+                    // Explicit CPU double wrap-around reference indexing absolute_position % cap directly.
+                    const double scale = 1.0 / std::sqrt((double) WHD);
+                    const int wg = WNH / WNKV;
+                    Err ecpu;
+                    for (int t = 0; t < WT; ++t) {
+                        const int64_t lo_t = std::max<int64_t>(0, pos0 + (blk ? 0 : t) - win + 1);
+                        for (int h = 0; h < WNH; ++h) {
+                            const int kv = h / wg;
+                            std::vector<double> sc((size_t) (hi - lo_t));
+                            double mx = -1e30;
+                            for (int64_t p = lo_t; p < hi; ++p) {
+                                const int64_t ce = p % cap;
+                                double dot = 0.0;
+                                for (int d = 0; d < WHD; ++d)
+                                    dot += (double) hq[((size_t) t * WNH + h) * WHD + d] *
+                                           (double) h2f(kd[((size_t) ce * WNKV + kv) * WHD + d]);
+                                sc[(size_t) (p - lo_t)] = dot * scale;
+                                mx = std::max(mx, sc[(size_t) (p - lo_t)]);
+                            }
+                            double den = 0.0;
+                            for (double& x : sc) { x = std::exp(x - mx); den += x; }
+                            for (int d = 0; d < WHD; ++d) {
+                                double acc = 0.0;
+                                for (int64_t p = lo_t; p < hi; ++p) {
+                                    const int64_t ce = p % cap;
+                                    acc += sc[(size_t) (p - lo_t)] * (double) h2f(vd[((size_t) ce * WNKV + kv) * WHD + d]);
+                                }
+                                ecpu.add(hi8[((size_t) t * WNH + h) * WHD + d], acc / den);
+                            }
+                        }
+                    }
+                    std::printf("  wrap-around CPU double ref (hd=%d blk=%d): max abs %.3g rel %.3g\n", WHD, (int) blk, ecpu.abs, ecpu.rel);
+                    if (ecpu.abs > 2e-3) ++fails;
+                }
             }
         }
         cudaFree(dk); cudaFree(dv); cudaFree(q8.k); cudaFree(q8.v); cudaFree(q8.ks); cudaFree(q8.vs);

@@ -101,6 +101,27 @@ __device__ __forceinline__ void store_kv(void* cache, bool fp8, size_t idx, floa
     }
 }
 
+// Store 4 consecutive channels (lane*4..lane*4+3) of one 128-dim KV head in KvInt8 g64 format:
+// lanes 0..15 form group 0 (dims 0..63), lanes 16..31 form group 1 (dims 64..127).
+__device__ __forceinline__ void store_kv4_i8(void* cache, uint16_t* scale, int64_t cell, int kvh, int lane,
+                                             float v0, float v1, float v2, float v3) {
+    float amax = fmaxf(fmaxf(fabsf(v0), fabsf(v1)), fmaxf(fabsf(v2), fabsf(v3)));
+#pragma unroll
+    for (int o = 8; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+    const __half hs = __float2half_rn(amax * (1.f / 127.f));
+    const float sc = __half2float(hs);
+    const float inv = sc > 0.f ? (1.f / sc) : 0.f;
+    char4 q;
+    q.x = (signed char) fmaxf(-127.f, fminf(127.f, rintf(v0 * inv)));
+    q.y = (signed char) fmaxf(-127.f, fminf(127.f, rintf(v1 * inv)));
+    q.z = (signed char) fmaxf(-127.f, fminf(127.f, rintf(v2 * inv)));
+    q.w = (signed char) fmaxf(-127.f, fminf(127.f, rintf(v3 * inv)));
+    const size_t base = ((size_t) cell * kKvHeads + kvh) * kHeadDim + lane * 4;
+    *reinterpret_cast<char4*>(static_cast<int8_t*>(cache) + base) = q;
+    if ((lane & 15) == 0)
+        scale[((size_t) cell * kKvHeads + kvh) * (kHeadDim / 64) + (lane >> 4)] = __half_as_ushort(hs);
+}
+
 // Warps 2 and 3 of head g for row r at position p: the clipped (and scaled) queries of heads 3g..3g+2 into q3
 // [3][kHeadDim], warp 3 also their relative states into r3 [3][kRel] and their sinks into s3 [3]. Every projection value a
 // warp takes is loaded before its first sum, so the warp waits for one memory trip, not one a head.
