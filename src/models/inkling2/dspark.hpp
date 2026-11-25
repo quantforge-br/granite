@@ -85,7 +85,7 @@ public:
     std::vector<DsparkLayer> layer;
     float *norm = nullptr, *mask = nullptr, *markov_norm = nullptr, *rnn_b = nullptr, *out_b = nullptr;
     float* alpha = nullptr;              ///< softmax(fuse_weight) [kDsMixes][kDsTargets]
-    uint16_t* w1 = nullptr;              ///< BF16 [n_vocab][rank], mapped host memory (a step reads one row)
+    uint16_t* w1 = nullptr;              ///< BF16 [n_vocab][rank], resident on GPU0 VRAM (a step reads one row)
     uint16_t* rnn_w = nullptr;           ///< BF16 [3 rank][2 rank + 2 width], as loaded; freed by finish()
     uint16_t *w_sp = nullptr, *w_h = nullptr, *w_f = nullptr;   ///< its columns, split by finish()
     uint16_t* out_w = nullptr;           ///< BF16 [width][rank]

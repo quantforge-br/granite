@@ -194,9 +194,9 @@ model::Result dspark_plan(const Pack& pack, core::LoadPlan& reads, int file, int
     w->mask = f32("dspark.mask_embed", kE);
     w->norm = f32("dspark.norm.weight", kE);
     w->markov_norm = f32("dspark.markov.dflare_norm.weight", kE);
-    {   // the Markov head's token rows in mapped host memory: a step reads the previous draft's row
+    {   // the Markov head's token rows on GPU0 VRAM (103 MB BF16, zero PCIe overhead per draft step)
         const uint64_t n = (uint64_t) g.n_vocab * kDsRank;
-        w->w1 = (uint16_t*) load("dspark.markov.w1.weight", Form::Bf16, n, true);
+        w->w1 = (uint16_t*) load("dspark.markov.w1.weight", Form::Bf16, n, false);
     }
     w->rnn_w = bf16("dspark.markov.rnn.weight", (uint64_t) kDsRnn * (2 * kDsRank + 2 * kE));
     w->rnn_b = f32("dspark.markov.rnn.bias", kDsRnn);
@@ -212,8 +212,8 @@ model::Result dspark_plan(const Pack& pack, core::LoadPlan& reads, int file, int
     w->head_sc = w->dev(dspark_screen_bytes(kE, g.n_vocab), ok);
     w->fold_sc = w->dev(dspark_screen_bytes(kDsRank, g.n_vocab), ok);
     if (!ok) return fail("out of device memory");
-    granite::log::info("granite inkling2", "drafter: DSpark, %d layers reading target visits %d, %d, %d, %.2f GiB on the GPU (NVFP4 block products, Q8_0 context projections, the screen's copies), "
-                      "%.0f MB of token rows in host memory",
+    granite::log::info("granite inkling2", "drafter: DSpark, %d layers reading target visits %d, %d, %d, %.2f GiB on the GPU (NVFP4 block products, Q8_0 context projections, the screen's copies, "
+                      "%.0f MB Markov token rows on GPU)",
                       d.n_layers, d.targets[0], d.targets[1], d.targets[2], (double) w->bytes() / (double) (1ull << 30),
                       (double) g.n_vocab * kDsRank * 2 / 1e6);
     out = std::move(w);

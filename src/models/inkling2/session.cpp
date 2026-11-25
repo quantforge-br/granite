@@ -80,6 +80,7 @@ struct Scratch {
     void* xo_ = nullptr;                     // the output projection's
     float *rlog_ = nullptr, *rw_ = nullptr;
     int32_t* ids_ = nullptr;
+    uint32_t* rplan_done_ = nullptr;            // dedicated main-stream completion counter for router_plan_fused (never shared with ra_st)
     unsigned long long* ex_ptr_ = nullptr;
     int32_t *ex_start_ = nullptr, *ex_ng_ = nullptr, *ex_dst_ = nullptr, *ex_tok_ = nullptr;
     void* ex_scr_ = nullptr;
@@ -180,6 +181,8 @@ struct Shared {
         for (void*& q : x.xq_) q = alloc(bk::native_q8_1_bytes((int) E, kMaxRows));
         x.xo_ = alloc(bk::native_q8_1_bytes(kOutRows, kMaxRows));
         x.rlog_ = f(R * g.n_expert); x.rw_ = f(R * g.n_used); x.ids_ = (int32_t*) alloc((size_t) R * g.n_used * 4);
+        x.rplan_done_ = (uint32_t*) alloc(4);
+        if (ok && (cudaMemset(x.rplan_done_, 0, 4) != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess)) ok = false;
         const int64_t pairs = R * g.n_used;
         x.ex_ptr_ = (unsigned long long*) alloc((size_t) pairs * 8);
         x.ex_start_ = (int32_t*) alloc((size_t) (pairs + 2) * 4);
@@ -1154,28 +1157,59 @@ private:
             ca.eps = g_.rms_eps;
             controllers(ca, 1, rows, k.stream);
         }
-        // the experts
-        bk::RouterArgs ra;
-        ra.n_expert = g_.n_expert;
-        ra.n_embd = E;
-        ra.k = g_.n_used;
-        ra.weight_scale = g_.expert_scale;
-        ra.gate = bk::RouterGate::Sigmoid;
+        // the experts: for rows <= 4, fused router_logits + router_select + moe_plan (1.23x-1.77x faster on sm_86,
+        // dedicated x.rplan_done_ isolated from k.ra_st); for rows > 4, standalone parallel router_select stays faster.
         const bool guess_next = guess && vi + 1 < (int) g_.visits.size();
         if (guess_next) cudaEventRecord(k.ra_ev, k.stream);   // the MLP input is in
-        bk::router(nrm, w.router, w.router_bias, rows, ra, x.rlog_, x.ids_, x.rw_, k.stream);
-        if (guess_next) {   // the next visit's experts: its router on this visit's MLP input, beside this visit's router
+        if (rows <= 4) {
+            RouterPlanArgs rp;
+            rp.x = nrm;
+            rp.gate = w.router;
+            rp.bias = w.router_bias;
+            rp.n_expert = g_.n_expert;
+            rp.k = g_.n_used;
+            rp.weight_scale = g_.expert_scale;
+            rp.blobs = w.blob_table;
+            rp.logits = x.rlog_;
+            rp.ids = x.ids_;
+            rp.weights = x.rw_;
+            rp.ptr = x.ex_ptr_;
+            rp.start = x.ex_start_;
+            rp.n_groups = x.ex_ng_;
+            rp.dst = x.ex_dst_;
+            rp.tok = x.ex_tok_;
+            rp.done = x.rplan_done_;
+            rp.tally = k.ex_tally ? k.ex_tally + (size_t) l * g_.n_expert : nullptr;
+            rp.rec_blobs = k.rec_blobs ? k.rec_blobs + (size_t) vi * kAheadExperts : nullptr;
+            rp.rec_n = k.rec_n ? k.rec_n + vi : nullptr;
+            router_plan_fused(rp, rows, k.stream);
+        } else {
+            bk::RouterArgs ra;
+            ra.n_expert = g_.n_expert;
+            ra.n_embd = E;
+            ra.k = g_.n_used;
+            ra.weight_scale = g_.expert_scale;
+            ra.gate = bk::RouterGate::Sigmoid;
+            bk::router(nrm, w.router, w.router_bias, rows, ra, x.rlog_, x.ids_, x.rw_, k.stream);
+        }
+        if (guess_next) {   // the next visit's experts: standalone router on side stream k.ra_st (never touches x.rplan_done_)
             const LayerWeights& nw = m_.layer(g_.visits[(size_t) vi + 1].layer);
-            bk::RouterArgs ga = ra;
+            bk::RouterArgs ga;
+            ga.n_expert = g_.n_expert;
+            ga.n_embd = E;
             ga.k = kGuessExperts / rows;
+            ga.weight_scale = g_.expert_scale;
+            ga.gate = bk::RouterGate::Sigmoid;
             cudaStreamWaitEvent(k.ra_st, k.ra_ev, 0);
             bk::router(nrm, nw.router, nw.router_bias, rows, ga, x.gs_log_, x.gs_ids_ + (size_t) (vi + 1) * kGuessExperts, x.gs_w_, k.ra_st);
             cudaEventRecord(k.gs_ev, k.ra_st);
             k.ra_on = true;
         }
-        moe_plan(x.ids_, rows, g_.n_used, g_.n_expert, w.blob_table, x.ex_ptr_, x.ex_start_, x.ex_ng_, x.ex_dst_, x.ex_tok_, k.stream,
-                 k.ex_tally ? k.ex_tally + (size_t) l * g_.n_expert : nullptr, k.rec_blobs ? k.rec_blobs + (size_t) vi * kAheadExperts : nullptr,
-                 k.rec_n ? k.rec_n + vi : nullptr);
+        if (rows > 4) {
+            moe_plan(x.ids_, rows, g_.n_used, g_.n_expert, w.blob_table, x.ex_ptr_, x.ex_start_, x.ex_ng_, x.ex_dst_, x.ex_tok_, k.stream,
+                     k.ex_tally ? k.ex_tally + (size_t) l * g_.n_expert : nullptr, k.rec_blobs ? k.rec_blobs + (size_t) vi * kAheadExperts : nullptr,
+                     k.rec_n ? k.rec_n + vi : nullptr);
+        }
         const bool on_cpu = cpu_ >> l & 1;   // the RAM experts' pairs on the CPU, beside the card's
         if (on_cpu) sh_->cpu->start(l, rows, nrm, x.ids_, k.stream);
         bk::NativeExpertLayout L = bk::native_expert_layout(w.gu_type, w.d_type, E, w.n_ff);

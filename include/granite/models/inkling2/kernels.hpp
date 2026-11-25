@@ -179,6 +179,32 @@ void moe_cpu_merge(const int32_t* ids, int rows, int k, const unsigned long long
 void moe_plan(const int32_t* ids, int rows, int k, int n_expert, const unsigned long long* blobs, unsigned long long* ptr,
               int32_t* start, int32_t* n_groups, int32_t* dst, int32_t* tok, void* stream, uint32_t* tally = nullptr,
               unsigned long long* rec_blobs = nullptr, int32_t* rec_n = nullptr);
+
+/// Fused decode router (logits + sigmoid top-k select) + moe_plan via formal last-block takeover (zero spin-wait,
+/// *done reset to 0 by the last block for CUDA Graph replay; `done` must be zero-initialized and never shared across
+/// concurrent streams). Bit-identical to standalone bk::router (Sigmoid) + moe_plan for rows <= kDecodeRows.
+struct RouterPlanArgs {
+    const float* x = nullptr;                  ///< [rows][kWidth]
+    const float* gate = nullptr;               ///< [n_expert][kWidth]
+    const float* bias = nullptr;               ///< [n_expert]
+    int n_expert = 0;
+    int k = 0;
+    float weight_scale = 1.0f;
+    const unsigned long long* blobs = nullptr; ///< [n_expert]
+    float* logits = nullptr;                   ///< [rows][n_expert]
+    int32_t* ids = nullptr;                    ///< [rows][k]
+    float* weights = nullptr;                  ///< [rows][k]
+    unsigned long long* ptr = nullptr;         ///< [rows * k]
+    int32_t* start = nullptr;                  ///< [rows * k + 2]
+    int32_t* n_groups = nullptr;               ///< [1]
+    int32_t* dst = nullptr;                    ///< [rows * k]
+    int32_t* tok = nullptr;                    ///< [rows * k]
+    uint32_t* done = nullptr;                  ///< [1] dedicated per-stream completion counter (starts and ends at 0)
+    uint32_t* tally = nullptr;                 ///< optional [n_expert]
+    unsigned long long* rec_blobs = nullptr;   ///< optional [kAheadExperts]
+    int32_t* rec_n = nullptr;                  ///< optional [1]
+};
+void router_plan_fused(const RouterPlanArgs& a, int rows, void* stream);
 constexpr int kAheadExperts = 8;   ///< the groups of a visit moe_plan records (rec_blobs, rec_n) for the next window
 /// Requests into L2 the first `bytes` of each of the *n blobs (moe_plan's record of a visit), 32 blocks each keeping one
 /// 128 KiB step in flight: run on a side stream while the glue before the experts runs; reads only.

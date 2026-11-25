@@ -9,6 +9,7 @@
 #include "granite/ggml/ggml.h"
 #include "granite/kernels/iq_kernels.hpp"
 #include "granite/kernels/native_mmvq.hpp"
+#include "granite/kernels/router.hpp"
 #include "granite/models/inkling2/kernels.hpp"
 
 #include <cuda_fp16.h>
@@ -1712,6 +1713,186 @@ void test_attention_krows_invariance() {
     cudaFree(dq); cudaFree(drs); cudaFree(dsink); cudaFree(dt); cudaFree(dpos); cudaFree(scr);
 }
 
+// P1.5b: bit-exact parity of router_plan_fused vs standalone bk::router + moe_plan, plus Section 7.1
+// >= 1,200 CUDA Graph replay stress test for BOTH fused controllers() and router_plan_fused() with concurrent side stream.
+void test_p15_fusions_and_graph_replay() {
+    const int n_exp = 128, k = 8, maxR = kDecodeRows;
+    const std::vector<float> x = randn((size_t) maxR * E, 0.8f);
+    const std::vector<float> gate = randn((size_t) n_exp * E, 0.2f);
+    const std::vector<float> bias = randn((size_t) n_exp, 0.3f);
+    std::vector<unsigned long long> blobs_all(n_exp), blobs_spill(n_exp);
+    for (int e = 0; e < n_exp; ++e) {
+        blobs_all[e] = 0x10000000ull + (unsigned long long) e * 4096ull;
+        blobs_spill[e] = (e % 5 == 0) ? 0ull : blobs_all[e];
+    }
+    float *dx = dev(x), *dgate = dev(gate), *dbias = dev(bias);
+    unsigned long long *dblobs_all = dev(blobs_all), *dblobs_spill = dev(blobs_spill);
+    float *rlog_ref = zeros<float>((size_t) maxR * n_exp), *rlog_got = zeros<float>((size_t) maxR * n_exp);
+    float *rw_ref = zeros<float>((size_t) maxR * k), *rw_got = zeros<float>((size_t) maxR * k);
+    int32_t *ids_ref = zeros<int32_t>((size_t) maxR * k), *ids_got = zeros<int32_t>((size_t) maxR * k);
+    const size_t pairs = (size_t) maxR * k;
+    unsigned long long *ptr_ref = zeros<unsigned long long>(pairs), *ptr_got = zeros<unsigned long long>(pairs);
+    int32_t *st_ref = zeros<int32_t>(pairs + 2), *st_got = zeros<int32_t>(pairs + 2);
+    int32_t *ng_ref = zeros<int32_t>(1), *ng_got = zeros<int32_t>(1);
+    int32_t *dst_ref = zeros<int32_t>(pairs), *dst_got = zeros<int32_t>(pairs);
+    int32_t *tok_ref = zeros<int32_t>(pairs), *tok_got = zeros<int32_t>(pairs);
+    uint32_t *tal_ref = zeros<uint32_t>(n_exp), *tal_got = zeros<uint32_t>(n_exp);
+    unsigned long long *rec_ref = zeros<unsigned long long>(kAheadExperts), *rec_got = zeros<unsigned long long>(kAheadExperts);
+    int32_t *recn_ref = zeros<int32_t>(1), *recn_got = zeros<int32_t>(1);
+    uint32_t* done = zeros<uint32_t>(1);
+
+    bool bit_ok = true;
+    for (bool spill : {false, true}) {
+        unsigned long long* dblobs = spill ? dblobs_spill : dblobs_all;
+        for (int R = 1; R <= maxR; ++R) {
+            cudaMemset(tal_ref, 0, (size_t) n_exp * 4);
+            cudaMemset(tal_got, 0, (size_t) n_exp * 4);
+            bk::RouterArgs ra;
+            ra.n_expert = n_exp; ra.n_embd = E; ra.k = k; ra.weight_scale = 2.5f; ra.gate = bk::RouterGate::Sigmoid;
+            bk::router(dx, dgate, dbias, R, ra, rlog_ref, ids_ref, rw_ref, nullptr);
+            moe_plan(ids_ref, R, k, n_exp, dblobs, ptr_ref, st_ref, ng_ref, dst_ref, tok_ref, nullptr, tal_ref, rec_ref, recn_ref);
+
+            RouterPlanArgs rp;
+            rp.x = dx; rp.gate = dgate; rp.bias = dbias; rp.n_expert = n_exp; rp.k = k; rp.weight_scale = 2.5f;
+            rp.blobs = dblobs; rp.logits = rlog_got; rp.ids = ids_got; rp.weights = rw_got;
+            rp.ptr = ptr_got; rp.start = st_got; rp.n_groups = ng_got; rp.dst = dst_got; rp.tok = tok_got;
+            rp.done = done; rp.tally = tal_got; rp.rec_blobs = rec_got; rp.rec_n = recn_got;
+            router_plan_fused(rp, R, nullptr);
+            cudaDeviceSynchronize();
+
+            const int ng = host(ng_ref, 1)[0];
+            const int ne = host(st_ref, (size_t) ng + 1)[ng];
+            const uint32_t done_after = host(done, 1)[0];
+            bool ok = done_after == 0u &&
+                      host(ng_got, 1)[0] == ng &&
+                      host(recn_got, 1)[0] == host(recn_ref, 1)[0] &&
+                      host(rlog_got, (size_t) R * n_exp) == host(rlog_ref, (size_t) R * n_exp) &&
+                      host(ids_got, (size_t) R * k) == host(ids_ref, (size_t) R * k) &&
+                      host(rw_got, (size_t) R * k) == host(rw_ref, (size_t) R * k) &&
+                      host(ptr_got, (size_t) ng) == host(ptr_ref, (size_t) ng) &&
+                      host(st_got, (size_t) ng + 2) == host(st_ref, (size_t) ng + 2) &&
+                      host(dst_got, (size_t) ne) == host(dst_ref, (size_t) ne) &&
+                      host(tok_got, (size_t) ne) == host(tok_ref, (size_t) ne) &&
+                      host(tal_got, (size_t) n_exp) == host(tal_ref, (size_t) n_exp) &&
+                      host(rec_got, kAheadExperts) == host(rec_ref, kAheadExperts);
+            if (!ok) bit_ok = false;
+        }
+    }
+    std::printf("%-34s %s\n", "router_plan_fused T=1..8 (all+sp)", bit_ok ? "bitwise" : "FAIL");
+    failures += !bit_ok;
+    for (int R : {1, 2, 4, 8}) {
+        bk::RouterArgs ra;
+        ra.n_expert = n_exp; ra.n_embd = E; ra.k = k; ra.weight_scale = 2.5f; ra.gate = bk::RouterGate::Sigmoid;
+        RouterPlanArgs rp;
+        rp.x = dx; rp.gate = dgate; rp.bias = dbias; rp.n_expert = n_exp; rp.k = k; rp.weight_scale = 2.5f;
+        rp.blobs = dblobs_all; rp.logits = rlog_got; rp.ids = ids_got; rp.weights = rw_got;
+        rp.ptr = ptr_got; rp.start = st_got; rp.n_groups = ng_got; rp.dst = dst_got; rp.tok = tok_got;
+        rp.done = done;
+        const double t_sep = time_us([&] {
+            bk::router(dx, dgate, dbias, R, ra, rlog_ref, ids_ref, rw_ref, nullptr);
+            moe_plan(ids_ref, R, k, n_exp, dblobs_all, ptr_ref, st_ref, ng_ref, dst_ref, tok_ref, nullptr);
+        }, 200);
+        const double t_fus = time_us([&] { router_plan_fused(rp, R, nullptr); }, 200);
+        std::printf("  router+plan R=%d: sep=%.2f us  fused=%.2f us  (delta=%+.2f us)\n", R, t_sep, t_fus, t_fus - t_sep);
+    }
+
+    // Section 7.1 CUDA Graph stress test: 1,200 consecutive replays across T={1,2,4,8} of BOTH fused controllers()
+    // and router_plan_fused() on main stream + concurrent standalone bk::router on side stream (k.ra_st model).
+    cudaStream_t main_st = nullptr, side_st = nullptr;
+    cudaEvent_t ev_fork = nullptr, ev_join = nullptr;
+    cudaStreamCreateWithFlags(&main_st, cudaStreamNonBlocking);
+    cudaStreamCreateWithFlags(&side_st, cudaStreamNonBlocking);
+    cudaEventCreateWithFlags(&ev_fork, cudaEventDisableTiming);
+    cudaEventCreateWithFlags(&ev_join, cudaEventDisableTiming);
+
+    const int S = 3, rank = kCtrlRank;
+    CtrlArgs ca;
+    ca.scratch = zeros<float>(ctrl_scratch_floats());
+    ca.norm_out = zeros<float>((size_t) maxR * E);
+    for (int s = 0; s < S; ++s) {
+        ca.dest[s] = dev(randn((size_t) maxR * E, 0.7f));
+        ca.msg[s] = dev(randn((size_t) maxR * E, 1.1f));
+        std::vector<uint16_t> dn((size_t) rank * 2 * E), up((size_t) 2 * E * rank);
+        const auto rf = randn(dn.size(), 0.05f), uf = randn(up.size(), 0.05f);
+        const auto to_bf = [](float v) -> uint16_t {
+            uint32_t u = 0;
+            std::memcpy(&u, &v, 4);
+            return (uint16_t) (u >> 16);
+        };
+        for (size_t i = 0; i < dn.size(); ++i) dn[i] = to_bf(rf[i]);
+        for (size_t i = 0; i < up.size(); ++i) up[i] = to_bf(uf[i]);
+        ca.down[s] = dev(dn);
+        ca.up[s] = dev(up);
+        ca.norm[s] = dev(randn(E, 0.2f, 1.f));
+        ca.q8[s] = zeros<uint8_t>((size_t) maxR * E / 32 * 36);
+    }
+    float *gs_log = zeros<float>((size_t) maxR * n_exp), *gs_w = zeros<float>((size_t) maxR * k);
+    int32_t* gs_ids = zeros<int32_t>((size_t) maxR * k);
+
+    bool graph_ok = true;
+    const int kShapeList[4] = {1, 2, 4, 8};
+    cudaGraphExec_t execs[4] = {};
+    std::vector<float> exp_ctrl[4], exp_rw[4];
+    std::vector<int32_t> exp_ids[4], exp_dst[4];
+    for (int si = 0; si < 4; ++si) {
+        const int R = kShapeList[si];
+        RouterPlanArgs rp;
+        rp.x = dx; rp.gate = dgate; rp.bias = dbias; rp.n_expert = n_exp; rp.k = k; rp.weight_scale = 2.5f;
+        rp.blobs = dblobs_all; rp.logits = rlog_got; rp.ids = ids_got; rp.weights = rw_got;
+        rp.ptr = ptr_got; rp.start = st_got; rp.n_groups = ng_got; rp.dst = dst_got; rp.tok = tok_got;
+        rp.done = done;
+        bk::RouterArgs ga;
+        ga.n_expert = n_exp; ga.n_embd = E; ga.k = k; ga.weight_scale = 2.5f; ga.gate = bk::RouterGate::Sigmoid;
+
+        // Reference direct run
+        controllers(ca, S, R, main_st);
+        router_plan_fused(rp, R, main_st);
+        cudaStreamSynchronize(main_st);
+        exp_ctrl[si] = host(ca.norm_out, (size_t) R * E);
+        exp_ids[si] = host(ids_got, (size_t) R * k);
+        exp_rw[si] = host(rw_got, (size_t) R * k);
+        exp_dst[si] = host(dst_got, (size_t) R * k);
+
+        // Capture graph with concurrent side stream
+        cudaGraph_t gr = nullptr;
+        if (cudaStreamBeginCapture(main_st, cudaStreamCaptureModeThreadLocal) != cudaSuccess) graph_ok = false;
+        controllers(ca, S, R, main_st);
+        cudaEventRecord(ev_fork, main_st);
+        router_plan_fused(rp, R, main_st);
+        cudaStreamWaitEvent(side_st, ev_fork, 0);
+        bk::router(dx, dgate, dbias, R, ga, gs_log, gs_ids, gs_w, side_st);
+        cudaEventRecord(ev_join, side_st);
+        cudaStreamWaitEvent(main_st, ev_join, 0);
+        if (cudaStreamEndCapture(main_st, &gr) != cudaSuccess ||
+            cudaGraphInstantiate(&execs[si], gr, nullptr, nullptr, 0) != cudaSuccess)
+            graph_ok = false;
+        if (gr) cudaGraphDestroy(gr);
+    }
+    // 1,200 consecutive replays cycling across T={1,2,4,8}
+    for (int rep = 0; rep < 1200 && graph_ok; ++rep) {
+        const int si = rep & 3;
+        const int R = kShapeList[si];
+        if (cudaGraphLaunch(execs[si], main_st) != cudaSuccess) { graph_ok = false; break; }
+        if ((rep % 100) == 99 || rep == 1199) {
+            if (cudaStreamSynchronize(main_st) != cudaSuccess) { graph_ok = false; break; }
+            if (host(done, 1)[0] != 0u ||
+                host(ca.norm_out, (size_t) R * E) != exp_ctrl[si] ||
+                host(ids_got, (size_t) R * k) != exp_ids[si] ||
+                host(rw_got, (size_t) R * k) != exp_rw[si] ||
+                host(dst_got, (size_t) R * k) != exp_dst[si]) {
+                graph_ok = false;
+                break;
+            }
+        }
+    }
+    for (int si = 0; si < 4; ++si)
+        if (execs[si]) cudaGraphExecDestroy(execs[si]);
+    cudaEventDestroy(ev_fork); cudaEventDestroy(ev_join);
+    cudaStreamDestroy(main_st); cudaStreamDestroy(side_st);
+    std::printf("%-34s %s\n", "P1.5b 1200x CUDA Graph stress", graph_ok ? "bitwise (0 hangs)" : "FAIL");
+    failures += !graph_ok;
+}
+
 int main() {
     int n = 0;
     if (cudaGetDeviceCount(&n) != cudaSuccess || n == 0) {
@@ -1737,6 +1918,7 @@ int main() {
     test_moe_finish();
     test_cpu_merge();
     test_batch_window();
+    test_p15_fusions_and_graph_replay();
     std::printf("inkling2_kernels_parity: %d failures\n", failures);
     return failures ? 1 : 0;
 }
