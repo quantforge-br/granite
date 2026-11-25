@@ -2272,7 +2272,7 @@ void native_q8_0_mmvq(const void* weights, const void* x_q8_1, float* y,
 }
 
 void native_q8_0_mmvq_segments(const void* weights, const Q80Segments& seg, int n_in, int ncols, void* stream) {
-    if (seg.n < 1 || seg.n > kQ80Segments) throw std::invalid_argument("native_q8_0_mmvq_segments takes 1 to 6 segments");
+    if (seg.n < 1 || seg.n > kQ80Segments) throw std::invalid_argument("native_q8_0_mmvq_segments takes 1 to 8 segments");
     validate_shape(n_in, ncols, 32);
     validate_pointer(weights);
     validate_stream(stream);

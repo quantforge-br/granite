@@ -1706,8 +1706,57 @@ void test_attention_krows_invariance() {
             const std::vector<float> gdeq = host(out_deq, (size_t) maxR * kHeads * kHeadDim);
             same_bits("attention KvInt8 == dequant FP16", ref_alone.data(), gdeq.data(), gdeq.size() * 4);
             cudaFree(dkd); cudaFree(dvd); cudaFree(out_deq);
-            cudaFree(dks); cudaFree(dvs);
         }
+        // P2.1 TP2 sharded KV parity: two 4-head sharded slabs (kv_stride = 4) must match 8-head ref_alone bitwise!
+        {
+            const int ng = kKvHeads / 2;
+            const size_t elem_b = (fp8 || i8) ? 1 : 2;
+            const size_t half_cell = (size_t) ng * kHeadDim * elem_b;
+            const size_t full_cell = 2 * half_cell;
+            const size_t half_sc = (size_t) ng * (kHeadDim / 64);
+            const std::vector<uint8_t> fk_h = host(static_cast<const uint8_t*>(dk), (size_t) cap * full_cell);
+            const std::vector<uint8_t> fv_h = host(static_cast<const uint8_t*>(dv), (size_t) cap * full_cell);
+            std::vector<uint16_t> fks_h, fvs_h;
+            if (i8) {
+                fks_h = host(dks, (size_t) cap * 2 * half_sc);
+                fvs_h = host(dvs, (size_t) cap * 2 * half_sc);
+            }
+            std::vector<float> combined((size_t) maxR * kHeads * kHeadDim, 0.f);
+            float* out_sh = zeros<float>((size_t) maxR * kHeads * kHeadDim);
+            for (int card = 0; card < 2; ++card) {
+                std::vector<uint8_t> sk((size_t) cap * half_cell), sv((size_t) cap * half_cell);
+                std::vector<uint16_t> sks, svs;
+                if (i8) { sks.resize((size_t) cap * half_sc); svs.resize((size_t) cap * half_sc); }
+                for (int64_t ce = 0; ce < cap; ++ce) {
+                    std::memcpy(&sk[ce * half_cell], &fk_h[ce * full_cell + card * half_cell], half_cell);
+                    std::memcpy(&sv[ce * half_cell], &fv_h[ce * full_cell + card * half_cell], half_cell);
+                    if (i8) {
+                        std::memcpy(&sks[ce * half_sc], &fks_h[ce * 2 * half_sc + card * half_sc], half_sc * 2);
+                        std::memcpy(&svs[ce * half_sc], &fvs_h[ce * 2 * half_sc + card * half_sc], half_sc * 2);
+                    }
+                }
+                void *dsk = dev(sk), *dsv = dev(sv);
+                uint16_t *dsks = i8 ? dev(sks) : nullptr, *dsvs = i8 ? dev(svs) : nullptr;
+                AttnArgs sa = base;
+                sa.k_cache = dsk; sa.v_cache = dsv; sa.k_scale = dsks; sa.v_scale = dsvs;
+                sa.g0 = card * ng; sa.ng = ng; sa.kv_stride = ng;
+                attention_decode(sa, maxR, p0 + maxR, scr, out_sh, nullptr);
+                const std::vector<float> got_c = host(out_sh, combined.size());
+                const int h0 = sa.g0 * (kHeads / kKvHeads), nh = sa.ng * (kHeads / kKvHeads);
+                for (int r = 0; r < maxR; ++r)
+                    std::memcpy(&combined[((size_t) r * kHeads + h0) * kHeadDim],
+                                &got_c[((size_t) r * kHeads + h0) * kHeadDim], (size_t) nh * kHeadDim * 4);
+                cudaFree(dsk); cudaFree(dsv);
+                if (dsks) cudaFree(dsks);
+                if (dsvs) cudaFree(dsvs);
+            }
+            cudaFree(out_sh);
+            char sh_label[64];
+            std::snprintf(sh_label, sizeof sh_label, "attention TP2 KV shard (%s)", i8 ? "KvInt8" : fp8 ? "E4M3" : "FP16");
+            same_bits(sh_label, ref_alone.data(), combined.data(), combined.size() * 4);
+        }
+        if (dks) cudaFree(dks);
+        if (dvs) cudaFree(dvs);
         cudaFree(out1); cudaFree(outR); cudaFree(dk); cudaFree(dv);
     }
     cudaFree(dq); cudaFree(drs); cudaFree(dsink); cudaFree(dt); cudaFree(dpos); cudaFree(scr);
@@ -1780,6 +1829,55 @@ void test_p15_fusions_and_graph_replay() {
     }
     std::printf("%-34s %s\n", "router_plan_fused T=1..8 (all+sp)", bit_ok ? "bitwise" : "FAIL");
     failures += !bit_ok;
+    // Also test fallback branch (n_expert > 128) across n_expert={160, 256} and k={1, 8, 16}.
+    bool fb_ok = true;
+    for (int ne_fb : {160, 256}) {
+        const std::vector<float> g_fb = randn((size_t) ne_fb * E, 0.2f);
+        const std::vector<float> b_fb = randn((size_t) ne_fb, 0.3f);
+        std::vector<unsigned long long> bl_fb(ne_fb);
+        for (int e = 0; e < ne_fb; ++e) bl_fb[e] = (e % 7 == 0) ? 0ull : (0x20000000ull + (unsigned long long) e * 4096ull);
+        float *dg_fb = dev(g_fb), *db_fb = dev(b_fb);
+        unsigned long long* dbl_fb = dev(bl_fb);
+        float *lr_fb = zeros<float>((size_t) maxR * ne_fb), *lg_fb = zeros<float>((size_t) maxR * ne_fb);
+        float *wr_fb = zeros<float>((size_t) maxR * 16), *wg_fb = zeros<float>((size_t) maxR * 16);
+        int32_t *ir_fb = zeros<int32_t>((size_t) maxR * 16), *ig_fb = zeros<int32_t>((size_t) maxR * 16);
+        unsigned long long *pr_fb = zeros<unsigned long long>((size_t) maxR * 16), *pg_fb = zeros<unsigned long long>((size_t) maxR * 16);
+        int32_t *sr_fb = zeros<int32_t>((size_t) maxR * 16 + 2), *sg_fb = zeros<int32_t>((size_t) maxR * 16 + 2);
+        int32_t *dr_fb = zeros<int32_t>((size_t) maxR * 16), *dg2_fb = zeros<int32_t>((size_t) maxR * 16);
+        int32_t *tr_fb = zeros<int32_t>((size_t) maxR * 16), *tg_fb = zeros<int32_t>((size_t) maxR * 16);
+        for (int k_fb : {1, 8, 16}) {
+            for (int R : {1, 3, 4}) {
+                bk::RouterArgs ra;
+                ra.n_expert = ne_fb; ra.n_embd = E; ra.k = k_fb; ra.weight_scale = 2.5f; ra.gate = bk::RouterGate::Sigmoid;
+                bk::router(dx, dg_fb, db_fb, R, ra, lr_fb, ir_fb, wr_fb, nullptr);
+                moe_plan(ir_fb, R, k_fb, ne_fb, dbl_fb, pr_fb, sr_fb, ng_ref, dr_fb, tr_fb, nullptr);
+                RouterPlanArgs rp;
+                rp.x = dx; rp.gate = dg_fb; rp.bias = db_fb; rp.n_expert = ne_fb; rp.k = k_fb; rp.weight_scale = 2.5f;
+                rp.blobs = dbl_fb; rp.logits = lg_fb; rp.ids = ig_fb; rp.weights = wg_fb;
+                rp.ptr = pg_fb; rp.start = sg_fb; rp.n_groups = ng_got; rp.dst = dg2_fb; rp.tok = tg_fb;
+                rp.done = done;
+                router_plan_fused(rp, R, nullptr);
+                cudaDeviceSynchronize();
+                const int ng = host(ng_ref, 1)[0];
+                const int ne = host(sr_fb, (size_t) ng + 1)[ng];
+                if (host(done, 1)[0] != 0u || host(ng_got, 1)[0] != ng ||
+                    host(ig_fb, (size_t) R * k_fb) != host(ir_fb, (size_t) R * k_fb) ||
+                    host(wg_fb, (size_t) R * k_fb) != host(wr_fb, (size_t) R * k_fb) ||
+                    host(pg_fb, (size_t) ng) != host(pr_fb, (size_t) ng) ||
+                    host(sg_fb, (size_t) ng + 2) != host(sr_fb, (size_t) ng + 2) ||
+                    host(dg2_fb, (size_t) ne) != host(dr_fb, (size_t) ne) ||
+                    host(tg_fb, (size_t) ne) != host(tr_fb, (size_t) ne))
+                    fb_ok = false;
+            }
+        }
+        cudaFree(dg_fb); cudaFree(db_fb); cudaFree(dbl_fb);
+        cudaFree(lr_fb); cudaFree(lg_fb); cudaFree(wr_fb); cudaFree(wg_fb);
+        cudaFree(ir_fb); cudaFree(ig_fb); cudaFree(pr_fb); cudaFree(pg_fb);
+        cudaFree(sr_fb); cudaFree(sg_fb); cudaFree(dr_fb); cudaFree(dg2_fb);
+        cudaFree(tr_fb); cudaFree(tg_fb);
+    }
+    std::printf("%-34s %s\n", "router_plan_fused >128 fallback", fb_ok ? "bitwise" : "FAIL");
+    failures += !fb_ok;
     for (int R : {1, 2, 4, 8}) {
         bk::RouterArgs ra;
         ra.n_expert = n_exp; ra.n_embd = E; ra.k = k; ra.weight_scale = 2.5f; ra.gate = bk::RouterGate::Sigmoid;

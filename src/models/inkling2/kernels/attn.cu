@@ -202,14 +202,15 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
     const int r0 = (int) blockIdx.x * R;
     const int n_rows = min(R, rows - r0);
     const int kvh = a.g0 + (int) blockIdx.y;
+    const int lkvh = a.kv_stride < kKvHeads ? (int) blockIdx.y : kvh;
     const int s = (int) blockIdx.z;
 
     bk::pdl_wait();
     bk::pdl_launch_dependents();
 
     constexpr int kRowBytes = kEightBit ? kHeadDim : kHeadDim * 2;
-    constexpr size_t kCell = (size_t) kKvHeads * kRowBytes;
-    constexpr size_t kScaleCell = (size_t) kKvHeads * (kHeadDim / 64);
+    const size_t kCell = (size_t) a.kv_stride * kRowBytes;
+    const size_t kScaleCell = (size_t) a.kv_stride * (kHeadDim / 64);
     const int cap = (int) a.cap;
 
     if (tid == 0) {
@@ -227,11 +228,11 @@ __global__ void __launch_bounds__(kThreads, kMinBlocks)
             sm.rk[k].sc_lo = c_lo + s * c_span;
             sm.rk[k].sc_hi = min(c_hi, sm.rk[k].sc_lo + c_span);
             const SegCaches& sc = a.seg.c[bk::seg_of(a.seg.at, r)];
-            sm.rk[k].k = static_cast<const uint8_t*>(a.seg.at.n > 0 ? sc.k : a.k_cache) + (size_t) kvh * kRowBytes;
-            sm.rk[k].v = static_cast<const uint8_t*>(a.seg.at.n > 0 ? sc.v : a.v_cache) + (size_t) kvh * kRowBytes;
+            sm.rk[k].k = static_cast<const uint8_t*>(a.seg.at.n > 0 ? sc.k : a.k_cache) + (size_t) lkvh * kRowBytes;
+            sm.rk[k].v = static_cast<const uint8_t*>(a.seg.at.n > 0 ? sc.v : a.v_cache) + (size_t) lkvh * kRowBytes;
             if constexpr (kMode == 2) {
-                sm.rk[k].ks = (a.seg.at.n > 0 ? sc.k_scale : a.k_scale) + (size_t) kvh * (kHeadDim / 64);
-                sm.rk[k].vs = (a.seg.at.n > 0 ? sc.v_scale : a.v_scale) + (size_t) kvh * (kHeadDim / 64);
+                sm.rk[k].ks = (a.seg.at.n > 0 ? sc.k_scale : a.k_scale) + (size_t) lkvh * (kHeadDim / 64);
+                sm.rk[k].vs = (a.seg.at.n > 0 ? sc.v_scale : a.v_scale) + (size_t) lkvh * (kHeadDim / 64);
             } else {
                 sm.rk[k].ks = nullptr;
                 sm.rk[k].vs = nullptr;
@@ -532,6 +533,7 @@ void attention_decode(const AttnArgs& a, int rows, int64_t max_keys, void* scrat
     float* part_acc = part_ml + (size_t) rows * kHeads * z * 2;
     if (a.cap < kChunk) throw std::runtime_error("inkling2 attention_decode: the cache holds fewer cells than a chunk");
     if (a.g0 < 0 || a.ng < 1 || a.g0 + a.ng > kKvHeads) throw std::runtime_error("inkling2 attention_decode: groups");
+    if (a.kv_stride != kKvHeads && a.kv_stride != a.ng) throw std::runtime_error("inkling2 attention_decode: kv_stride");
     if (a.seg.at.n > 0 && rows > kDecodeRows)
         throw std::runtime_error("inkling2 attention_decode: rows > kDecodeRows with batch segments");
     const bool i8 = a.seg.at.n > 0 ? (a.seg.c[0].k_scale != nullptr) : (a.k_scale != nullptr);

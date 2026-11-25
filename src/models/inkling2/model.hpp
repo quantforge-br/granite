@@ -222,8 +222,8 @@ private:
 /// A session over `model`; null with `err` set.
 std::unique_ptr<model::ModelSession> make_session(InklingModel& model, std::string& err);
 
-/// The device bytes a session takes for `context` positions, its drafter aside.
-uint64_t session_bytes(const Geometry& g, int64_t context, InklingModel::KvMode kv);
+/// The device bytes a session takes on one card for `context` positions (`cards` > 1 shards KV heads), its drafter aside.
+uint64_t session_bytes(const Geometry& g, int64_t context, InklingModel::KvMode kv, int cards = 1);
 /// The device bytes every session shares once on a card: the forward's scratch, the prompt path, the drafter's tap (the
 /// first card's).
 uint64_t shared_bytes(const Geometry& g, bool drafter);

@@ -34,6 +34,7 @@ struct AttnPromptArgs {
     int window = 0;                    ///< > 0: keys at distance < window only
     float scale = 0.08838834764831845f;
     int g0 = 0, ng = kKvHeads;         ///< key/value groups [g0, g0 + ng) to compute (TP2 sharding)
+    int kv_stride = kKvHeads;          ///< KV heads stored per cache cell (kKvHeads replicated, or ng under TP2 KV sharding)
 };
 
 /// out[i][h] = sum_j softmax_j(scale q.k_j + bias(p_i - p_j)) v_j over the keys at positions p_j <= p_i (and within the
@@ -61,7 +62,7 @@ void prompt_rows(int32_t* pos, int64_t pos0, int rows, int32_t* bounds, void* st
 void stage_to_ring(const void* k_stage, const void* v_stage, int64_t stage_cap, void* k_ring, void* v_ring, int64_t ring_cap,
                    int64_t pos0, int rows, int keep, int elem, void* stream,
                    const uint16_t* ks_stage = nullptr, const uint16_t* vs_stage = nullptr,
-                   uint16_t* ks_ring = nullptr, uint16_t* vs_ring = nullptr);
+                   uint16_t* ks_ring = nullptr, uint16_t* vs_ring = nullptr, int kv_heads = kKvHeads);
 
 /// Fused prompt loop controller down projection: RMS-normalizes dest and msg independently and computes
 /// hid[r][o] = w_down[o][0..kWidth) . rms(dest[r]) + w_down[o][kWidth..2*kWidth) . rms(msg[r]).

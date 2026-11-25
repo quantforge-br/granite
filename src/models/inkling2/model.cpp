@@ -107,18 +107,19 @@ void read_expert(const Pack& pack, int l, int e, uint64_t at, uint64_t n, int fi
 }  // namespace
 
 namespace {
-// The cached keys and values of one visit of layer `layer` for `context` positions (a sliding-window layer: its ring).
-uint64_t visit_cache_bytes(const Geometry& g, int layer, int64_t context, InklingModel::KvMode kv) {
+// The cached keys and values of one visit of layer `layer` on one card for `context` positions (sharded across `cards`).
+uint64_t visit_cache_bytes(const Geometry& g, int layer, int64_t context, InklingModel::KvMode kv, int cards) {
+    const uint64_t heads = (uint64_t) (kKvHeads / cards);
     const uint64_t per_pos = kv == InklingModel::KvMode::Int8
-                                 ? 2ull * kKvHeads * (kHeadDim + (kHeadDim / 64) * 2)
-                                 : 2ull * kKvHeads * kHeadDim * (kv == InklingModel::KvMode::Fp8 ? 1 : 2);
+                                 ? 2ull * heads * (kHeadDim + (kHeadDim / 64) * 2)
+                                 : 2ull * heads * kHeadDim * (kv == InklingModel::KvMode::Fp8 ? 1 : 2);
     return per_pos * (g.swa[(size_t) layer] ? (uint64_t) g.window + kDecodeRows : (uint64_t) context);
 }
 }  // namespace
 
-uint64_t session_bytes(const Geometry& g, int64_t context, InklingModel::KvMode kv) {
+uint64_t session_bytes(const Geometry& g, int64_t context, InklingModel::KvMode kv, int cards) {
     uint64_t caches = 0;
-    for (const Visit& v : g.visits) caches += visit_cache_bytes(g, v.layer, context, kv);
+    for (const Visit& v : g.visits) caches += visit_cache_bytes(g, v.layer, context, kv, cards);
     return caches + kSessionFixed + (uint64_t) kDecodeRows * (uint64_t) g.n_vocab * 4;
 }
 
@@ -302,7 +303,7 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
         const uint64_t spare = kCardSpare - vision_modules;   // [vision]
         const uint64_t n_sess = (uint64_t) std::max(req.sessions, 1);
         const auto bytes_at = [&](int64_t c) {   // DSPARK HOOK: a session's drafter beside its caches
-            return session_bytes(g, c, kv_) + (dspark_ ? dspark_session_bytes(pack_, c) : 0);
+            return session_bytes(g, c, kv_, cards()) + (dspark_ ? dspark_session_bytes(pack_, c) : 0);
         };
         const uint64_t shared = shared_bytes(g, dspark_ != nullptr);
         if (cards() > 1) {   // tensor parallelism: each card its half of every expert (no spill), checked once they are placed
@@ -312,7 +313,7 @@ model::Result InklingModel::plan(const model::LoadRequest& req, core::LoadPlan& 
                 size_t fb = 0, tb = 0;
                 cudaMemGetInfo(&fb, &tb);
                 const uint64_t pictures = req.vision ? vis_.region_bytes() : 0;   // [vision]
-                const uint64_t need = (c == 0 ? bytes_at(want) : session_bytes(g, want, kv_)) * n_sess +
+                const uint64_t need = (c == 0 ? bytes_at(want) : session_bytes(g, want, kv_, cards())) * n_sess +
                                       (c == 0 ? shared + spare + pictures : shared_bytes(g, false) + kCardSpare);
                 if (need > fb) {
                     cudaSetDevice(device_);

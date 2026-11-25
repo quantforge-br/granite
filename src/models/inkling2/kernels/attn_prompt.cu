@@ -103,7 +103,7 @@ __device__ __forceinline__ float quad_sum(float v) {
 }
 // Stage raw 8-bit tile (E4M3 or KvInt8 g64) into smem via cp.async (far tiles only, where gx is unused).
 template <int kMode>
-__device__ __forceinline__ void stage_raw_8(const AttnPromptArgs& a, Raw8Tile& raw, int kvh, int64_t k0, int64_t lo,
+__device__ __forceinline__ void stage_raw_8(const AttnPromptArgs& a, Raw8Tile& raw, int lkvh, int64_t k0, int64_t lo,
                                             int64_t hi, int tid) {
     constexpr int kPieces = kKeys * kHeadDim / 16;   // 256 x 16-byte pieces per K or V tile
     for (int c = tid; c < 2 * kPieces; c += kThreads) {
@@ -115,7 +115,7 @@ __device__ __forceinline__ void stage_raw_8(const AttnPromptArgs& a, Raw8Tile& r
         const bool fresh = key >= a.pos0;
         const int64_t cap = fresh ? a.chunk_cap : a.cap;
         const uint8_t* base = static_cast<const uint8_t*>(fresh ? (isv ? a.v_chunk : a.k_chunk) : (isv ? a.v_cache : a.k_cache));
-        const uint8_t* src = base + ((size_t) (ok ? key % cap : 0) * kKvHeads + kvh) * kHeadDim + col;
+        const uint8_t* src = base + ((size_t) (ok ? key % cap : 0) * a.kv_stride + lkvh) * kHeadDim + col;
         cp16(isv ? &raw.v[j][col] : &raw.k[j][col], src, ok);
     }
     if constexpr (kMode == 2) {
@@ -129,7 +129,7 @@ __device__ __forceinline__ void stage_raw_8(const AttnPromptArgs& a, Raw8Tile& r
                 const bool fresh = key >= a.pos0;
                 const int64_t cap = fresh ? a.chunk_cap : a.cap;
                 const uint16_t* sbase = fresh ? (isv ? a.v_chunk_scale : a.k_chunk_scale) : (isv ? a.v_scale : a.k_scale);
-                sv = *reinterpret_cast<const uint32_t*>(sbase + ((size_t) (key % cap) * kKvHeads + kvh) * (kHeadDim / 64));
+                sv = *reinterpret_cast<const uint32_t*>(sbase + ((size_t) (key % cap) * a.kv_stride + lkvh) * (kHeadDim / 64));
             }
             *reinterpret_cast<uint32_t*>(isv ? raw.vs[j] : raw.ks[j]) = sv;
         }
@@ -181,7 +181,7 @@ __device__ __forceinline__ void unpack_raw_8_to_tile(const Raw8Tile& raw, KvTile
 // One tile of keys and values into shared memory: key k0 + j at row j, zero outside [lo, hi].
 // kMode: 0 = FP16, 1 = FP8 E4M3, 2 = KvInt8 g64.
 template <int kMode>
-__device__ __forceinline__ void load_tile(const AttnPromptArgs& a, KvTile& sm, int kvh, int64_t k0, int64_t lo, int64_t hi, int tid) {
+__device__ __forceinline__ void load_tile(const AttnPromptArgs& a, KvTile& sm, int lkvh, int64_t k0, int64_t lo, int64_t hi, int tid) {
     if constexpr (kMode == 0) {
         constexpr int kPieces = kKeys * kHeadDim / 8;   // 16-byte pieces of one tile
         for (int c = tid; c < 2 * kPieces; c += kThreads) {
@@ -193,7 +193,7 @@ __device__ __forceinline__ void load_tile(const AttnPromptArgs& a, KvTile& sm, i
             const bool fresh = key >= a.pos0;
             const int64_t cap = fresh ? a.chunk_cap : a.cap;
             const __half* base = static_cast<const __half*>(fresh ? (isv ? a.v_chunk : a.k_chunk) : (isv ? a.v_cache : a.k_cache));
-            const __half* src = base + ((size_t) (ok ? key % cap : 0) * kKvHeads + kvh) * kHeadDim + col;
+            const __half* src = base + ((size_t) (ok ? key % cap : 0) * a.kv_stride + lkvh) * kHeadDim + col;
             cp16(isv ? &sm.v[j][col] : &sm.k[j][col], src, ok);
         }
     } else {
@@ -209,7 +209,7 @@ __device__ __forceinline__ void load_tile(const AttnPromptArgs& a, KvTile& sm, i
             if (ok) {
                 const bool fresh = key >= a.pos0;
                 const int64_t cap = fresh ? a.chunk_cap : a.cap;
-                const size_t row = (size_t) (key % cap) * kKvHeads + kvh;
+                const size_t row = (size_t) (key % cap) * a.kv_stride + lkvh;
                 const uint8_t* base = static_cast<const uint8_t*>(fresh ? (isv ? a.v_chunk : a.k_chunk) : (isv ? a.v_cache : a.k_cache));
                 u = *reinterpret_cast<const uint4*>(base + row * kHeadDim + col);
                 if constexpr (kMode == 2) {
@@ -244,6 +244,7 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
     const int tid = threadIdx.x, lane = tid & 31, w = tid >> 5;
     const int g = lane >> 2, tq = lane & 3;
     const int kvh = a.g0 + (int) blockIdx.y;
+    const int lkvh = a.kv_stride < kKvHeads ? (int) blockIdx.y : kvh;
     const int i0 = (int) (gridDim.x - 1 - blockIdx.x) * kPos;   // the block's first row: the blocks with the most keys first
     const int64_t q0 = a.pos0 + i0;
     const int head = kvh * 3 + w / kWarpsPerHead;
@@ -295,13 +296,13 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
             __syncthreads();   // every warp is done with the previous tile
             if (!ready) {
                 cur = 0;
-                load_tile<0>(a, sm.t0, kvh, k0, lo, hi, tid);
+                load_tile<0>(a, sm.t0, lkvh, k0, lo, hi, tid);
                 asm volatile("cp.async.commit_group;\n" ::: "memory");
             }
             // a far tile followed by a far tile: the next one is requested into the other room before this one is used
             const bool next = far(k0) && k0 + kKeys <= hi && far(k0 + kKeys);
             if (next) {
-                load_tile<0>(a, cur ? sm.t0 : sm.u.far_buf.t1, kvh, k0 + kKeys, lo, hi, tid);
+                load_tile<0>(a, cur ? sm.t0 : sm.u.far_buf.t1, lkvh, k0 + kKeys, lo, hi, tid);
                 asm volatile("cp.async.commit_group;\ncp.async.wait_group 1;\n" ::: "memory");
             } else {
                 asm volatile("cp.async.wait_group 0;\n" ::: "memory");
@@ -313,7 +314,7 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
             if (far(k0)) {
                 if (!ready) {
                     __syncthreads();
-                    stage_raw_8<kMode>(a, sm.u.far_buf.raw_8, kvh, k0, lo, hi, tid);
+                    stage_raw_8<kMode>(a, sm.u.far_buf.raw_8, lkvh, k0, lo, hi, tid);
                     asm volatile("cp.async.commit_group;\ncp.async.wait_group 0;\n" ::: "memory");
                     __syncthreads();
                 } else {
@@ -325,14 +326,14 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
                 __syncthreads();   // t0 populated and raw_8 completely read
                 const bool next_far = k0 + kKeys <= hi && far(k0 + kKeys);
                 if (next_far) {
-                    stage_raw_8<kMode>(a, sm.u.far_buf.raw_8, kvh, k0 + kKeys, lo, hi, tid);
+                    stage_raw_8<kMode>(a, sm.u.far_buf.raw_8, lkvh, k0 + kKeys, lo, hi, tid);
                     asm volatile("cp.async.commit_group;\n" ::: "memory");
                 }
                 ready = next_far;
             } else {
                 // Near tile: gx is active in sm.u, so never touch sm.u.far_buf; ready is guaranteed false here.
                 __syncthreads();
-                load_tile<kMode>(a, sm.t0, kvh, k0, lo, hi, tid);
+                load_tile<kMode>(a, sm.t0, lkvh, k0, lo, hi, tid);
                 ready = false;
             }
         }
@@ -480,6 +481,7 @@ __global__ void __launch_bounds__(kThreads, 1) attn_prompt_kernel(const AttnProm
 void attention_prompt(const AttnPromptArgs& a, int rows, float* out, void* stream) {
     if (rows <= 0) return;
     if (a.g0 < 0 || a.ng < 1 || a.g0 + a.ng > kKvHeads) throw std::runtime_error("inkling2 attention_prompt: groups");
+    if (a.kv_stride != kKvHeads && a.kv_stride != a.ng) throw std::runtime_error("inkling2 attention_prompt: kv_stride");
     const dim3 grid((unsigned) ((rows + kPos - 1) / kPos), (unsigned) a.ng);
     cudaStream_t s = (cudaStream_t) stream;
     static bool sized[kOptInDevices] = {};   // the opt-in is per device

@@ -106,6 +106,7 @@ struct AttnPrep {
     /// decode_prepare: the key/value groups [g0, g0 + ng) whose query heads (3g..3g + 2) it prepares (a card's share under
     /// tensor parallelism; yq is read only at their rows); every group's keys and values go to the cache
     int g0 = 0, ng = kKvHeads;
+    int kv_stride = kKvHeads;          ///< KV heads per cache cell (kKvHeads replicated, or ng under TP2 KV sharding)
     Segments seg;                      ///< a batch window's (decode_prepare only): each segment's caches and rings
 };
 /// Convolves the window's keys and values (positions before the window read from the rings, below position 0 zero),
@@ -135,6 +136,7 @@ struct AttnArgs {
     /// attention_decode: the heads of key/value groups [g0, g0 + ng) only (a card's share under tensor parallelism; the
     /// other heads' fp32 outputs are left as they are)
     int g0 = 0, ng = kKvHeads;
+    int kv_stride = kKvHeads;          ///< KV heads per cache cell (kKvHeads replicated, or ng under TP2 KV sharding)
     uint32_t* sent = nullptr;          ///< set: counted there as sent (Exchange: the output projection sends the share)
     Segments seg;                      ///< a batch window's: each segment's caches
 };

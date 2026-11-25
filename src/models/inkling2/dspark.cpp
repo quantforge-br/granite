@@ -212,10 +212,10 @@ model::Result dspark_plan(const Pack& pack, core::LoadPlan& reads, int file, int
     w->head_sc = w->dev(dspark_screen_bytes(kE, g.n_vocab), ok);
     w->fold_sc = w->dev(dspark_screen_bytes(kDsRank, g.n_vocab), ok);
     if (!ok) return fail("out of device memory");
-    granite::log::info("granite inkling2", "drafter: DSpark, %d layers reading target visits %d, %d, %d, %.2f GiB on the GPU (NVFP4 block products, Q8_0 context projections, the screen's copies, "
-                      "%.0f MB Markov token rows on GPU)",
-                      d.n_layers, d.targets[0], d.targets[1], d.targets[2], (double) w->bytes() / (double) (1ull << 30),
-                      (double) g.n_vocab * kDsRank * 2 / 1e6);
+    granite::log::info("granite inkling2", "drafter: DSpark, %d layers reading target visits %d, %d, %d, %.2f GiB on CUDA%d (NVFP4 block products, Q8_0 context projections, the screen's copies, "
+                      "%.0f MB Markov token rows on CUDA%d)",
+                      d.n_layers, d.targets[0], d.targets[1], d.targets[2], (double) w->bytes() / (double) (1ull << 30), device,
+                      (double) g.n_vocab * kDsRank * 2 / 1e6, device);
     out = std::move(w);
     return {};
 }

@@ -130,10 +130,11 @@ void carve(Carve& c, Bufs& b, const Geometry& g, int64_t F, bool tp) {
     b.dst = c.take<int32_t>(P);
     b.exp = c.take<int32_t>(P);
     b.sort_scr = c.take<uint8_t>(moe_sort_scratch((int) P, g.n_expert));
-    const size_t stage = (size_t) kKvHeads * R * kHeadDim * 2;   // fp16 at most
+    const size_t kv_h = tp ? (size_t) (kKvHeads / 2) : (size_t) kKvHeads;
+    const size_t stage = kv_h * R * kHeadDim * 2;   // fp16 at most
     b.k_stage = c.take<uint8_t>(stage);
     b.v_stage = c.take<uint8_t>(stage);
-    const size_t stage_sc = (size_t) kKvHeads * R * (kHeadDim / 64);
+    const size_t stage_sc = kv_h * R * (kHeadDim / 64);
     b.ks_stage = c.take<uint16_t>(stage_sc);
     b.vs_stage = c.take<uint16_t>(stage_sc);
     b.pos = c.take<int32_t>(R);
@@ -581,6 +582,7 @@ private:
         ap.sink = B.sink;
         ap.g0 = g0;
         ap.ng = ng;
+        ap.kv_stride = ng;
         attn_prepare(ap, rows, strm(c));
         AttnPromptArgs aa;
         aa.q = B.q;
@@ -603,10 +605,11 @@ private:
         aa.scale = 1.0f / std::sqrt((float) kHeadDim);
         aa.g0 = g0;
         aa.ng = ng;
+        aa.kv_stride = ng;
         attention_prompt(aa, rows, B.attn, strm(c));
         if (vc.ring)
             stage_to_ring(B.k_stage, B.v_stage, kChunk, vc.k, vc.v, vc.cap, pos0, rows, g_.window, (fp8 || i8) ? 1 : 2, strm(c),
-                          i8 ? B.ks_stage : nullptr, i8 ? B.vs_stage : nullptr, vc.ks, vc.vs);
+                          i8 ? B.ks_stage : nullptr, i8 ? B.vs_stage : nullptr, vc.ks, vc.vs, ng);
         attn_gate_q8_1_prompt(B.attn, B.yq, one ? kProj : kProjQ, rows, B.xqd, strm(c), g0, ng);
         if (nc_ > 1) {
             if (async_p2p) cudaStreamWaitEvent(strm(c), lane_[c].sent_attn[slice], 0);

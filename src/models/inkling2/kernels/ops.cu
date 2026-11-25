@@ -236,6 +236,9 @@ __global__ void __launch_bounds__(kThreads) attn_prepare_kernel(AttnPrep a) {
     const float inv_k = a.full ? (1.f / 3.f) : rsqrtf((float) kConv + 1.f);
     const float tau = a.full ? tau_of(p, a.log_floor, a.log_alpha) : 1.f;
     // keys and values
+    const bool remote = w < a.g0 || w >= a.g0 + a.ng;
+    if (remote && a.kv_stride < kKvHeads) return;
+    const int lw = a.kv_stride < kKvHeads ? (w - a.g0) : w;
 #pragma unroll
     for (int which = 0; which < 2; ++which) {
         const float* yall = which ? a.yv : a.yk;
@@ -276,14 +279,14 @@ __global__ void __launch_bounds__(kThreads) attn_prepare_kernel(AttnPrep a) {
         void* cache = which ? a.v_cache : a.k_cache;
         uint16_t* scale = which ? a.v_scale : a.k_scale;
         if (scale) {
-            prep::store_kv4_i8(cache, scale, cell, w, lane, val0 * f, val1 * f, val2 * f, val3 * f);
+            prep::store_kv4_i8(cache, scale, cell, lw, lane, val0 * f, val1 * f, val2 * f, val3 * f, a.kv_stride);
         } else {
-            store_kv4(cache, a.fp8, ((size_t) cell * kKvHeads + w) * kHeadDim + lane * 4,
+            store_kv4(cache, a.fp8, ((size_t) cell * a.kv_stride + lw) * kHeadDim + lane * 4,
                       val0 * f, val1 * f, val2 * f, val3 * f);
         }
     }
     // queries: warp w takes heads 3w .. 3w + 2 (only this card's groups [g0, g0 + ng) under TP2)
-    if (w < a.g0 || w >= a.g0 + a.ng) return;
+    if (remote) return;
     for (int h = w * 3; h < w * 3 + 3; ++h) {
         const int i = lane * 4;
         const float4 yv = *reinterpret_cast<const float4*>(yq + kOffQ + h * kHeadDim + i);
