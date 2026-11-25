@@ -340,6 +340,51 @@ void test_prepare() {
         failures += !ring_ok;
         if (!full)
             std::printf("  %.1f us a call (1 row)\n", time_us([&] { attn_prepare(a, 1, nullptr); }));
+        // Direct KvInt8 g64 producer parity: verify attn_prepare codes, fp16 scales, and dequantized values against CPU ref.
+        int8_t *kcache_i8 = zeros<int8_t>((size_t) kKvHeads * cap * kHeadDim), *vcache_i8 = zeros<int8_t>((size_t) kKvHeads * cap * kHeadDim);
+        uint16_t *kscale = zeros<uint16_t>((size_t) kKvHeads * cap * (kHeadDim / 64)), *vscale = zeros<uint16_t>((size_t) kKvHeads * cap * (kHeadDim / 64));
+        float *dkr2 = dev(kr), *dvr2 = dev(vr);
+        AttnPrep ai = a;
+        ai.k_ring = dkr2; ai.v_ring = dvr2;
+        ai.k_cache = kcache_i8; ai.v_cache = vcache_i8;
+        ai.k_scale = kscale; ai.v_scale = vscale;
+        ai.fp8 = false;
+        attn_prepare(ai, R, nullptr);
+        cudaDeviceSynchronize();
+        const std::vector<int8_t> hki = host(kcache_i8, (size_t) kKvHeads * cap * kHeadDim), hvi = host(vcache_i8, (size_t) kKvHeads * cap * kHeadDim);
+        const std::vector<uint16_t> hks = host(kscale, (size_t) kKvHeads * cap * (kHeadDim / 64)), hvs = host(vscale, (size_t) kKvHeads * cap * (kHeadDim / 64));
+        bool i8_ok = true;
+        double i8_max_deq = 0.0;
+        for (int r = 0; r < R; ++r) {
+            for (int which = 0; which < 2; ++which) {
+                const std::vector<double>& ref = which ? rv : rk;
+                const std::vector<int8_t>& hcode = which ? hvi : hki;
+                const std::vector<uint16_t>& hsc = which ? hvs : hks;
+                for (int h = 0; h < kKvHeads; ++h) {
+                    const size_t base = ((size_t) (pos[r] % cap) * kKvHeads + h) * kHeadDim;
+                    const size_t sbase = ((size_t) (pos[r] % cap) * kKvHeads + h) * (kHeadDim / 64);
+                    for (int grp = 0; grp < kHeadDim / 64; ++grp) {
+                        double amax = 0.0;
+                        for (int d = 0; d < 64; ++d)
+                            amax = std::max(amax, std::fabs(ref[((size_t) r * kKvHeads + h) * kHeadDim + grp * 64 + d]));
+                        const double ref_s = amax / 127.0;
+                        const double got_s = h2d(hsc[sbase + grp]);
+                        if (std::fabs(got_s - ref_s) > 1e-3 * std::max(1.0, ref_s) + 1e-5) i8_ok = false;
+                        for (int d = 0; d < 64; ++d) {
+                            const double v = ref[((size_t) r * kKvHeads + h) * kHeadDim + grp * 64 + d];
+                            const int qref = amax > 0.0 ? std::max(-127, std::min(127, (int) std::lrint(v / ref_s))) : 0;
+                            const int qgot = (int) hcode[base + grp * 64 + d];
+                            if (std::abs(qgot - qref) > 1) i8_ok = false;
+                            i8_max_deq = std::max(i8_max_deq, std::fabs(qgot * got_s - v));
+                        }
+                    }
+                }
+            }
+        }
+        i8_ok = i8_ok && i8_max_deq < 0.08;
+        std::printf("%-34s %s (max_deq=%.4g)\n", full ? "attn_prepare KvInt8 g64 (full)" : "attn_prepare KvInt8 g64 (window)",
+                    i8_ok ? "ok" : "FAIL", i8_max_deq);
+        failures += !i8_ok;
     }
 }
 

@@ -23,7 +23,7 @@ void usage() {
                  "                       instead of the engine's own for the model\n"
                  "  --tokens LIST        the prompt as comma-separated token IDS (required)\n"
                  "  --tokens-file PATH   pretokenized prompt, commas or whitespace (alternative to --tokens)\n"
-                 "  --kv fp16|fp8        the attention caches' storage (default fp16; fp8 halves them)\n"
+                 "  --kv fp16|fp8|int8   the attention caches' storage (default fp16; fp8/int8 halve them)\n"
                  "  --serve              stay resident and take requests on stdin (the server's mode)\n"
                  "  --gpu A,B,..|auto    the GPUs to use, as nvidia-smi numbers them (within CUDA_VISIBLE_DEVICES when\n"
                  "                       set): exactly these, the first the main card; a second card runs tensor\n"

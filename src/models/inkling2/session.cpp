@@ -349,8 +349,17 @@ public:
                 }
                 if (i8) {
                     const size_t sbytes = (size_t) kKvHeads * (size_t) c.cap * (kHeadDim / 64) * 2;
-                    c.ks = (uint16_t*) alloc(sbytes, ok);
-                    c.vs = (uint16_t*) alloc(sbytes, ok);
+                    if (!c.ring && m_.elastic() && card == 0) {
+                        for (int j = 0; j < 2; ++j) {
+                            auto a = std::make_unique<core::ElasticArray>();
+                            if (ok && (!a->open(sbytes, err) || !a->ensure(scale_cell_bytes() * (uint64_t) core::kElasticKvBase, 0, err))) ok = false;
+                            (j ? c.vs : c.ks) = (uint16_t*) a->data();
+                            elastic_sc_.push_back(std::move(a));
+                        }
+                    } else {
+                        c.ks = (uint16_t*) alloc(sbytes, ok);
+                        c.vs = (uint16_t*) alloc(sbytes, ok);
+                    }
                 }
                 c.k_ring = f((int64_t) kConvRing * kKvHeads * kHeadDim);
                 c.v_ring = f((int64_t) kConvRing * kKvHeads * kHeadDim);
@@ -610,8 +619,9 @@ public:
     // rows past it.
     size_t elem() const { return (m_.cache_fp8() || m_.cache_int8()) ? 1 : 2; }
     uint64_t cell_bytes() const { return (uint64_t) kKvHeads * kHeadDim * elem(); }
+    uint64_t scale_cell_bytes() const { return m_.cache_int8() ? (uint64_t) kKvHeads * (kHeadDim / 64) * 2 : 0; }
     size_t scale_bytes_of(const VisitCache& c) const {
-        return m_.cache_int8() ? (size_t) kKvHeads * (size_t) c.cap * (kHeadDim / 64) * 2 : 0;
+        return (size_t) scale_cell_bytes() * (size_t) c.cap;
     }
 
     // The elastic KV: before a run reaches `positions`, the full visits' caches back them (in steps of kElasticKvStep cells),
@@ -623,7 +633,10 @@ public:
         if (elastic_.empty() || positions <= backed_) return true;
         const int64_t target = std::min<int64_t>(m_.context(), (positions + kElasticKvStep - 1) / kElasticKvStep * kElasticKvStep);
         const uint64_t bytes = cell_bytes() * (uint64_t) target;
-        const uint64_t grow = (uint64_t) elastic_.size() * (bytes - std::min<uint64_t>(bytes, elastic_[0]->backed())) + (64ull << 20);
+        const uint64_t sbytes = scale_cell_bytes() * (uint64_t) target;
+        uint64_t grow = (uint64_t) elastic_.size() * (bytes - std::min<uint64_t>(bytes, elastic_[0]->backed())) + (64ull << 20);
+        if (!elastic_sc_.empty())
+            grow += (uint64_t) elastic_sc_.size() * (sbytes - std::min<uint64_t>(sbytes, elastic_sc_[0]->backed()));
         size_t free_b = 0, total_b = 0;
         cudaMemGetInfo(&free_b, &total_b);
         const uint64_t keep_free = m_.held_free(kElasticKeep);
@@ -637,6 +650,11 @@ public:
                 err = "the caches cannot grow to " + std::to_string(target) + " positions: " + err;
                 return false;
             }
+        for (auto& a : elastic_sc_)
+            if (!a->ensure(sbytes, 0, err)) {
+                err = "the cache scales cannot grow to " + std::to_string(target) + " positions: " + err;
+                return false;
+            }
         backed_ = target;
         return true;
     }
@@ -648,11 +666,14 @@ public:
         if (keep < backed_) {
             cudaStreamSynchronize(stream_);
             for (auto& a : elastic_) a->trim(cell_bytes() * (uint64_t) keep);
+            for (auto& a : elastic_sc_) a->trim(scale_cell_bytes() * (uint64_t) keep);
             backed_ = std::min<int64_t>(backed_, (int64_t) (elastic_[0]->backed() / cell_bytes()));
         }
         if (m_.promoted() < m_.spill().spilled && !m_.lent()) {
             cudaStreamSynchronize(stream_);
-            m_.promote(m_.held_free(kElasticKeep) + (uint64_t) elastic_.size() * cell_bytes() * (uint64_t) std::max<int64_t>(0, keep - backed_));
+            const uint64_t need_cells = (uint64_t) std::max<int64_t>(0, keep - backed_);
+            m_.promote(m_.held_free(kElasticKeep) +
+                       ((uint64_t) elastic_.size() * cell_bytes() + (uint64_t) elastic_sc_.size() * scale_cell_bytes()) * need_cells);
         }
     }
     size_t kv_bytes_of(const VisitCache& c) const { return (size_t) kKvHeads * (size_t) c.cap * kHeadDim * elem(); }
@@ -869,10 +890,15 @@ private:
                 bad = std::string("the cards' ") + what + " of visit cache " + std::to_string(slot) + " differ";
         };
         const size_t cells = (size_t) hist_.size() * (size_t) cell_bytes();
+        const size_t scells = (size_t) hist_.size() * (size_t) scale_cell_bytes();
         for (size_t i = 0; i < vc_.size(); ++i) {
             const VisitCache &c0 = vc_[i], &c1 = vc1_[i];
             same(c0.k, c1.k, c0.ring ? kv_bytes_of(c0) : cells, "keys", i);
             same(c0.v, c1.v, c0.ring ? kv_bytes_of(c0) : cells, "values", i);
+            if (m_.cache_int8()) {
+                same(c0.ks, c1.ks, c0.ring ? scale_bytes_of(c0) : scells, "key scales", i);
+                same(c0.vs, c1.vs, c0.ring ? scale_bytes_of(c0) : scells, "value scales", i);
+            }
             same(c0.k_ring, c1.k_ring, kv_ring, "key convolution ring", i);
             same(c0.v_ring, c1.v_ring, kv_ring, "value convolution ring", i);
             same(c0.a_ring, c1.a_ring, e_ring, "attention convolution ring", i);
@@ -1551,6 +1577,7 @@ private:
     int64_t tp_checks_ = 0;                  // --diag-tp-check: the calls checked
     // the elastic KV (model.hpp elastic()): the full visits' caches back their first backed_ cells
     std::vector<std::unique_ptr<core::ElasticArray>> elastic_;
+    std::vector<std::unique_ptr<core::ElasticArray>> elastic_sc_;
     int64_t backed_ = 0;
     int32_t *pick_ = nullptr, *pick_h_ = nullptr, *io_h_ = nullptr;
     cudaEvent_t stage_ev_[kStage] = {};
