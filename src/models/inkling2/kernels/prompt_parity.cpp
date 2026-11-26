@@ -276,6 +276,18 @@ void test_attention_prompt() {
                 same_bits("  rows 37.. as a chunk of their own", g2.data(), &got[(size_t) 37 * kHeads * kHeadDim], g2.size() * 4);
                 cudaFree(out2);
             }
+            // TP2 sharding: halves (g0=0,ng=4 and g0=4,ng=4) match whole attention_prompt bitwise
+            {
+                float* out_sh = zeros<float>((size_t) R * kHeads * kHeadDim);
+                AttnPromptArgs h0 = a, h1 = a;
+                h0.g0 = 0; h0.ng = kKvHeads / 2;
+                h1.g0 = kKvHeads / 2; h1.ng = kKvHeads / 2;
+                attention_prompt(h0, R, out_sh, S);
+                attention_prompt(h1, R, out_sh, S);
+                const std::vector<float> gsh = host(out_sh, (size_t) R * kHeads * kHeadDim);
+                same_bits("  TP2 halves (g0/ng) == whole", gsh.data(), got.data(), got.size() * 4);
+                cudaFree(out_sh);
+            }
             if (window) {
                 cudaFree(dks);
                 cudaFree(dvs);
@@ -288,6 +300,48 @@ void test_attention_prompt() {
             cudaFree(dt);
             cudaFree(out);
         }
+    // KvInt8 g64 prompt attention parity (full with far + near tiles): bitwise vs dequantized FP16 prompt attention!
+    {
+        const int R = 160;
+        const int64_t pos0 = 2400, cap = pos0 + R;
+        const size_t n = (size_t) kKvHeads * cap * kHeadDim;
+        std::vector<int8_t> k8(n), v8(n);
+        std::vector<uint16_t> ks(n / 64), vs(n / 64), kd(n), vd(n);
+        for (size_t g = 0; g < n / 64; ++g) {
+            std::vector<float> fk = randn(64, 0.7f), fv = randn(64, 0.9f);
+            float ak = 0.f, av = 0.f;
+            for (int i = 0; i < 64; ++i) { ak = std::max(ak, std::fabs(fk[i])); av = std::max(av, std::fabs(fv[i])); }
+            ks[g] = f2h(ak / 127.f); vs[g] = f2h(av / 127.f);
+            const float sk = (float) h2d(ks[g]), sv = (float) h2d(vs[g]);
+            for (int i = 0; i < 64; ++i) {
+                k8[g * 64 + i] = (int8_t) std::max(-127.f, std::min(127.f, sk > 0 ? std::rint(fk[i] / sk) : 0.f));
+                v8[g * 64 + i] = (int8_t) std::max(-127.f, std::min(127.f, sv > 0 ? std::rint(fv[i] / sv) : 0.f));
+                kd[g * 64 + i] = f2h((float) k8[g * 64 + i] * sk);
+                vd[g * 64 + i] = f2h((float) v8[g * 64 + i] * sv);
+            }
+        }
+        int8_t *dk8 = dev(k8), *dv8 = dev(v8);
+        uint16_t *dks = dev(ks), *dvs = dev(vs), *dkd = dev(kd), *dvd = dev(vd);
+        float *dq = dev(randn((size_t) R * kHeads * kHeadDim, 0.8f));
+        float *drs = dev(randn((size_t) R * kHeads * kRel, 1.0f));
+        float *dsink = dev(randn((size_t) R * kHeads, 0.4f));
+        float *dt = dev(randn((size_t) kRel * kExtent, 0.3f));
+        float *o_i8 = zeros<float>((size_t) R * kHeads * kHeadDim), *o_f16 = zeros<float>((size_t) R * kHeads * kHeadDim);
+        AttnPromptArgs a;
+        a.q = dq; a.r = drs; a.sink = dsink; a.rel_table = dt; a.pos0 = pos0;
+        a.k_cache = dk8; a.v_cache = dv8; a.k_scale = dks; a.v_scale = dvs; a.cap = cap;
+        a.k_chunk = dk8; a.v_chunk = dv8; a.k_chunk_scale = dks; a.v_chunk_scale = dvs; a.chunk_cap = cap;
+        attention_prompt(a, R, o_i8, S);
+        AttnPromptArgs b = a;
+        b.k_cache = dkd; b.v_cache = dvd; b.k_scale = nullptr; b.v_scale = nullptr;
+        b.k_chunk = dkd; b.v_chunk = dvd; b.k_chunk_scale = nullptr; b.v_chunk_scale = nullptr;
+        attention_prompt(b, R, o_f16, S);
+        cudaStreamSynchronize(S);
+        same_bits("attention_prompt KvInt8 == dequant FP16", host(o_i8, (size_t) R * kHeads * kHeadDim).data(),
+                  host(o_f16, (size_t) R * kHeads * kHeadDim).data(), (size_t) R * kHeads * kHeadDim * 4);
+        cudaFree(dk8); cudaFree(dv8); cudaFree(dks); cudaFree(dvs); cudaFree(dkd); cudaFree(dvd);
+        cudaFree(dq); cudaFree(drs); cudaFree(dsink); cudaFree(dt); cudaFree(o_i8); cudaFree(o_f16);
+    }
     // timing: a 2,048-row chunk of a window layer, and of a full layer after 8K and 32K positions
     for (const int64_t ctx : {(int64_t) 0, (int64_t) 8192, (int64_t) 32768}) {
         const int R = 2048;
@@ -968,6 +1022,132 @@ void test_dense() {
 }
 }  // namespace
 
+void test_p2p_f16_symmetric() {
+    const int R = 64, K = 8;
+    std::vector<float> out0 = randn((size_t) R * K * E, 1.5f);
+    std::vector<float> out1 = randn((size_t) R * K * E, 1.5f);
+    std::vector<float> w0 = randn((size_t) R * K, 0.4f, 0.5f);
+    std::vector<float> w1 = randn((size_t) R * K, 0.4f, 0.5f);
+    // Inject overflow-scale rows (> 32768) and exact +/-0.0 edge cases
+    w0[5 * K + 0] = 1.0f;
+    w1[5 * K + 0] = 1.0f;
+    for (int c = 0; c < E; ++c) {
+        out0[(size_t) (5 * K + 0) * E + c] = (c % 2 == 0 ? 1.f : -1.f) * 1.5e5f;
+        out1[(size_t) (5 * K + 0) * E + c] = (c % 2 == 0 ? -1.f : 1.f) * 9.0e4f;
+        out0[(size_t) (6 * K + 0) * E + c] = 0.0f;
+        out1[(size_t) (6 * K + 0) * E + c] = -0.0f;
+        for (int s = 1; s < K; ++s) {
+            out0[(size_t) (6 * K + s) * E + c] = 0.0f;
+            out1[(size_t) (6 * K + s) * E + c] = 0.0f;
+        }
+    }
+    float *do0 = dev(out0), *do1 = dev(out1), *dw0 = dev(w0), *dw1 = dev(w1);
+    uint16_t *l0 = zeros<uint16_t>((size_t) R * E), *p0 = zeros<uint16_t>((size_t) R * E);
+    uint16_t *l1 = zeros<uint16_t>((size_t) R * E), *p1 = zeros<uint16_t>((size_t) R * E);
+    float *s0 = zeros<float>(R), *sp0 = zeros<float>(R), *s1 = zeros<float>(R), *sp1 = zeros<float>(R);
+    float *sum01 = zeros<float>((size_t) R * E), *sum10 = zeros<float>((size_t) R * E);
+
+    moe_combine_p2p_f16(do0, dw0, R, K, l0, s0, p0, sp0, S);
+    moe_combine_p2p_f16(do1, dw1, R, K, l1, s1, p1, sp1, S);
+    add_p2p_f16_scaled(l0, s0, p1, sp1, sum01, R, E, S);   // card 0 order: local0 + peer1
+    add_p2p_f16_scaled(l1, s1, p0, sp0, sum10, R, E, S);   // card 1 order: local1 + peer0
+    cudaStreamSynchronize(S);
+
+    const std::vector<float> g01 = host(sum01, (size_t) R * E);
+    const std::vector<float> g10 = host(sum10, (size_t) R * E);
+    same_bits("moe_combine_p2p_f16 card0 == card1", g01.data(), g10.data(), g01.size() * 4);
+    const std::vector<float> hs0 = host(s0, R), hs1 = host(s1, R);
+    const bool scale_ok = (hs0[0] == 1.f) && (hs0[5] > 1.f) && (hs1[5] > 1.f) && std::isfinite(g01[5 * E]);
+    std::printf("%-44s %s\n", "moe_combine_p2p_f16 overflow pow2 scale", scale_ok ? "ok" : "FAIL");
+    failures += !scale_ok;
+
+    // CPU FP32 reference check (normal + overflow rows)
+    std::vector<double> ref((size_t) R * E, 0.0);
+    for (int r = 0; r < R; ++r)
+        for (int c = 0; c < E; ++c) {
+            double a = 0.0, b = 0.0;
+            for (int s = 0; s < K; ++s) {
+                a += (double) w0[r * K + s] * (double) out0[((size_t) r * K + s) * E + c];
+                b += (double) w1[r * K + s] * (double) out1[((size_t) r * K + s) * E + c];
+            }
+            ref[(size_t) r * E + c] = a + b;
+        }
+    report("moe_combine_p2p_f16 vs FP32 ref", g01, ref, 1e-3);
+
+    // Also test pack_p2p_f16_scaled commutativity
+    float* srcA = dev(g01);
+    float* srcB = dev(g10);
+    pack_p2p_f16_scaled(srcA, l0, s0, p0, sp0, R, E, S);
+    pack_p2p_f16_scaled(srcB, l1, s1, p1, sp1, R, E, S);
+    add_p2p_f16_scaled(l0, s0, p1, sp1, sum01, R, E, S);
+    add_p2p_f16_scaled(l1, s1, p0, sp0, sum10, R, E, S);
+    cudaStreamSynchronize(S);
+    same_bits("pack_p2p_f16_scaled card0 == card1", host(sum01, (size_t) R * E).data(),
+              host(sum10, (size_t) R * E).data(), (size_t) R * E * 4);
+
+    // Also verify P1.1 sharded attn_gate_q8_1_prompt (g0=0,4; ng=4) + w.out_part == unsharded w.out.
+    {
+        const int Rs = 256;
+        mmq::Context mmq_ctx;
+        std::vector<int32_t> idv(Rs), bv = {0, Rs};
+        std::iota(idv.begin(), idv.end(), 0);
+        int32_t *d_id = dev(idv), *d_b = dev(bv);
+
+        const int kOut = kHeads * kHeadDim;
+        const std::vector<float> att = randn((size_t) Rs * kOut, 0.7f);
+        const std::vector<float> yq = randn((size_t) Rs * kProjQ, 0.7f);
+        float *d_att = dev(att), *d_yq = dev(yq);
+        const size_t wout_row = (size_t) (kOut / 32) * 34, wpart_row = wout_row / 2;
+        std::vector<uint8_t> wout_h((size_t) E * wout_row);
+        for (size_t i = 0; i < wout_h.size(); ++i) wout_h[i] = (uint8_t) ((i * 37 + 13) & 0xFF);
+        for (int r = 0; r < E; ++r)
+            for (int b = 0; b < kOut / 32; ++b) {
+                const uint16_t d = 0x3400u;
+                std::memcpy(&wout_h[(size_t) r * wout_row + b * 34], &d, 2);
+            }
+        std::vector<uint8_t> wp0((size_t) E * wpart_row), wp1((size_t) E * wpart_row);
+        for (int r = 0; r < E; ++r) {
+            std::memcpy(&wp0[(size_t) r * wpart_row], &wout_h[(size_t) r * wout_row], wpart_row);
+            std::memcpy(&wp1[(size_t) r * wpart_row], &wout_h[(size_t) r * wout_row + wpart_row], wpart_row);
+        }
+        uint8_t *d_wout = dev(wout_h), *d_wp0 = dev(wp0), *d_wp1 = dev(wp1);
+        void *xq_all = zeros<uint8_t>(mmq::q8_bytes(Rs, kOut));
+        void *xq0 = zeros<uint8_t>(mmq::q8_bytes(Rs, kOut / 2));
+        void *xq1 = zeros<uint8_t>(mmq::q8_bytes(Rs, kOut / 2));
+        float *o_all = zeros<float>((size_t) Rs * E), *o0 = zeros<float>((size_t) Rs * E), *o1 = zeros<float>((size_t) Rs * E);
+        attn_gate_q8_1_prompt(d_att, d_yq, kProjQ, Rs, xq_all, S, 0, kKvHeads);
+        attn_gate_q8_1_prompt(d_att, d_yq, kProjQ, Rs, xq0, S, 0, kKvHeads / 2);
+        attn_gate_q8_1_prompt(d_att, d_yq, kProjQ, Rs, xq1, S, kKvHeads / 2, kKvHeads / 2);
+        auto run_mmq = [&](const uint8_t* w, int nr, int nc, void* xq, float* dst, int ld) {
+            mmq::Product p;
+            p.w = w; p.type = 8; p.w_rows = nr; p.w_cols = nc;
+            p.expert_bytes = mmq::matrix_bytes(8, nr, nc);
+            p.n = 1; p.xq = xq; p.bounds = d_b; p.ids = d_id;
+            p.total_rows = Rs; p.max_rows = Rs; p.dst = dst; p.ld_dst = ld;
+            mmq_ctx.run(p, S);
+        };
+        run_mmq(d_wout, E, kOut, xq_all, o_all, E);
+        run_mmq(d_wp0, E, kOut / 2, xq0, o0, E);
+        run_mmq(d_wp1, E, kOut / 2, xq1, o1, E);
+        cudaStreamSynchronize(S);
+        const std::vector<float> ha = host(o_all, (size_t) Rs * E);
+        const std::vector<float> h0 = host(o0, (size_t) Rs * E), h1 = host(o1, (size_t) Rs * E);
+        std::vector<float> hsum(ha.size());
+        for (size_t i = 0; i < ha.size(); ++i) hsum[i] = h0[i] + h1[i];
+        report("P1.1 attn_gate+out_part halves vs whole", hsum, ha, 1e-5);
+
+        cudaFree(d_id); cudaFree(d_b); cudaFree(d_att); cudaFree(d_yq);
+        cudaFree(d_wout); cudaFree(d_wp0); cudaFree(d_wp1);
+        cudaFree(xq_all); cudaFree(xq0); cudaFree(xq1);
+        cudaFree(o_all); cudaFree(o0); cudaFree(o1);
+    }
+
+    cudaFree(do0); cudaFree(do1); cudaFree(dw0); cudaFree(dw1);
+    cudaFree(l0); cudaFree(p0); cudaFree(l1); cudaFree(p1);
+    cudaFree(s0); cudaFree(sp0); cudaFree(s1); cudaFree(sp1);
+    cudaFree(sum01); cudaFree(sum10); cudaFree(srcA); cudaFree(srcB);
+}
+
 int main() {
     int n = 0;
     if (cudaGetDeviceCount(&n) != cudaSuccess || n == 0) {
@@ -975,6 +1155,7 @@ int main() {
         return 77;
     }
     cudaStreamCreate(&S);
+    test_p2p_f16_symmetric();
     test_dense();
     test_attention_prompt();
     test_router();

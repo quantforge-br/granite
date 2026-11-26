@@ -578,7 +578,8 @@ __global__ void __launch_bounds__(kThreads) ctrl_blend_kernel(CtrlArgs a) {
 // ring), warp 1 its values (normed), warps 2 and 3 its three query heads, their relative states and sinks (prep.cuh).
 __global__ void __launch_bounds__(128) prepare_kernel(AttnPrep a) {
     const int r = blockIdx.x, g = blockIdx.y, w = threadIdx.x >> 5, lane = threadIdx.x & 31;
-    if (w >= 2 && (g < a.g0 || g >= a.g0 + a.ng)) return;   // another card's query heads
+    const bool remote = g < a.g0 || g >= a.g0 + a.ng;
+    if (remote && (w >= 2 || a.kv_stride < kKvHeads)) return;   // another card's heads (all warps skip when KV is sharded)
     float wt[4][kConv];   // the weights, read while the kernel before finishes
     prep::load_weights(a, g, w, lane, wt);
     bk::pdl_wait();
@@ -591,11 +592,17 @@ __global__ void __launch_bounds__(128) prepare_kernel(AttnPrep a) {
         const SegCaches& sc = a.seg.c[k];
         float* ring = w ? (b ? sc.v_ring : a.v_ring) : (b ? sc.k_ring : a.k_ring);
         void* cache = w ? (b ? sc.v : a.v_cache) : (b ? sc.k : a.k_cache);
+        uint16_t* scale = w ? (b ? sc.v_scale : a.v_scale) : (b ? sc.k_scale : a.k_scale);
+        const int lg = a.kv_stride < kKvHeads ? (g - a.g0) : g;
         float val[4], raw[4], f;
         prep::kv_row(a, r, p, g, w, lane, wt, val, raw, f, ring, b ? a.seg.at.row0[k] : 0);
-        const size_t cell = ((size_t) (p % a.cap) * kKvHeads + g) * kHeadDim + lane * 4;
+        if (scale) {
+            prep::store_kv4_i8(cache, scale, p % a.cap, lg, lane, val[0] * f, val[1] * f, val[2] * f, val[3] * f, a.kv_stride);
+        } else {
+            const size_t cell = ((size_t) (p % a.cap) * a.kv_stride + lg) * kHeadDim + lane * 4;
 #pragma unroll
-        for (int u = 0; u < 4; ++u) prep::store_kv(cache, a.fp8, cell + u, val[u] * f);
+            for (int u = 0; u < 4; ++u) prep::store_kv(cache, a.fp8, cell + u, val[u] * f);
+        }
         *reinterpret_cast<float4*>(ring + (size_t) (p % kConvRing) * (kKvHeads * kHeadDim) + g * kHeadDim + lane * 4) =
             make_float4(raw[0], raw[1], raw[2], raw[3]);
         return;

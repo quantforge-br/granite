@@ -22,13 +22,19 @@ struct AttnPromptArgs {
     int64_t pos0 = 0;                  ///< row i at position pos0 + i
     const void* k_cache = nullptr;     ///< keys before pos0: [cap][kKvHeads][kHeadDim], position p in cell p % cap
     const void* v_cache = nullptr;
+    const uint16_t* k_scale = nullptr; ///< non-null: KvInt8 g64 fp16 scales [cap][kKvHeads][kHeadDim/64]
+    const uint16_t* v_scale = nullptr;
     int64_t cap = 0;
     const void* k_chunk = nullptr;     ///< keys from pos0 on: [chunk_cap][kKvHeads][kHeadDim], position p in cell p % chunk_cap
     const void* v_chunk = nullptr;     ///< (a full layer passes its cache again; a sliding-window layer the chunk's stage)
+    const uint16_t* k_chunk_scale = nullptr;
+    const uint16_t* v_chunk_scale = nullptr;
     int64_t chunk_cap = 0;
     bool fp8 = false;                  ///< unit-scale E4M3 codes instead of fp16
     int window = 0;                    ///< > 0: keys at distance < window only
     float scale = 0.08838834764831845f;
+    int g0 = 0, ng = kKvHeads;         ///< key/value groups [g0, g0 + ng) to compute (TP2 sharding)
+    int kv_stride = kKvHeads;          ///< KV heads stored per cache cell (kKvHeads replicated, or ng under TP2 KV sharding)
 };
 
 /// out[i][h] = sum_j softmax_j(scale q.k_j + bias(p_i - p_j)) v_j over the keys at positions p_j <= p_i (and within the
@@ -54,7 +60,9 @@ void prompt_rows(int32_t* pos, int64_t pos0, int rows, int32_t* bounds, void* st
 /// (cell p % ring_cap): positions max(pos0, end - keep) .. end - 1, end = pos0 + rows. A cell is [kKvHeads][kHeadDim] of
 /// `elem` bytes a value (fp16 or E4M3).
 void stage_to_ring(const void* k_stage, const void* v_stage, int64_t stage_cap, void* k_ring, void* v_ring, int64_t ring_cap,
-                   int64_t pos0, int rows, int keep, int elem, void* stream);
+                   int64_t pos0, int rows, int keep, int elem, void* stream,
+                   const uint16_t* ks_stage = nullptr, const uint16_t* vs_stage = nullptr,
+                   uint16_t* ks_ring = nullptr, uint16_t* vs_ring = nullptr, int kv_heads = kKvHeads);
 
 /// Fused prompt loop controller down projection: RMS-normalizes dest and msg independently and computes
 /// hid[r][o] = w_down[o][0..kWidth) . rms(dest[r]) + w_down[o][kWidth..2*kWidth) . rms(msg[r]).
@@ -68,10 +76,26 @@ void ctrl_up_blend_prompt(const float* dest, const float* msg, const float* hid,
 /// Fused RMSNorm + MMQ Q8_1 quantization (D4 layout) for kWidth-wide rows directly into xq.
 void rms_norm_q8_1_prompt(const float* x, const float* w, int rows, float eps, void* xq, void* stream);
 
-/// Fused attention sigmoid gate + MMQ Q8_1 quantization (D4 layout) for kHeads * kHeadDim-wide rows directly into xq.
-void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, int rows, void* xq, void* stream);
+/// Fused attention sigmoid gate + MMQ Q8_1 quantization (D4 layout) for the heads of groups [g0, g0 + ng) into xq.
+void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, int rows, void* xq, void* stream,
+                           int g0 = 0, int ng = kKvHeads);
 
 /// Deterministic vectorized weighted sum of k fp16 expert outputs per row into fp32 y[rows][kWidth].
 void moe_combine_f16(const uint16_t* out, const float* w, int rows, int k, float* y, void* stream);
+
+/// TP2 prefill symmetric P2P combine: sums k fp32 expert outputs per row, rounds BOTH local and peer outputs to the
+/// exact same fp16 representation (with deterministic per-row power-of-2 scale when |row_amax| > 32768) via 16-byte
+/// coalesced writes so both cards later sum identical operands (card0_bits == card1_bits).
+void moe_combine_p2p_f16(const float* out, const float* w, int rows, int k, uint16_t* y_local, float* scale_local,
+                         uint16_t* y_peer, float* scale_peer, void* stream);
+
+/// Symmetric P2P FP16 packer for arbitrary fp32 [rows][width] (width % 8 == 0, e.g. w.out_part): rounds to identical
+/// fp16 + per-row power-of-2 scale into both local and peer buffers via 16-byte writes.
+void pack_p2p_f16_scaled(const float* src, uint16_t* dst_local, float* scale_local, uint16_t* dst_peer, float* scale_peer,
+                         int rows, int width, void* stream);
+
+/// Commutative fp32 sum of two symmetric scaled fp16 arrays: out[r][c] = fp32(a[r][c]) * sa[r] + fp32(b[r][c]) * sb[r].
+void add_p2p_f16_scaled(const uint16_t* a, const float* sa, const uint16_t* b, const float* sb, float* out, int rows,
+                        int width, void* stream);
 
 }  // namespace granite::models::inkling2

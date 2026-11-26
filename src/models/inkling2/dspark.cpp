@@ -194,9 +194,9 @@ model::Result dspark_plan(const Pack& pack, core::LoadPlan& reads, int file, int
     w->mask = f32("dspark.mask_embed", kE);
     w->norm = f32("dspark.norm.weight", kE);
     w->markov_norm = f32("dspark.markov.dflare_norm.weight", kE);
-    {   // the Markov head's token rows in mapped host memory: a step reads the previous draft's row
+    {   // the Markov head's token rows on GPU0 VRAM (103 MB BF16, zero PCIe overhead per draft step)
         const uint64_t n = (uint64_t) g.n_vocab * kDsRank;
-        w->w1 = (uint16_t*) load("dspark.markov.w1.weight", Form::Bf16, n, true);
+        w->w1 = (uint16_t*) load("dspark.markov.w1.weight", Form::Bf16, n, false);
     }
     w->rnn_w = bf16("dspark.markov.rnn.weight", (uint64_t) kDsRnn * (2 * kDsRank + 2 * kE));
     w->rnn_b = f32("dspark.markov.rnn.bias", kDsRnn);
@@ -212,10 +212,10 @@ model::Result dspark_plan(const Pack& pack, core::LoadPlan& reads, int file, int
     w->head_sc = w->dev(dspark_screen_bytes(kE, g.n_vocab), ok);
     w->fold_sc = w->dev(dspark_screen_bytes(kDsRank, g.n_vocab), ok);
     if (!ok) return fail("out of device memory");
-    granite::log::info("granite inkling2", "drafter: DSpark, %d layers reading target visits %d, %d, %d, %.2f GiB on the GPU (NVFP4 block products, Q8_0 context projections, the screen's copies), "
-                      "%.0f MB of token rows in host memory",
-                      d.n_layers, d.targets[0], d.targets[1], d.targets[2], (double) w->bytes() / (double) (1ull << 30),
-                      (double) g.n_vocab * kDsRank * 2 / 1e6);
+    granite::log::info("granite inkling2", "drafter: DSpark, %d layers reading target visits %d, %d, %d, %.2f GiB on CUDA%d (NVFP4 block products, Q8_0 context projections, the screen's copies, "
+                      "%.0f MB Markov token rows on CUDA%d)",
+                      d.n_layers, d.targets[0], d.targets[1], d.targets[2], (double) w->bytes() / (double) (1ull << 30), device,
+                      (double) g.n_vocab * kDsRank * 2 / 1e6, device);
     out = std::move(w);
     return {};
 }
@@ -293,8 +293,10 @@ uint64_t dspark_session_bytes(const Pack& pack, int64_t context) {
     const uint64_t E = kE, V = (uint64_t) pack.geo.n_vocab, ff = (uint64_t) d.n_ff, R = kDsBlock;
     uint64_t n = 3 * kSlice * E * 4 + kFrRing * E * 4 + 2 * kSlice * kKV * 4 + 64;        // a commit step's rows
     n += bk::native_q8_1_bytes(kE, kSlice);
-    for (int l = 0; l < d.n_layers; ++l)                                           // the caches, fp16 K and V
-        n += 2ull * (uint64_t) (d.swa[(size_t) l] ? ring_cells(d) : full_cells(context)) * kKV * 2;
+    for (int l = 0; l < d.n_layers; ++l)                                           // ring layers: fp16; full layers: int8 g64
+        n += d.swa[(size_t) l]
+                 ? 2ull * (uint64_t) ring_cells(d) * kKV * 2
+                 : 2ull * (uint64_t) full_cells(context) * (kKV + (kKV / 64) * 2);
     n += (2 * R * E + 3 * R * kQ) * 4;                                             // the block's rows
     n += 2 * bk::wgemm::act_bytes((int64_t) std::max<uint64_t>(ff, kQ)) + dspark_ws_bytes(d) + 1024;   // the window gemm's
     n += bk::gqa_decode_scratch_floats(std::max(ring_cells(d), full_cells(context)), kDsBlock, kHeads, kHeadDim) * 4;
@@ -358,8 +360,15 @@ bool DsparkHook::init(const DsparkWeights* w, const Geometry& g, int64_t context
         Cache& c = cache_[(size_t) l];
         c.ring = d.swa[(size_t) l];
         c.cap = c.ring ? ring_cells(d) : full_cells(context);
-        c.k = (uint16_t*) dev((size_t) c.cap * kKV * 2, ok);
-        c.v = (uint16_t*) dev((size_t) c.cap * kKV * 2, ok);
+        if (c.ring) {
+            c.k = (uint16_t*) dev((size_t) c.cap * kKV * 2, ok);
+            c.v = (uint16_t*) dev((size_t) c.cap * kKV * 2, ok);
+        } else {
+            c.q8.k = (int8_t*) dev((size_t) c.cap * kKV, ok);
+            c.q8.v = (int8_t*) dev((size_t) c.cap * kKV, ok);
+            c.q8.ks = (uint16_t*) dev((size_t) c.cap * (kKV / 64) * 2, ok);
+            c.q8.vs = (uint16_t*) dev((size_t) c.cap * (kKV / 64) * 2, ok);
+        }
     }
     x_ = f(R * E);
     h_ = f(R * E);
@@ -438,7 +447,7 @@ void DsparkHook::commit(const int32_t* pos_d, int rows, void* stream, int row0) 
             bk::native_q8_0_mmvq(L.k_ctx, act_, kb_, kE, kKV, n, stream);
             bk::native_q8_0_mmvq(L.v_ctx, act_, vb_, kE, kKV, n, stream);
             bk::attn_qk_prepare(nullptr, kb_, vb_, nullptr, L.k_ctx_norm, d.rms_eps, rope, pos3_, n, 0, kKvHeads, nullptr, c.k, c.v,
-                                0, stream, kHeadDim, false, c.cap, pos_d + r0);
+                                0, stream, kHeadDim, false, c.cap, pos_d + r0, c.q8);
         }
     }
 }
@@ -486,7 +495,7 @@ void DsparkHook::commit_prompt(const int32_t* pos_d, int rows, granite::prefill:
         p.dst = s.vb;
         mmq.run(p, stream);
         bk::attn_qk_prepare(nullptr, s.kb, s.vb, nullptr, L.k_ctx_norm, d.rms_eps, rope, s.pos3 + (size_t) r0 * 3, keep, 0,
-                            kKvHeads, nullptr, c.k, c.v, 0, stream, kHeadDim, false, c.cap, pos_d + r0);
+                            kKvHeads, nullptr, c.k, c.v, 0, stream, kHeadDim, false, c.cap, pos_d + r0, c.q8);
     }
 }
 
@@ -562,7 +571,7 @@ void DsparkHook::stage(int k, int n, void* stream) {
         qkv.m[2] = mat(L.wv, kKV, sc + 2, vb_, kKV);
         wg::gemm(qkv, act_a_, kDsBlock, ws_, stream);
         bk::attn_qk_prepare(q_, kb_, vb_, L.q_norm, L.k_norm, d.rms_eps, rope_of(d), pos3b_, kDsBlock, kHeads, kKvHeads, qr_, c.k, c.v,
-                            0, stream, kHeadDim, false, c.cap, meta_d_ + 1);
+                            0, stream, kHeadDim, false, c.cap, meta_d_ + 1, c.q8);
         return;
     }
     bk::rms_norm_rows(x_, w.norm, kDsBlock, kE, d.rms_eps, h_, stream);
@@ -634,7 +643,7 @@ model::Result DsparkHook::draft_begin(int32_t anchor, int64_t pos, int n, void* 
                 // short context runs few splits; the drafts only shape the speed
                 const int64_t cells = pos + kDsBlock - std::max<int64_t>(0, pos - window + 1) + 64;
                 bk::gqa_window_attn(qr_, c.k, c.v, kHeads, kKvHeads, kHeadDim, pos, kDsBlock, pos + kDsBlock, window, c.cap, att_scr_,
-                                    std::min(att_cells_, cells), attn_, stream, true);
+                                    std::min(att_cells_, cells), attn_, stream, true, c.q8);
             }
             if (!graphs_ || !stage_graph(k, n, stream)) {
                 graphs_ = false;
@@ -712,7 +721,7 @@ void DsparkHook::running_regions(core::RunningState& st) const {
 size_t DsparkHook::cells_bytes(int64_t positions) const {
     size_t n = 0;
     for (const Cache& c : cache_)
-        if (!c.ring) n += 2 * (size_t) positions * kKV * 2;
+        if (!c.ring) n += 2 * (size_t) positions * (kKV + (kKV / 64) * 2);
     return n;
 }
 
@@ -721,19 +730,21 @@ bool DsparkHook::save_cells(std::vector<core::ConversationKv>& kv, int64_t posit
     for (const Cache& c : cache_) {
         if (c.ring) continue;
         core::ConversationKv k;
-        k.format = 3;   // fp16 rows, cell-major: [cell][kv head][head width]
+        k.format = 4;   // int8 g64 rows, cell-major: codes [cell][kv head][head width], fp16 scales [cell][kv head][head width/64]
         k.page_size = 1;
         k.cells = positions;
         k.heads = kKvHeads;
         k.head_dim = kHeadDim;
-        k.k.resize_for_overwrite((size_t) positions * kKV * 2);
-        k.v.resize_for_overwrite((size_t) positions * kKV * 2);
-        const auto down = [&](const uint16_t* dev, core::ConversationBuffer& to) {
+        k.k.resize_for_overwrite((size_t) positions * kKV);
+        k.v.resize_for_overwrite((size_t) positions * kKV);
+        k.k_scale.resize_for_overwrite((size_t) positions * (kKV / 64) * 2);
+        k.v_scale.resize_for_overwrite((size_t) positions * (kKV / 64) * 2);
+        const auto down = [&](const void* dev, core::ConversationBuffer& to) {
             return to.visit(0, to.size(), [&](uint8_t* p, size_t n, size_t at) {
-                return cudaMemcpy(p, (const uint8_t*) dev + at, n, cudaMemcpyDeviceToHost) == cudaSuccess;
+                return cudaMemcpy(p, static_cast<const uint8_t*>(dev) + at, n, cudaMemcpyDeviceToHost) == cudaSuccess;
             });
         };
-        if (!down(c.k, k.k) || !down(c.v, k.v)) return false;
+        if (!down(c.q8.k, k.k) || !down(c.q8.v, k.v) || !down(c.q8.ks, k.k_scale) || !down(c.q8.vs, k.v_scale)) return false;
         kv.push_back(std::move(k));
     }
     return true;
@@ -745,16 +756,18 @@ bool DsparkHook::restore_cells(const std::vector<core::ConversationKv>& kv, size
         if (c.ring) continue;
         if (at >= kv.size()) return false;
         const core::ConversationKv& k = kv[at];
-        if (k.format != 3 || k.cells != positions || k.heads != kKvHeads || k.head_dim != kHeadDim ||
-            k.k.size() != (size_t) positions * kKV * 2 || positions > c.cap)
+        if (k.format != 4 || k.cells != positions || k.heads != kKvHeads || k.head_dim != kHeadDim ||
+            k.k.size() != (size_t) positions * kKV || k.v.size() != (size_t) positions * kKV ||
+            k.k_scale.size() != (size_t) positions * (kKV / 64) * 2 ||
+            k.v_scale.size() != (size_t) positions * (kKV / 64) * 2 || positions > c.cap)
             return false;
         // on the session's stream: a copy from pageable memory may return before its bytes land
-        const auto up = [&](uint16_t* dev, const core::ConversationBuffer& from) {
+        const auto up = [&](void* dev, const core::ConversationBuffer& from) {
             return from.visit(0, from.size(), [&](const uint8_t* p, size_t n, size_t off) {
-                return cudaMemcpyAsync((uint8_t*) dev + off, p, n, cudaMemcpyHostToDevice, (cudaStream_t) stream) == cudaSuccess;
+                return cudaMemcpyAsync(static_cast<uint8_t*>(dev) + off, p, n, cudaMemcpyHostToDevice, (cudaStream_t) stream) == cudaSuccess;
             });
         };
-        if (!up(c.k, k.k) || !up(c.v, k.v)) return false;
+        if (!up(c.q8.k, k.k) || !up(c.q8.v, k.v) || !up(c.q8.ks, k.k_scale) || !up(c.q8.vs, k.v_scale)) return false;
         ++at;
     }
     return cudaStreamSynchronize((cudaStream_t) stream) == cudaSuccess;

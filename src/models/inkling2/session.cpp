@@ -80,6 +80,7 @@ struct Scratch {
     void* xo_ = nullptr;                     // the output projection's
     float *rlog_ = nullptr, *rw_ = nullptr;
     int32_t* ids_ = nullptr;
+    uint32_t* rplan_done_ = nullptr;            // dedicated main-stream completion counter for router_plan_fused (never shared with ra_st)
     unsigned long long* ex_ptr_ = nullptr;
     int32_t *ex_start_ = nullptr, *ex_ng_ = nullptr, *ex_dst_ = nullptr, *ex_tok_ = nullptr;
     void* ex_scr_ = nullptr;
@@ -180,6 +181,8 @@ struct Shared {
         for (void*& q : x.xq_) q = alloc(bk::native_q8_1_bytes((int) E, kMaxRows));
         x.xo_ = alloc(bk::native_q8_1_bytes(kOutRows, kMaxRows));
         x.rlog_ = f(R * g.n_expert); x.rw_ = f(R * g.n_used); x.ids_ = (int32_t*) alloc((size_t) R * g.n_used * 4);
+        x.rplan_done_ = (uint32_t*) alloc(4);
+        if (ok && (cudaMemset(x.rplan_done_, 0, 4) != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess)) ok = false;
         const int64_t pairs = R * g.n_used;
         x.ex_ptr_ = (unsigned long long*) alloc((size_t) pairs * 8);
         x.ex_start_ = (int32_t*) alloc((size_t) (pairs + 2) * 4);
@@ -320,11 +323,13 @@ public:
         bool ok = true;
         auto f = [&](int64_t n) { return (float*) alloc((size_t) n * 4, ok); };
         const int64_t E = g_.n_embd, R = kMaxRows;
-        const size_t elem = m_.cache_fp8() ? 1 : 2;
+        const size_t elem = (m_.cache_fp8() || m_.cache_int8()) ? 1 : 2;
+        const bool i8 = m_.cache_int8();
         const int64_t ctx = m_.context();
         int max_slot = 0;
         for (const Visit& v : g_.visits) max_slot = std::max(max_slot, v.slot);
-        // each card's caches (the second's: tensor parallelism, never elastic: that is a spill's)
+        // each card's sharded KV caches (kKvHeads / cards() heads per card; the second's never elastic)
+        const int kv_h = kv_heads_local();
         for (int card = 0; card < m_.cards(); ++card) {
             OnCard on(m_.card_device(card));
             std::vector<VisitCache>& vcs = card == 0 ? vc_ : vc1_;
@@ -333,7 +338,7 @@ public:
                 VisitCache& c = vcs[(size_t) v.slot];
                 c.ring = g_.swa[(size_t) v.layer];
                 c.cap = c.ring ? (int64_t) g_.window + kMaxRows : ctx;
-                const size_t bytes = (size_t) kKvHeads * (size_t) c.cap * kHeadDim * elem;
+                const size_t bytes = (size_t) kv_h * (size_t) c.cap * kHeadDim * elem;
                 if (!c.ring && m_.elastic() && card == 0) {   // the elastic KV: the range reserved, its first kElasticKvBase cells backed
                     for (int j = 0; j < 2; ++j) {
                         auto a = std::make_unique<core::ElasticArray>();
@@ -345,6 +350,20 @@ public:
                 } else {
                     c.k = alloc(bytes, ok);
                     c.v = alloc(bytes, ok);
+                }
+                if (i8) {
+                    const size_t sbytes = (size_t) kv_h * (size_t) c.cap * (kHeadDim / 64) * 2;
+                    if (!c.ring && m_.elastic() && card == 0) {
+                        for (int j = 0; j < 2; ++j) {
+                            auto a = std::make_unique<core::ElasticArray>();
+                            if (ok && (!a->open(sbytes, err) || !a->ensure(scale_cell_bytes() * (uint64_t) core::kElasticKvBase, 0, err))) ok = false;
+                            (j ? c.vs : c.ks) = (uint16_t*) a->data();
+                            elastic_sc_.push_back(std::move(a));
+                        }
+                    } else {
+                        c.ks = (uint16_t*) alloc(sbytes, ok);
+                        c.vs = (uint16_t*) alloc(sbytes, ok);
+                    }
                 }
                 c.k_ring = f((int64_t) kConvRing * kKvHeads * kHeadDim);
                 c.v_ring = f((int64_t) kConvRing * kKvHeads * kHeadDim);
@@ -602,8 +621,13 @@ public:
     // the convolutions' rings by checkpoint (running_state). A window ring holds window + kMaxRows positions and a
     // convolution ring kConvRing, so a checkpoint at `pos` is intact while the session has not run more than kMaxRows
     // rows past it.
-    size_t elem() const { return m_.cache_fp8() ? 1 : 2; }
-    uint64_t cell_bytes() const { return (uint64_t) kKvHeads * kHeadDim * elem(); }
+    int kv_heads_local() const { return kKvHeads / m_.cards(); }
+    size_t elem() const { return (m_.cache_fp8() || m_.cache_int8()) ? 1 : 2; }
+    uint64_t cell_bytes() const { return (uint64_t) kv_heads_local() * kHeadDim * elem(); }
+    uint64_t scale_cell_bytes() const { return m_.cache_int8() ? (uint64_t) kv_heads_local() * (kHeadDim / 64) * 2 : 0; }
+    size_t scale_bytes_of(const VisitCache& c) const {
+        return (size_t) scale_cell_bytes() * (size_t) c.cap;
+    }
 
     // The elastic KV: before a run reaches `positions`, the full visits' caches back them (in steps of kElasticKvStep cells),
     // and when the card has no room the RAM experts' card copies go back to RAM first, the least routed first. False when
@@ -614,7 +638,10 @@ public:
         if (elastic_.empty() || positions <= backed_) return true;
         const int64_t target = std::min<int64_t>(m_.context(), (positions + kElasticKvStep - 1) / kElasticKvStep * kElasticKvStep);
         const uint64_t bytes = cell_bytes() * (uint64_t) target;
-        const uint64_t grow = (uint64_t) elastic_.size() * (bytes - std::min<uint64_t>(bytes, elastic_[0]->backed())) + (64ull << 20);
+        const uint64_t sbytes = scale_cell_bytes() * (uint64_t) target;
+        uint64_t grow = (uint64_t) elastic_.size() * (bytes - std::min<uint64_t>(bytes, elastic_[0]->backed())) + (64ull << 20);
+        if (!elastic_sc_.empty())
+            grow += (uint64_t) elastic_sc_.size() * (sbytes - std::min<uint64_t>(sbytes, elastic_sc_[0]->backed()));
         size_t free_b = 0, total_b = 0;
         cudaMemGetInfo(&free_b, &total_b);
         const uint64_t keep_free = m_.held_free(kElasticKeep);
@@ -628,6 +655,11 @@ public:
                 err = "the caches cannot grow to " + std::to_string(target) + " positions: " + err;
                 return false;
             }
+        for (auto& a : elastic_sc_)
+            if (!a->ensure(sbytes, 0, err)) {
+                err = "the cache scales cannot grow to " + std::to_string(target) + " positions: " + err;
+                return false;
+            }
         backed_ = target;
         return true;
     }
@@ -639,19 +671,27 @@ public:
         if (keep < backed_) {
             cudaStreamSynchronize(stream_);
             for (auto& a : elastic_) a->trim(cell_bytes() * (uint64_t) keep);
+            for (auto& a : elastic_sc_) a->trim(scale_cell_bytes() * (uint64_t) keep);
             backed_ = std::min<int64_t>(backed_, (int64_t) (elastic_[0]->backed() / cell_bytes()));
         }
         if (m_.promoted() < m_.spill().spilled && !m_.lent()) {
             cudaStreamSynchronize(stream_);
-            m_.promote(m_.held_free(kElasticKeep) + (uint64_t) elastic_.size() * cell_bytes() * (uint64_t) std::max<int64_t>(0, keep - backed_));
+            const uint64_t need_cells = (uint64_t) std::max<int64_t>(0, keep - backed_);
+            m_.promote(m_.held_free(kElasticKeep) +
+                       ((uint64_t) elastic_.size() * cell_bytes() + (uint64_t) elastic_sc_.size() * scale_cell_bytes()) * need_cells);
         }
     }
-    size_t kv_bytes_of(const VisitCache& c) const { return (size_t) kKvHeads * (size_t) c.cap * kHeadDim * elem(); }
+    size_t kv_bytes_of(const VisitCache& c) const { return (size_t) kv_heads_local() * (size_t) c.cap * kHeadDim * elem(); }
     size_t conv_ring_bytes() const { return (size_t) kConvRing * (2 * kKvHeads * kHeadDim + 2 * (size_t) g_.n_embd) * 4; }
 
     size_t running_bytes() const override {
         size_t n = 0;
-        for (const VisitCache& c : vc_) n += (c.ring ? 2 * kv_bytes_of(c) : 0) + conv_ring_bytes();
+        const size_t kv_ring = (size_t) kConvRing * kKvHeads * kHeadDim * 4;
+        for (const VisitCache& c : vc_) {
+            n += (c.ring ? 2 * (kv_bytes_of(c) + scale_bytes_of(c)) : 0) + conv_ring_bytes();
+            if (m_.cards() > 1)
+                n += (c.ring ? 2 * (kv_bytes_of(c) + scale_bytes_of(c)) : 0) + 2 * kv_ring;
+        }
         return n + dspark_.running_bytes();   // DSPARK HOOK
     }
 
@@ -665,6 +705,10 @@ public:
             if (c.ring) {
                 to.push_back({c.k, kv_bytes_of(c)});
                 to.push_back({c.v, kv_bytes_of(c)});
+                if (m_.cache_int8()) {
+                    to.push_back({c.ks, scale_bytes_of(c)});
+                    to.push_back({c.vs, scale_bytes_of(c)});
+                }
             }
             to.push_back({c.k_ring, kv_ring});
             to.push_back({c.v_ring, kv_ring});
@@ -673,25 +717,35 @@ public:
         }
         dspark_.running_regions(st);   // DSPARK HOOK
         st.stream = stream_;
+        if (m_.cards() > 1) {   // card 1 holds its own sharded KV rings and k_ring/v_ring shard
+            for (const VisitCache& c : vc1_) {
+                if (c.ring) {
+                    st.peer_regions.push_back({c.k, kv_bytes_of(c)});
+                    st.peer_regions.push_back({c.v, kv_bytes_of(c)});
+                    if (m_.cache_int8()) {
+                        st.peer_regions.push_back({c.ks, scale_bytes_of(c)});
+                        st.peer_regions.push_back({c.vs, scale_bytes_of(c)});
+                    }
+                }
+                st.peer_regions.push_back({c.k_ring, kv_ring});
+                st.peer_regions.push_back({c.v_ring, kv_ring});
+            }
+            st.peer_stream = stream1_;
+            st.peer_device = m_.card_device(1);
+        }
         return {};
     }
 
     model::Result running_restored(int64_t pos, const uint8_t*) override {
         if ((int64_t) hist_.size() > pos) hist_.resize((size_t) pos);
-        if (m_.cards() > 1) {   // the first card's restored rings to the second's (the regions are the first card's)
-            const size_t kv_ring = (size_t) kConvRing * kKvHeads * kHeadDim * 4, e_ring = (size_t) kConvRing * g_.n_embd * 4;
+        if (m_.cards() > 1) {   // card 1's sharded KV rings and k_ring/v_ring came via peer_regions; replicate a_ring/m_ring
+            const size_t e_ring = (size_t) kConvRing * g_.n_embd * 4;
             bool ok = true;
             const auto copy = [&](void* to, const void* from, size_t n) {
                 if (to && from) ok = cudaMemcpyAsync(to, from, n, cudaMemcpyDefault, stream_) == cudaSuccess && ok;
             };
             for (size_t i = 0; i < vc_.size(); ++i) {
                 const VisitCache &a = vc_[i], &b = vc1_[i];
-                if (a.ring) {
-                    copy(b.k, a.k, kv_bytes_of(a));
-                    copy(b.v, a.v, kv_bytes_of(a));
-                }
-                copy(b.k_ring, a.k_ring, kv_ring);
-                copy(b.v_ring, a.v_ring, kv_ring);
                 copy(b.a_ring, a.a_ring, e_ring);
                 copy(b.m_ring, a.m_ring, e_ring);
             }
@@ -700,22 +754,64 @@ public:
         return {};
     }
 
-    int cell_format() const { return m_.cache_fp8() ? 1 : 3; }   // 3: fp16 rows, 1: unit-scale E4M3
+    int cell_format() const { return m_.cache_int8() ? 4 : m_.cache_fp8() ? 1 : 3; }   // 3: fp16, 1: E4M3, 4: int8 g64
 
     size_t cells_bytes(int64_t positions) const override {
         size_t n = 0;
+        const size_t per = (size_t) kKvHeads * kHeadDim * elem() + (m_.cache_int8() ? (size_t) kKvHeads * (kHeadDim / 64) * 2 : 0);
         for (const VisitCache& c : vc_)
-            if (!c.ring) n += 2 * (size_t) positions * kKvHeads * kHeadDim * elem();
+            if (!c.ring) n += 2 * (size_t) positions * per;
         return n + dspark_.cells_bytes(positions);   // DSPARK HOOK
     }
 
-    // A full-attention visit's cache is cell-major ([cell][head][dim]): its first `positions` cells are one run.
+    // A full-attention visit's cache is persisted in canonical 8-head cell-major layout ([cell][kKvHeads][dim]),
+    // interoperable between 1-GPU and 2-GPU TP2 sharded KV sessions via per-cell gather/scatter.
     model::Result save_cells(std::vector<core::ConversationKv>& kv, int64_t positions) override {
         if (positions > m_.context()) return {model::Status::Error, "inkling2: positions past the context"};
         cudaStreamSynchronize(stream_);
+        if (m_.cards() > 1) {
+            OnCard on(m_.card_device(1));
+            cudaStreamSynchronize(stream1_);
+        }
         kv.clear();
         const size_t run = (size_t) positions * kKvHeads * kHeadDim * elem();
-        for (const VisitCache& c : vc_) {
+        const size_t srun = m_.cache_int8() ? (size_t) positions * kKvHeads * (kHeadDim / 64) * 2 : 0;
+        const size_t half_cell = (size_t) kv_heads_local() * kHeadDim * elem();
+        const size_t half_scell = (size_t) scale_cell_bytes();
+        std::vector<uint8_t> h0, h1;
+        const auto down_single = [](const void* dev, core::ConversationBuffer& to) {
+            return to.visit(0, to.size(), [&](uint8_t* p, size_t n, size_t at) {
+                return cudaMemcpy(p, (const uint8_t*) dev + at, n, cudaMemcpyDeviceToHost) == cudaSuccess;
+            });
+        };
+        const auto down_gather = [&](const void* d0, const void* d1, size_t cell_b, core::ConversationBuffer& to) {
+            const size_t half_total = (size_t) positions * cell_b;
+            h0.resize(half_total);
+            h1.resize(half_total);
+            if (cudaMemcpy(h0.data(), d0, half_total, cudaMemcpyDeviceToHost) != cudaSuccess) return false;
+            {
+                OnCard on(m_.card_device(1));
+                if (cudaMemcpy(h1.data(), d1, half_total, cudaMemcpyDeviceToHost) != cudaSuccess) return false;
+            }
+            const size_t full_cell = 2 * cell_b;
+            return to.visit(0, to.size(), [&](uint8_t* p, size_t n, size_t at) {
+                size_t done = 0;
+                while (done < n) {
+                    const size_t pos_b = at + done;
+                    const size_t cell = pos_b / full_cell;
+                    const size_t in_cell = pos_b % full_cell;
+                    const bool hi = in_cell >= cell_b;
+                    const size_t sub = hi ? (in_cell - cell_b) : in_cell;
+                    const size_t take = std::min(n - done, cell_b - sub);
+                    const uint8_t* src = (hi ? h1.data() : h0.data()) + cell * cell_b + sub;
+                    std::memcpy(p + done, src, take);
+                    done += take;
+                }
+                return true;
+            });
+        };
+        for (size_t slot = 0; slot < vc_.size(); ++slot) {
+            const VisitCache& c = vc_[slot];
             if (c.ring) continue;
             core::ConversationKv k;
             k.format = cell_format();
@@ -725,12 +821,21 @@ public:
             k.head_dim = kHeadDim;
             k.k.resize_for_overwrite(run);
             k.v.resize_for_overwrite(run);
-            const auto down = [](const void* dev, core::ConversationBuffer& to) {
-                return to.visit(0, to.size(), [&](uint8_t* p, size_t n, size_t at) {
-                    return cudaMemcpy(p, (const uint8_t*) dev + at, n, cudaMemcpyDeviceToHost) == cudaSuccess;
-                });
-            };
-            if (!down(c.k, k.k) || !down(c.v, k.v)) return {model::Status::Error, "inkling2: reading a cache back failed"};
+            if (srun) {
+                k.k_scale.resize_for_overwrite(srun);
+                k.v_scale.resize_for_overwrite(srun);
+            }
+            bool ok = true;
+            if (m_.cards() == 1) {
+                ok = down_single(c.k, k.k) && down_single(c.v, k.v) &&
+                     (!srun || (down_single(c.ks, k.k_scale) && down_single(c.vs, k.v_scale)));
+            } else {
+                const VisitCache& c1 = vc1_[slot];
+                ok = down_gather(c.k, c1.k, half_cell, k.k) && down_gather(c.v, c1.v, half_cell, k.v) &&
+                     (!srun || (down_gather(c.ks, c1.ks, half_scell, k.k_scale) &&
+                                down_gather(c.vs, c1.vs, half_scell, k.v_scale)));
+            }
+            if (!ok) return {model::Status::Error, "inkling2: reading a cache back failed"};
             kv.push_back(std::move(k));
         }
         if (!dspark_.save_cells(kv, positions, stream_)) return {model::Status::Error, "inkling2: reading the drafter's cache back failed"};   // DSPARK HOOK
@@ -741,26 +846,62 @@ public:
         if (positions > m_.context()) return {model::Status::Error, "inkling2: positions past the context"};
         if (std::string e; !ensure_positions(positions, e)) return {model::Status::Refused, "inkling2: " + e};
         cudaStreamSynchronize(stream_);
+        if (m_.cards() > 1) {
+            OnCard on(m_.card_device(1));
+            cudaStreamSynchronize(stream1_);
+        }
         const size_t run = (size_t) positions * kKvHeads * kHeadDim * elem();
+        const size_t srun = m_.cache_int8() ? (size_t) positions * kKvHeads * (kHeadDim / 64) * 2 : 0;
+        const size_t half_cell = (size_t) kv_heads_local() * kHeadDim * elem();
+        const size_t half_scell = (size_t) scale_cell_bytes();
+        std::vector<uint8_t> h0, h1;
+        const auto up_single = [&](void* dev, const core::ConversationBuffer& from, size_t nbytes, cudaStream_t st) {
+            return from.visit(0, nbytes, [&](const uint8_t* p, size_t n, size_t at) {
+                return cudaMemcpyAsync((uint8_t*) dev + at, p, n, cudaMemcpyHostToDevice, st) == cudaSuccess;
+            });
+        };
+        const auto up_scatter = [&](void* d0, void* d1, size_t cell_b, const core::ConversationBuffer& from, size_t nbytes) {
+            const size_t half_total = (size_t) positions * cell_b;
+            const size_t full_cell = 2 * cell_b;
+            h0.resize(half_total);
+            h1.resize(half_total);
+            if (!from.visit(0, nbytes, [&](const uint8_t* p, size_t n, size_t at) {
+                    size_t done = 0;
+                    while (done < n) {
+                        const size_t pos_b = at + done;
+                        const size_t cell = pos_b / full_cell;
+                        const size_t in_cell = pos_b % full_cell;
+                        const bool hi = in_cell >= cell_b;
+                        const size_t sub = hi ? (in_cell - cell_b) : in_cell;
+                        const size_t take = std::min(n - done, cell_b - sub);
+                        uint8_t* dst = (hi ? h1.data() : h0.data()) + cell * cell_b + sub;
+                        std::memcpy(dst, p + done, take);
+                        done += take;
+                    }
+                    return true;
+                }))
+                return false;
+            if (cudaMemcpy(d0, h0.data(), half_total, cudaMemcpyHostToDevice) != cudaSuccess) return false;
+            OnCard on(m_.card_device(1));
+            return cudaMemcpy(d1, h1.data(), half_total, cudaMemcpyHostToDevice) == cudaSuccess;
+        };
         size_t i = 0;
         for (size_t slot = 0; slot < vc_.size(); ++slot) {
             const VisitCache& c = vc_[slot];
             if (c.ring) continue;
             if (i >= kv.size() || kv[i].format != cell_format() || kv[i].cells != positions || kv[i].heads != kKvHeads ||
-                kv[i].k.size() < run || kv[i].v.size() < run)
+                kv[i].k.size() < run || kv[i].v.size() < run || (srun && (kv[i].k_scale.size() < srun || kv[i].v_scale.size() < srun)))
                 return {model::Status::Error, "inkling2: a parked conversation has other caches"};
-            // on the card's stream: a copy from pageable memory may return before its bytes land, and the session's
-            // streams do not wait for the default one
-            const auto up = [&](void* dev, const core::ConversationBuffer& from, cudaStream_t st) {
-                return from.visit(0, run, [&](const uint8_t* p, size_t n, size_t at) {
-                    return cudaMemcpyAsync((uint8_t*) dev + at, p, n, cudaMemcpyHostToDevice, st) == cudaSuccess;
-                });
-            };
-            if (!up(c.k, kv[i].k, stream_) || !up(c.v, kv[i].v, stream_)) return {model::Status::Error, "inkling2: writing a cache back failed"};
-            if (m_.cards() > 1) {   // both cards hold the caches
-                OnCard on(m_.card_device(1));
-                if (!up(vc1_[slot].k, kv[i].k, stream1_) || !up(vc1_[slot].v, kv[i].v, stream1_))
-                    return {model::Status::Error, "inkling2: writing a cache back to the second card failed"};
+            if (m_.cards() == 1) {
+                if (!up_single(c.k, kv[i].k, run, stream_) || !up_single(c.v, kv[i].v, run, stream_) ||
+                    (srun && (!up_single(c.ks, kv[i].k_scale, srun, stream_) || !up_single(c.vs, kv[i].v_scale, srun, stream_))))
+                    return {model::Status::Error, "inkling2: writing a cache back failed"};
+            } else {
+                const VisitCache& c1 = vc1_[slot];
+                if (!up_scatter(c.k, c1.k, half_cell, kv[i].k, run) || !up_scatter(c.v, c1.v, half_cell, kv[i].v, run) ||
+                    (srun && (!up_scatter(c.ks, c1.ks, half_scell, kv[i].k_scale, srun) ||
+                              !up_scatter(c.vs, c1.vs, half_scell, kv[i].v_scale, srun))))
+                    return {model::Status::Error, "inkling2: writing sharded caches back failed"};
             }
             ++i;
         }
@@ -773,8 +914,8 @@ public:
 
     int64_t kv_bytes() const override {
         int64_t n = 0;
-        for (const VisitCache& c : vc_) n += 2 * (int64_t) kv_bytes_of(c);
-        return n;
+        for (const VisitCache& c : vc_) n += 2 * (int64_t) (kv_bytes_of(c) + scale_bytes_of(c));
+        return n * (int64_t) m_.cards();
     }
 
     // ---- the console's experts: a lookup is a hit when its expert is on the card. With every expert resident that is each
@@ -810,7 +951,8 @@ public:
         const std::string n = std::to_string(expert_pairs() - m_.spill().spilled);
         uint64_t ram = 0;
         for (int l = 0; l < g_.n_layers; ++l) ram += (uint64_t) m_.layer(l).n_spill * m_.layer(l).expert_stride;
-        return "expert_slots=" + n + " expert_slots_primary=" + n + " ram_experts_mib=" + std::to_string(ram >> 20) + (m_.cache_fp8() ? " kv=fp8 " : " kv=fp16 ") +
+        return "expert_slots=" + n + " expert_slots_primary=" + n + " ram_experts_mib=" + std::to_string(ram >> 20) +
+               (m_.cache_int8() ? " kv=int8 " : m_.cache_fp8() ? " kv=fp8 " : " kv=fp16 ") +
                program::spill_words({0, expert_pairs(), 0});
     }
 
@@ -818,8 +960,9 @@ private:
     int64_t expert_pairs() const { return (int64_t) g_.n_layers * g_.n_expert; }
 
     // After a call that returned `r` with both cards synced: a call whose exchange timed out fails (Exchange; so does
-    // every later one). --diag-tp-check: every cache and ring of the second card against the first's, bitwise (a full
-    // visit's cells up to the session's position).
+    // every later one). --diag-tp-check: under TP2 KV sharding, each card holds disjoint KV heads [0..3] vs [4..7],
+    // while post-attention (a_ring) and post-MLP (m_ring) residual states MUST match bitwise at every visit; sharded
+    // k_ring/v_ring slices and KV slabs are verified finite and readable on both cards.
     model::Result cards_agree(model::Result r) {
         if (!r.ok() || m_.cards() < 2) return r;
         if (*(volatile const uint32_t*) sh_->xch_abort != 0)
@@ -828,24 +971,74 @@ private:
         if (cudaStreamSynchronize(stream1_) != cudaSuccess || cudaStreamSynchronize(stream_) != cudaSuccess)
             return {model::Status::Error, "inkling2: a card failed before the tensor-parallel check"};
         const size_t kv_ring = (size_t) kConvRing * kKvHeads * kHeadDim * 4, e_ring = (size_t) kConvRing * g_.n_embd * 4;
+        const int half_ch = (kKvHeads / 2) * kHeadDim;
         std::vector<uint8_t> a, b;
         std::string bad;
         const auto same = [&](const void* p0, const void* p1, size_t n, const char* what, size_t slot) {
             if (!bad.empty() || n == 0) return;
             a.resize(n);
             b.resize(n);
-            if (cudaMemcpy(a.data(), p0, n, cudaMemcpyDeviceToHost) != cudaSuccess || cudaMemcpy(b.data(), p1, n, cudaMemcpyDeviceToHost) != cudaSuccess)
-                bad = std::string("reading the ") + what + " back failed";
-            else if (std::memcmp(a.data(), b.data(), n) != 0)
+            if (cudaMemcpy(a.data(), p0, n, cudaMemcpyDeviceToHost) != cudaSuccess)
+                bad = std::string("reading card 0 ") + what + " back failed";
+            else {
+                OnCard on(m_.card_device(1));
+                if (cudaMemcpy(b.data(), p1, n, cudaMemcpyDeviceToHost) != cudaSuccess)
+                    bad = std::string("reading card 1 ") + what + " back failed";
+            }
+            if (bad.empty() && std::memcmp(a.data(), b.data(), n) != 0)
                 bad = std::string("the cards' ") + what + " of visit cache " + std::to_string(slot) + " differ";
         };
+        const auto finite_ring_shards = [&](const float* p0, const float* p1, const char* what, size_t slot) {
+            if (!bad.empty()) return;
+            a.resize(kv_ring);
+            b.resize(kv_ring);
+            if (cudaMemcpy(a.data(), p0, kv_ring, cudaMemcpyDeviceToHost) != cudaSuccess) {
+                bad = std::string("reading card 0 ") + what + " back failed";
+                return;
+            }
+            {
+                OnCard on(m_.card_device(1));
+                if (cudaMemcpy(b.data(), p1, kv_ring, cudaMemcpyDeviceToHost) != cudaSuccess) {
+                    bad = std::string("reading card 1 ") + what + " back failed";
+                    return;
+                }
+            }
+            const float* f0 = reinterpret_cast<const float*>(a.data());
+            const float* f1 = reinterpret_cast<const float*>(b.data());
+            for (int r_i = 0; r_i < kConvRing && bad.empty(); ++r_i) {
+                for (int c_i = 0; c_i < half_ch; ++c_i) {
+                    if (!std::isfinite(f0[(size_t) r_i * kKvHeads * kHeadDim + c_i]) ||
+                        !std::isfinite(f1[(size_t) r_i * kKvHeads * kHeadDim + half_ch + c_i])) {
+                        bad = std::string("non-finite ") + what + " shard in visit cache " + std::to_string(slot);
+                        break;
+                    }
+                }
+            }
+        };
+        const auto check_kv_shard = [&](const void* p0, const void* p1, size_t n, const char* what, size_t slot) {
+            if (!bad.empty() || n == 0) return;
+            a.resize(n);
+            b.resize(n);
+            if (cudaMemcpy(a.data(), p0, n, cudaMemcpyDeviceToHost) != cudaSuccess) {
+                bad = std::string("reading card 0 ") + what + " in visit cache " + std::to_string(slot) + " back failed";
+                return;
+            }
+            OnCard on(m_.card_device(1));
+            if (cudaMemcpy(b.data(), p1, n, cudaMemcpyDeviceToHost) != cudaSuccess)
+                bad = std::string("reading card 1 ") + what + " in visit cache " + std::to_string(slot) + " back failed";
+        };
         const size_t cells = (size_t) hist_.size() * (size_t) cell_bytes();
+        const size_t scells = (size_t) hist_.size() * (size_t) scale_cell_bytes();
         for (size_t i = 0; i < vc_.size(); ++i) {
             const VisitCache &c0 = vc_[i], &c1 = vc1_[i];
-            same(c0.k, c1.k, c0.ring ? kv_bytes_of(c0) : cells, "keys", i);
-            same(c0.v, c1.v, c0.ring ? kv_bytes_of(c0) : cells, "values", i);
-            same(c0.k_ring, c1.k_ring, kv_ring, "key convolution ring", i);
-            same(c0.v_ring, c1.v_ring, kv_ring, "value convolution ring", i);
+            check_kv_shard(c0.k, c1.k, c0.ring ? kv_bytes_of(c0) : cells, "sharded keys", i);
+            check_kv_shard(c0.v, c1.v, c0.ring ? kv_bytes_of(c0) : cells, "sharded values", i);
+            if (m_.cache_int8()) {
+                check_kv_shard(c0.ks, c1.ks, c0.ring ? scale_bytes_of(c0) : scells, "sharded key scales", i);
+                check_kv_shard(c0.vs, c1.vs, c0.ring ? scale_bytes_of(c0) : scells, "sharded value scales", i);
+            }
+            finite_ring_shards(c0.k_ring, c1.k_ring, "key convolution ring", i);
+            finite_ring_shards(c0.v_ring, c1.v_ring, "value convolution ring", i);
             same(c0.a_ring, c1.a_ring, e_ring, "attention convolution ring", i);
             same(c0.m_ring, c1.m_ring, e_ring, "experts' convolution ring", i);
         }
@@ -927,9 +1120,8 @@ private:
             ca.eps = g_.rms_eps;
             controllers(ca, 3, rows, k.stream);
         }
-        // tensor parallelism: card c the query heads of key/value groups [g0, g0 + ng) (their q, r, gate and sink rows) and
-        // every group's keys and values, as both cards hold whole caches; each card's output projection reads only its
-        // heads' columns, and post_attn adds the two cards' sums
+        // tensor parallelism: card c computes ONLY its own key/value groups [g0, g0 + ng) (both Q/R/Gate/Sink and
+        // sharded K/V + full-layer dynamic conv taps), saving -120.3 MB/tok/GPU in w.proj and -50% KV VRAM per card.
         const int ng = kKvHeads / m_.cards(), g0 = card * ng;
         // the projections: one product over every row of the fused matrix when the three inputs are one
         AttnPrep ap;
@@ -947,10 +1139,14 @@ private:
             // the card's query-side rows (each range's first row and rows a head), each where the whole product writes it
             constexpr int kSide[4][2] = {{kOffQ, kHeadDim}, {kOffR, kRel}, {kOffGate, kHeadDim}, {kOffSink, 1}};
             for (const auto& s : kSide) add(s[0] + h0 * s[1], nh * s[1], x.xq_[0], x.y_ + s[0] + h0 * s[1], ldq);
-            if (one) add(kRowK, 2 * kProjKV, x.xq_[0], yk, ldkv);
-            else {
-                add(kRowK, kProjKV, x.xq_[1], yk, ldkv);
-                add(kRowV, kProjKV, x.xq_[2], yv, ldkv);
+            // the card's sharded K and V rows (and dynamic conv taps on full-attention layers)
+            const void* xk = one ? x.xq_[0] : x.xq_[1];
+            const void* xv = one ? x.xq_[0] : x.xq_[2];
+            add(kRowK + g0 * kHeadDim, ng * kHeadDim, xk, yk + g0 * kHeadDim, ldkv);
+            add(kRowV + g0 * kHeadDim, ng * kHeadDim, xv, yv + g0 * kHeadDim, ldkv);
+            if (full) {
+                add(kRowK + kOffTaps + g0 * kConv, ng * kConv, xk, yk + kOffTaps + g0 * kConv, ldkv);
+                add(kRowV + kOffTaps + g0 * kConv, ng * kConv, xv, yv + kOffTaps + g0 * kConv, ldkv);
             }
             bk::native_q8_0_mmvq_segments(w.proj, sg, E, rows, k.stream);
             ap.yq = x.y_;
@@ -1011,6 +1207,8 @@ private:
         ap.v_ring = c.v_ring;
         ap.k_cache = c.k;
         ap.v_cache = c.v;
+        ap.k_scale = c.ks;
+        ap.v_scale = c.vs;
         ap.cap = c.cap;
         ap.fp8 = m_.cache_fp8();
         ap.q = x.q_;
@@ -1025,6 +1223,8 @@ private:
         aa.pos = x.pos_d_;
         aa.k_cache = c.k;
         aa.v_cache = c.v;
+        aa.k_scale = c.ks;
+        aa.v_scale = c.vs;
         aa.cap = c.cap;
         aa.fp8 = m_.cache_fp8();
         aa.window = c.ring ? g_.window : 0;
@@ -1034,6 +1234,7 @@ private:
         aa.q8 = x.xo_;
         ap.g0 = aa.g0 = g0;
         ap.ng = aa.ng = ng;
+        ap.kv_stride = aa.kv_stride = ng;
         if (m_.cards() > 1) aa.sent = x.xch_;   // the output projection below sends the card's share
         const Segments seg = segments(card, v.slot);   // a batch window's: each conversation's caches of this visit
         ap.seg = aa.seg = seg;
@@ -1095,28 +1296,59 @@ private:
             ca.eps = g_.rms_eps;
             controllers(ca, 1, rows, k.stream);
         }
-        // the experts
-        bk::RouterArgs ra;
-        ra.n_expert = g_.n_expert;
-        ra.n_embd = E;
-        ra.k = g_.n_used;
-        ra.weight_scale = g_.expert_scale;
-        ra.gate = bk::RouterGate::Sigmoid;
+        // the experts: for rows <= 4, fused router_logits + router_select + moe_plan (1.23x-1.77x faster on sm_86,
+        // dedicated x.rplan_done_ isolated from k.ra_st); for rows > 4, standalone parallel router_select stays faster.
         const bool guess_next = guess && vi + 1 < (int) g_.visits.size();
         if (guess_next) cudaEventRecord(k.ra_ev, k.stream);   // the MLP input is in
-        bk::router(nrm, w.router, w.router_bias, rows, ra, x.rlog_, x.ids_, x.rw_, k.stream);
-        if (guess_next) {   // the next visit's experts: its router on this visit's MLP input, beside this visit's router
+        if (rows <= 4) {
+            RouterPlanArgs rp;
+            rp.x = nrm;
+            rp.gate = w.router;
+            rp.bias = w.router_bias;
+            rp.n_expert = g_.n_expert;
+            rp.k = g_.n_used;
+            rp.weight_scale = g_.expert_scale;
+            rp.blobs = w.blob_table;
+            rp.logits = x.rlog_;
+            rp.ids = x.ids_;
+            rp.weights = x.rw_;
+            rp.ptr = x.ex_ptr_;
+            rp.start = x.ex_start_;
+            rp.n_groups = x.ex_ng_;
+            rp.dst = x.ex_dst_;
+            rp.tok = x.ex_tok_;
+            rp.done = x.rplan_done_;
+            rp.tally = k.ex_tally ? k.ex_tally + (size_t) l * g_.n_expert : nullptr;
+            rp.rec_blobs = k.rec_blobs ? k.rec_blobs + (size_t) vi * kAheadExperts : nullptr;
+            rp.rec_n = k.rec_n ? k.rec_n + vi : nullptr;
+            router_plan_fused(rp, rows, k.stream);
+        } else {
+            bk::RouterArgs ra;
+            ra.n_expert = g_.n_expert;
+            ra.n_embd = E;
+            ra.k = g_.n_used;
+            ra.weight_scale = g_.expert_scale;
+            ra.gate = bk::RouterGate::Sigmoid;
+            bk::router(nrm, w.router, w.router_bias, rows, ra, x.rlog_, x.ids_, x.rw_, k.stream);
+        }
+        if (guess_next) {   // the next visit's experts: standalone router on side stream k.ra_st (never touches x.rplan_done_)
             const LayerWeights& nw = m_.layer(g_.visits[(size_t) vi + 1].layer);
-            bk::RouterArgs ga = ra;
+            bk::RouterArgs ga;
+            ga.n_expert = g_.n_expert;
+            ga.n_embd = E;
             ga.k = kGuessExperts / rows;
+            ga.weight_scale = g_.expert_scale;
+            ga.gate = bk::RouterGate::Sigmoid;
             cudaStreamWaitEvent(k.ra_st, k.ra_ev, 0);
             bk::router(nrm, nw.router, nw.router_bias, rows, ga, x.gs_log_, x.gs_ids_ + (size_t) (vi + 1) * kGuessExperts, x.gs_w_, k.ra_st);
             cudaEventRecord(k.gs_ev, k.ra_st);
             k.ra_on = true;
         }
-        moe_plan(x.ids_, rows, g_.n_used, g_.n_expert, w.blob_table, x.ex_ptr_, x.ex_start_, x.ex_ng_, x.ex_dst_, x.ex_tok_, k.stream,
-                 k.ex_tally ? k.ex_tally + (size_t) l * g_.n_expert : nullptr, k.rec_blobs ? k.rec_blobs + (size_t) vi * kAheadExperts : nullptr,
-                 k.rec_n ? k.rec_n + vi : nullptr);
+        if (rows > 4) {
+            moe_plan(x.ids_, rows, g_.n_used, g_.n_expert, w.blob_table, x.ex_ptr_, x.ex_start_, x.ex_ng_, x.ex_dst_, x.ex_tok_, k.stream,
+                     k.ex_tally ? k.ex_tally + (size_t) l * g_.n_expert : nullptr, k.rec_blobs ? k.rec_blobs + (size_t) vi * kAheadExperts : nullptr,
+                     k.rec_n ? k.rec_n + vi : nullptr);
+        }
         const bool on_cpu = cpu_ >> l & 1;   // the RAM experts' pairs on the CPU, beside the card's
         if (on_cpu) sh_->cpu->start(l, rows, nrm, x.ids_, k.stream);
         bk::NativeExpertLayout L = bk::native_expert_layout(w.gu_type, w.d_type, E, w.n_ff);
@@ -1187,7 +1419,7 @@ private:
         s.at = view_->w.device_segs();
         for (int i = 0; i < view_->n; ++i) {
             const VisitCache& c = (*static_cast<const Session*>(view_->ss[i])->lane_[card].vc)[(size_t) slot];
-            s.c[i] = {c.k, c.v, c.k_ring, c.v_ring, c.a_ring, c.m_ring};
+            s.c[i] = {c.k, c.v, c.ks, c.vs, c.k_ring, c.v_ring, c.a_ring, c.m_ring};
         }
         return s;
     }
@@ -1518,6 +1750,7 @@ private:
     int64_t tp_checks_ = 0;                  // --diag-tp-check: the calls checked
     // the elastic KV (model.hpp elastic()): the full visits' caches back their first backed_ cells
     std::vector<std::unique_ptr<core::ElasticArray>> elastic_;
+    std::vector<std::unique_ptr<core::ElasticArray>> elastic_sc_;
     int64_t backed_ = 0;
     int32_t *pick_ = nullptr, *pick_h_ = nullptr, *io_h_ = nullptr;
     cudaEvent_t stage_ev_[kStage] = {};

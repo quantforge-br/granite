@@ -40,6 +40,37 @@ def q8_0(x: np.ndarray) -> bytes:
     return out.tobytes()
 
 
+def q8_0_pow2(x: np.ndarray) -> bytes:
+    """Power-of-two Q8_0 rounding for MXFP8 blocks (blocks of 32): fp16 d = 2^(e_max - 6).
+
+    For E4M3 * UE8M0 blocks, e_max is the unbiased binary exponent of the block amax; dividing by
+    2^(e_max - 6) maps the top 4 E4M3 binades onto exact integers in [-120, 120] (0.0% error on
+    the 4 largest binades, eliminating the ~0.54% RMS requantization error of d = amax / 127).
+    Falls back to one higher power of two if a non-E4M3 input has amax > 127 * d, and to amax/127
+    if d would underflow or overflow fp16.
+    """
+    b = x.reshape(-1, 32).astype(np.float32)
+    amax = np.abs(b).max(axis=1)
+    nz = amax > 0.0
+    _, exp = np.frexp(np.where(nz, amax, np.float32(1.0)))
+    e_max = exp - 1
+    d = np.where(nz, np.ldexp(np.float32(1.0), e_max - 6), np.float32(0.0))
+    # For non-E4M3 inputs with mantissa > 127/64 (never occurs for E4M3 where max mantissa is 15/8 = 120/64)
+    d = np.where(nz & (amax > d * np.float32(127.0)), np.ldexp(np.float32(1.0), e_max - 5), d)
+    d_f16 = d.astype(np.float16)
+    bad_f16 = nz & ((d_f16 == np.float16(0.0)) | (~np.isfinite(d_f16)))
+    if np.any(bad_f16):
+        d_f16 = np.where(bad_f16, (amax / np.float32(127.0)).astype(np.float16), d_f16)
+    d_eff = d_f16.astype(np.float32)
+    inv = np.where(d_eff > 0.0, np.float32(1.0) / np.where(d_eff > 0.0, d_eff, np.float32(1.0)), np.float32(0.0))
+    v = b * inv[:, None]
+    q = np.clip(np.sign(v) * np.floor(np.abs(v) + np.float32(0.5)), -127.0, 127.0).astype(np.int8)
+    out = np.empty((b.shape[0], 34), dtype=np.uint8)
+    out[:, :2] = d_f16.view(np.uint8).reshape(-1, 2)
+    out[:, 2:] = q.view(np.uint8)
+    return out.tobytes()
+
+
 def _bf16_to_f32(u16: np.ndarray) -> np.ndarray:
     return (u16.astype(np.uint32) << 16).view(np.float32)
 

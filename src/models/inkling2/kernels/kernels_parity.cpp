@@ -9,6 +9,7 @@
 #include "granite/ggml/ggml.h"
 #include "granite/kernels/iq_kernels.hpp"
 #include "granite/kernels/native_mmvq.hpp"
+#include "granite/kernels/router.hpp"
 #include "granite/models/inkling2/kernels.hpp"
 
 #include <cuda_fp16.h>
@@ -340,6 +341,51 @@ void test_prepare() {
         failures += !ring_ok;
         if (!full)
             std::printf("  %.1f us a call (1 row)\n", time_us([&] { attn_prepare(a, 1, nullptr); }));
+        // Direct KvInt8 g64 producer parity: verify attn_prepare codes, fp16 scales, and dequantized values against CPU ref.
+        int8_t *kcache_i8 = zeros<int8_t>((size_t) kKvHeads * cap * kHeadDim), *vcache_i8 = zeros<int8_t>((size_t) kKvHeads * cap * kHeadDim);
+        uint16_t *kscale = zeros<uint16_t>((size_t) kKvHeads * cap * (kHeadDim / 64)), *vscale = zeros<uint16_t>((size_t) kKvHeads * cap * (kHeadDim / 64));
+        float *dkr2 = dev(kr), *dvr2 = dev(vr);
+        AttnPrep ai = a;
+        ai.k_ring = dkr2; ai.v_ring = dvr2;
+        ai.k_cache = kcache_i8; ai.v_cache = vcache_i8;
+        ai.k_scale = kscale; ai.v_scale = vscale;
+        ai.fp8 = false;
+        attn_prepare(ai, R, nullptr);
+        cudaDeviceSynchronize();
+        const std::vector<int8_t> hki = host(kcache_i8, (size_t) kKvHeads * cap * kHeadDim), hvi = host(vcache_i8, (size_t) kKvHeads * cap * kHeadDim);
+        const std::vector<uint16_t> hks = host(kscale, (size_t) kKvHeads * cap * (kHeadDim / 64)), hvs = host(vscale, (size_t) kKvHeads * cap * (kHeadDim / 64));
+        bool i8_ok = true;
+        double i8_max_deq = 0.0;
+        for (int r = 0; r < R; ++r) {
+            for (int which = 0; which < 2; ++which) {
+                const std::vector<double>& ref = which ? rv : rk;
+                const std::vector<int8_t>& hcode = which ? hvi : hki;
+                const std::vector<uint16_t>& hsc = which ? hvs : hks;
+                for (int h = 0; h < kKvHeads; ++h) {
+                    const size_t base = ((size_t) (pos[r] % cap) * kKvHeads + h) * kHeadDim;
+                    const size_t sbase = ((size_t) (pos[r] % cap) * kKvHeads + h) * (kHeadDim / 64);
+                    for (int grp = 0; grp < kHeadDim / 64; ++grp) {
+                        double amax = 0.0;
+                        for (int d = 0; d < 64; ++d)
+                            amax = std::max(amax, std::fabs(ref[((size_t) r * kKvHeads + h) * kHeadDim + grp * 64 + d]));
+                        const double ref_s = amax / 127.0;
+                        const double got_s = h2d(hsc[sbase + grp]);
+                        if (std::fabs(got_s - ref_s) > 1e-3 * std::max(1.0, ref_s) + 1e-5) i8_ok = false;
+                        for (int d = 0; d < 64; ++d) {
+                            const double v = ref[((size_t) r * kKvHeads + h) * kHeadDim + grp * 64 + d];
+                            const int qref = amax > 0.0 ? std::max(-127, std::min(127, (int) std::lrint(v / ref_s))) : 0;
+                            const int qgot = (int) hcode[base + grp * 64 + d];
+                            if (std::abs(qgot - qref) > 1) i8_ok = false;
+                            i8_max_deq = std::max(i8_max_deq, std::fabs(qgot * got_s - v));
+                        }
+                    }
+                }
+            }
+        }
+        i8_ok = i8_ok && i8_max_deq < 0.08;
+        std::printf("%-34s %s (max_deq=%.4g)\n", full ? "attn_prepare KvInt8 g64 (full)" : "attn_prepare KvInt8 g64 (window)",
+                    i8_ok ? "ok" : "FAIL", i8_max_deq);
+        failures += !i8_ok;
     }
 }
 
@@ -1539,16 +1585,424 @@ void test_batch_window() {
 
 }  // namespace
 
+void test_e4m3_fast_unpack() {
+    uint16_t* dout = zeros<uint16_t>(256);
+    e4m3_fast_unpack_all_256(dout, nullptr);
+    cudaDeviceSynchronize();
+    const std::vector<uint16_t> got = host(dout, 256);
+    bool finite_ok = true, nan_ok = true;
+    for (int b = 0; b < 256; ++b) {
+        const bool is_nan = (b & 0x7F) == 0x7F;
+        if (is_nan) {
+            const uint16_t want_nan_map = (b & 0x80) ? 0xDF80u : 0x5F80u;   // +/-480.0h
+            if (got[b] != want_nan_map) nan_ok = false;
+        } else {
+            const uint8_t u8 = (uint8_t) b;
+            const __half_raw hr = __nv_cvt_fp8_to_halfraw((__nv_fp8_storage_t) u8, __NV_E4M3);
+            if (got[b] != hr.x) {
+                std::printf("  e4m3 mismatch byte 0x%02x: got 0x%04x want 0x%04x\n", b, got[b], hr.x);
+                finite_ok = false;
+            }
+        }
+    }
+    std::printf("%-34s %s\n", "e4m3 fast unpack (254 finite)", finite_ok ? "bitwise" : "FAIL");
+    std::printf("%-34s %s\n", "e4m3 fast unpack (NaN->+-480h)", nan_ok ? "ok" : "FAIL");
+    failures += !finite_ok + !nan_ok;
+    cudaFree(dout);
+}
+
+void test_attention_krows_invariance() {
+    // Verify bitwise T=1..8 invariance across kRows in {1, 2, 4} for both FP16 and FP8, including far-tile kRel skip (pos > 2048).
+    const int maxR = 8;
+    const int p0 = 2990;
+    const int64_t cap = 3072;
+    std::vector<int> pos(maxR);
+    for (int r = 0; r < maxR; ++r) pos[r] = p0 + r;
+    const std::vector<float> q = randn((size_t) maxR * kHeads * kHeadDim, 0.8f);
+    const std::vector<float> rs = randn((size_t) maxR * kHeads * kRel, 1.0f);
+    const std::vector<float> sink = randn((size_t) maxR * kHeads, 2.0f);
+    const std::vector<float> table = randn((size_t) kRel * kExtent, 0.3f);
+    float *dq = dev(q), *drs = dev(rs), *dsink = dev(sink), *dt = dev(table);
+    int* dpos = dev(pos);
+    void* scr = zeros<uint8_t>(attention_decode_scratch(maxR, cap));
+
+    for (int mode = 0; mode < 3; ++mode) {   // 0: FP16, 1: E4M3, 2: KvInt8 g64
+        const bool fp8 = mode == 1, i8 = mode == 2;
+        const size_t n = (size_t) kKvHeads * cap * kHeadDim;
+        void *dk = nullptr, *dv = nullptr;
+        uint16_t *dks = nullptr, *dvs = nullptr;
+        std::vector<uint16_t> kh_deq, vh_deq;
+        if (fp8) {
+            std::vector<uint8_t> k8(n), v8(n);
+            for (size_t i = 0; i < n; ++i) {
+                k8[i] = __nv_fp8_e4m3(randn(1, 0.6f)[0]).__x;
+                v8[i] = __nv_fp8_e4m3(randn(1, 1.0f)[0]).__x;
+            }
+            dk = dev(k8);
+            dv = dev(v8);
+        } else if (i8) {
+            std::vector<int8_t> k8(n), v8(n);
+            std::vector<uint16_t> ks(n / 64), vs(n / 64);
+            kh_deq.resize(n); vh_deq.resize(n);
+            for (size_t g = 0; g < n / 64; ++g) {
+                std::vector<float> fk = randn(64, 0.6f), fv = randn(64, 1.0f);
+                float ak = 0.f, av = 0.f;
+                for (int i = 0; i < 64; ++i) { ak = std::max(ak, std::fabs(fk[i])); av = std::max(av, std::fabs(fv[i])); }
+                ks[g] = f2h(ak / 127.f); vs[g] = f2h(av / 127.f);
+                const float sk = (float) h2d(ks[g]), sv = (float) h2d(vs[g]);
+                for (int i = 0; i < 64; ++i) {
+                    k8[g * 64 + i] = (int8_t) std::max(-127.f, std::min(127.f, sk > 0 ? std::rint(fk[i] / sk) : 0.f));
+                    v8[g * 64 + i] = (int8_t) std::max(-127.f, std::min(127.f, sv > 0 ? std::rint(fv[i] / sv) : 0.f));
+                    kh_deq[g * 64 + i] = f2h((float) k8[g * 64 + i] * sk);
+                    vh_deq[g * 64 + i] = f2h((float) v8[g * 64 + i] * sv);
+                }
+            }
+            dk = dev(k8); dv = dev(v8); dks = dev(ks); dvs = dev(vs);
+        } else {
+            std::vector<uint16_t> kh(n), vh(n);
+            for (size_t i = 0; i < n; ++i) {
+                kh[i] = f2h(randn(1, 0.6f)[0]);
+                vh[i] = f2h(randn(1, 1.0f)[0]);
+            }
+            dk = dev(kh);
+            dv = dev(vh);
+        }
+        AttnArgs base;
+        base.q = dq; base.r = drs; base.sink = dsink; base.rel_table = dt; base.pos = dpos;
+        base.k_cache = dk; base.v_cache = dv; base.k_scale = dks; base.v_scale = dvs;
+        base.cap = cap; base.fp8 = fp8; base.window = 0;
+
+        // Reference: each row run alone (kRows=1)
+        std::vector<float> ref_alone((size_t) maxR * kHeads * kHeadDim);
+        float* out1 = zeros<float>((size_t) kHeads * kHeadDim);
+        for (int r = 0; r < maxR; ++r) {
+            AttnArgs o = base;
+            o.q = dq + (size_t) r * kHeads * kHeadDim;
+            o.r = drs + (size_t) r * kHeads * kRel;
+            o.sink = dsink + (size_t) r * kHeads;
+            o.pos = dpos + r;
+            attention_decode(o, 1, p0 + maxR, scr, out1, nullptr);
+            const std::vector<float> g = host(out1, (size_t) kHeads * kHeadDim);
+            std::copy(g.begin(), g.end(), ref_alone.begin() + (size_t) r * kHeads * kHeadDim);
+        }
+        bool all_ok = true;
+        float* outR = zeros<float>((size_t) maxR * kHeads * kHeadDim);
+        for (int R : {2, 3, 4, 5, 7, 8}) {
+            attention_decode(base, R, p0 + maxR, scr, outR, nullptr);
+            const std::vector<float> got = host(outR, (size_t) R * kHeads * kHeadDim);
+            if (std::memcmp(got.data(), ref_alone.data(), (size_t) R * kHeads * kHeadDim * 4) != 0) all_ok = false;
+        }
+        char label[64];
+        std::snprintf(label, sizeof label, "attention T=1..8 (%s, far)", i8 ? "KvInt8" : fp8 ? "E4M3" : "FP16");
+        std::printf("%-34s %s\n", label, all_ok ? "bitwise" : "FAIL");
+        failures += !all_ok;
+        if (i8) {
+            // KvInt8 g64 must be bitwise identical to FP16 on the dequantized K/V cells!
+            void *dkd = dev(kh_deq), *dvd = dev(vh_deq);
+            AttnArgs fd = base;
+            fd.k_cache = dkd; fd.v_cache = dvd; fd.k_scale = nullptr; fd.v_scale = nullptr; fd.fp8 = false;
+            float* out_deq = zeros<float>((size_t) maxR * kHeads * kHeadDim);
+            attention_decode(fd, maxR, p0 + maxR, scr, out_deq, nullptr);
+            const std::vector<float> gdeq = host(out_deq, (size_t) maxR * kHeads * kHeadDim);
+            same_bits("attention KvInt8 == dequant FP16", ref_alone.data(), gdeq.data(), gdeq.size() * 4);
+            cudaFree(dkd); cudaFree(dvd); cudaFree(out_deq);
+        }
+        // P2.1 TP2 sharded KV parity: two 4-head sharded slabs (kv_stride = 4) must match 8-head ref_alone bitwise!
+        {
+            const int ng = kKvHeads / 2;
+            const size_t elem_b = (fp8 || i8) ? 1 : 2;
+            const size_t half_cell = (size_t) ng * kHeadDim * elem_b;
+            const size_t full_cell = 2 * half_cell;
+            const size_t half_sc = (size_t) ng * (kHeadDim / 64);
+            const std::vector<uint8_t> fk_h = host(static_cast<const uint8_t*>(dk), (size_t) cap * full_cell);
+            const std::vector<uint8_t> fv_h = host(static_cast<const uint8_t*>(dv), (size_t) cap * full_cell);
+            std::vector<uint16_t> fks_h, fvs_h;
+            if (i8) {
+                fks_h = host(dks, (size_t) cap * 2 * half_sc);
+                fvs_h = host(dvs, (size_t) cap * 2 * half_sc);
+            }
+            std::vector<float> combined((size_t) maxR * kHeads * kHeadDim, 0.f);
+            float* out_sh = zeros<float>((size_t) maxR * kHeads * kHeadDim);
+            for (int card = 0; card < 2; ++card) {
+                std::vector<uint8_t> sk((size_t) cap * half_cell), sv((size_t) cap * half_cell);
+                std::vector<uint16_t> sks, svs;
+                if (i8) { sks.resize((size_t) cap * half_sc); svs.resize((size_t) cap * half_sc); }
+                for (int64_t ce = 0; ce < cap; ++ce) {
+                    std::memcpy(&sk[ce * half_cell], &fk_h[ce * full_cell + card * half_cell], half_cell);
+                    std::memcpy(&sv[ce * half_cell], &fv_h[ce * full_cell + card * half_cell], half_cell);
+                    if (i8) {
+                        std::memcpy(&sks[ce * half_sc], &fks_h[ce * 2 * half_sc + card * half_sc], half_sc * 2);
+                        std::memcpy(&svs[ce * half_sc], &fvs_h[ce * 2 * half_sc + card * half_sc], half_sc * 2);
+                    }
+                }
+                void *dsk = dev(sk), *dsv = dev(sv);
+                uint16_t *dsks = i8 ? dev(sks) : nullptr, *dsvs = i8 ? dev(svs) : nullptr;
+                AttnArgs sa = base;
+                sa.k_cache = dsk; sa.v_cache = dsv; sa.k_scale = dsks; sa.v_scale = dsvs;
+                sa.g0 = card * ng; sa.ng = ng; sa.kv_stride = ng;
+                attention_decode(sa, maxR, p0 + maxR, scr, out_sh, nullptr);
+                const std::vector<float> got_c = host(out_sh, combined.size());
+                const int h0 = sa.g0 * (kHeads / kKvHeads), nh = sa.ng * (kHeads / kKvHeads);
+                for (int r = 0; r < maxR; ++r)
+                    std::memcpy(&combined[((size_t) r * kHeads + h0) * kHeadDim],
+                                &got_c[((size_t) r * kHeads + h0) * kHeadDim], (size_t) nh * kHeadDim * 4);
+                cudaFree(dsk); cudaFree(dsv);
+                if (dsks) cudaFree(dsks);
+                if (dsvs) cudaFree(dsvs);
+            }
+            cudaFree(out_sh);
+            char sh_label[64];
+            std::snprintf(sh_label, sizeof sh_label, "attention TP2 KV shard (%s)", i8 ? "KvInt8" : fp8 ? "E4M3" : "FP16");
+            same_bits(sh_label, ref_alone.data(), combined.data(), combined.size() * 4);
+        }
+        if (dks) cudaFree(dks);
+        if (dvs) cudaFree(dvs);
+        cudaFree(out1); cudaFree(outR); cudaFree(dk); cudaFree(dv);
+    }
+    cudaFree(dq); cudaFree(drs); cudaFree(dsink); cudaFree(dt); cudaFree(dpos); cudaFree(scr);
+}
+
+// P1.5b: bit-exact parity of router_plan_fused vs standalone bk::router + moe_plan, plus Section 7.1
+// >= 1,200 CUDA Graph replay stress test for BOTH fused controllers() and router_plan_fused() with concurrent side stream.
+void test_p15_fusions_and_graph_replay() {
+    const int n_exp = 128, k = 8, maxR = kDecodeRows;
+    const std::vector<float> x = randn((size_t) maxR * E, 0.8f);
+    const std::vector<float> gate = randn((size_t) n_exp * E, 0.2f);
+    const std::vector<float> bias = randn((size_t) n_exp, 0.3f);
+    std::vector<unsigned long long> blobs_all(n_exp), blobs_spill(n_exp);
+    for (int e = 0; e < n_exp; ++e) {
+        blobs_all[e] = 0x10000000ull + (unsigned long long) e * 4096ull;
+        blobs_spill[e] = (e % 5 == 0) ? 0ull : blobs_all[e];
+    }
+    float *dx = dev(x), *dgate = dev(gate), *dbias = dev(bias);
+    unsigned long long *dblobs_all = dev(blobs_all), *dblobs_spill = dev(blobs_spill);
+    float *rlog_ref = zeros<float>((size_t) maxR * n_exp), *rlog_got = zeros<float>((size_t) maxR * n_exp);
+    float *rw_ref = zeros<float>((size_t) maxR * k), *rw_got = zeros<float>((size_t) maxR * k);
+    int32_t *ids_ref = zeros<int32_t>((size_t) maxR * k), *ids_got = zeros<int32_t>((size_t) maxR * k);
+    const size_t pairs = (size_t) maxR * k;
+    unsigned long long *ptr_ref = zeros<unsigned long long>(pairs), *ptr_got = zeros<unsigned long long>(pairs);
+    int32_t *st_ref = zeros<int32_t>(pairs + 2), *st_got = zeros<int32_t>(pairs + 2);
+    int32_t *ng_ref = zeros<int32_t>(1), *ng_got = zeros<int32_t>(1);
+    int32_t *dst_ref = zeros<int32_t>(pairs), *dst_got = zeros<int32_t>(pairs);
+    int32_t *tok_ref = zeros<int32_t>(pairs), *tok_got = zeros<int32_t>(pairs);
+    uint32_t *tal_ref = zeros<uint32_t>(n_exp), *tal_got = zeros<uint32_t>(n_exp);
+    unsigned long long *rec_ref = zeros<unsigned long long>(kAheadExperts), *rec_got = zeros<unsigned long long>(kAheadExperts);
+    int32_t *recn_ref = zeros<int32_t>(1), *recn_got = zeros<int32_t>(1);
+    uint32_t* done = zeros<uint32_t>(1);
+
+    bool bit_ok = true;
+    for (bool spill : {false, true}) {
+        unsigned long long* dblobs = spill ? dblobs_spill : dblobs_all;
+        for (int R = 1; R <= maxR; ++R) {
+            cudaMemset(tal_ref, 0, (size_t) n_exp * 4);
+            cudaMemset(tal_got, 0, (size_t) n_exp * 4);
+            bk::RouterArgs ra;
+            ra.n_expert = n_exp; ra.n_embd = E; ra.k = k; ra.weight_scale = 2.5f; ra.gate = bk::RouterGate::Sigmoid;
+            bk::router(dx, dgate, dbias, R, ra, rlog_ref, ids_ref, rw_ref, nullptr);
+            moe_plan(ids_ref, R, k, n_exp, dblobs, ptr_ref, st_ref, ng_ref, dst_ref, tok_ref, nullptr, tal_ref, rec_ref, recn_ref);
+
+            RouterPlanArgs rp;
+            rp.x = dx; rp.gate = dgate; rp.bias = dbias; rp.n_expert = n_exp; rp.k = k; rp.weight_scale = 2.5f;
+            rp.blobs = dblobs; rp.logits = rlog_got; rp.ids = ids_got; rp.weights = rw_got;
+            rp.ptr = ptr_got; rp.start = st_got; rp.n_groups = ng_got; rp.dst = dst_got; rp.tok = tok_got;
+            rp.done = done; rp.tally = tal_got; rp.rec_blobs = rec_got; rp.rec_n = recn_got;
+            router_plan_fused(rp, R, nullptr);
+            cudaDeviceSynchronize();
+
+            const int ng = host(ng_ref, 1)[0];
+            const int ne = host(st_ref, (size_t) ng + 1)[ng];
+            const uint32_t done_after = host(done, 1)[0];
+            bool ok = done_after == 0u &&
+                      host(ng_got, 1)[0] == ng &&
+                      host(recn_got, 1)[0] == host(recn_ref, 1)[0] &&
+                      host(rlog_got, (size_t) R * n_exp) == host(rlog_ref, (size_t) R * n_exp) &&
+                      host(ids_got, (size_t) R * k) == host(ids_ref, (size_t) R * k) &&
+                      host(rw_got, (size_t) R * k) == host(rw_ref, (size_t) R * k) &&
+                      host(ptr_got, (size_t) ng) == host(ptr_ref, (size_t) ng) &&
+                      host(st_got, (size_t) ng + 2) == host(st_ref, (size_t) ng + 2) &&
+                      host(dst_got, (size_t) ne) == host(dst_ref, (size_t) ne) &&
+                      host(tok_got, (size_t) ne) == host(tok_ref, (size_t) ne) &&
+                      host(tal_got, (size_t) n_exp) == host(tal_ref, (size_t) n_exp) &&
+                      host(rec_got, kAheadExperts) == host(rec_ref, kAheadExperts);
+            if (!ok) bit_ok = false;
+        }
+    }
+    std::printf("%-34s %s\n", "router_plan_fused T=1..8 (all+sp)", bit_ok ? "bitwise" : "FAIL");
+    failures += !bit_ok;
+    // Also test fallback branch (n_expert > 128) across n_expert={160, 256} and k={1, 8, 16}.
+    bool fb_ok = true;
+    for (int ne_fb : {160, 256}) {
+        const std::vector<float> g_fb = randn((size_t) ne_fb * E, 0.2f);
+        const std::vector<float> b_fb = randn((size_t) ne_fb, 0.3f);
+        std::vector<unsigned long long> bl_fb(ne_fb);
+        for (int e = 0; e < ne_fb; ++e) bl_fb[e] = (e % 7 == 0) ? 0ull : (0x20000000ull + (unsigned long long) e * 4096ull);
+        float *dg_fb = dev(g_fb), *db_fb = dev(b_fb);
+        unsigned long long* dbl_fb = dev(bl_fb);
+        float *lr_fb = zeros<float>((size_t) maxR * ne_fb), *lg_fb = zeros<float>((size_t) maxR * ne_fb);
+        float *wr_fb = zeros<float>((size_t) maxR * 16), *wg_fb = zeros<float>((size_t) maxR * 16);
+        int32_t *ir_fb = zeros<int32_t>((size_t) maxR * 16), *ig_fb = zeros<int32_t>((size_t) maxR * 16);
+        unsigned long long *pr_fb = zeros<unsigned long long>((size_t) maxR * 16), *pg_fb = zeros<unsigned long long>((size_t) maxR * 16);
+        int32_t *sr_fb = zeros<int32_t>((size_t) maxR * 16 + 2), *sg_fb = zeros<int32_t>((size_t) maxR * 16 + 2);
+        int32_t *dr_fb = zeros<int32_t>((size_t) maxR * 16), *dg2_fb = zeros<int32_t>((size_t) maxR * 16);
+        int32_t *tr_fb = zeros<int32_t>((size_t) maxR * 16), *tg_fb = zeros<int32_t>((size_t) maxR * 16);
+        for (int k_fb : {1, 8, 16}) {
+            for (int R : {1, 3, 4}) {
+                bk::RouterArgs ra;
+                ra.n_expert = ne_fb; ra.n_embd = E; ra.k = k_fb; ra.weight_scale = 2.5f; ra.gate = bk::RouterGate::Sigmoid;
+                bk::router(dx, dg_fb, db_fb, R, ra, lr_fb, ir_fb, wr_fb, nullptr);
+                moe_plan(ir_fb, R, k_fb, ne_fb, dbl_fb, pr_fb, sr_fb, ng_ref, dr_fb, tr_fb, nullptr);
+                RouterPlanArgs rp;
+                rp.x = dx; rp.gate = dg_fb; rp.bias = db_fb; rp.n_expert = ne_fb; rp.k = k_fb; rp.weight_scale = 2.5f;
+                rp.blobs = dbl_fb; rp.logits = lg_fb; rp.ids = ig_fb; rp.weights = wg_fb;
+                rp.ptr = pg_fb; rp.start = sg_fb; rp.n_groups = ng_got; rp.dst = dg2_fb; rp.tok = tg_fb;
+                rp.done = done;
+                router_plan_fused(rp, R, nullptr);
+                cudaDeviceSynchronize();
+                const int ng = host(ng_ref, 1)[0];
+                const int ne = host(sr_fb, (size_t) ng + 1)[ng];
+                if (host(done, 1)[0] != 0u || host(ng_got, 1)[0] != ng ||
+                    host(ig_fb, (size_t) R * k_fb) != host(ir_fb, (size_t) R * k_fb) ||
+                    host(wg_fb, (size_t) R * k_fb) != host(wr_fb, (size_t) R * k_fb) ||
+                    host(pg_fb, (size_t) ng) != host(pr_fb, (size_t) ng) ||
+                    host(sg_fb, (size_t) ng + 2) != host(sr_fb, (size_t) ng + 2) ||
+                    host(dg2_fb, (size_t) ne) != host(dr_fb, (size_t) ne) ||
+                    host(tg_fb, (size_t) ne) != host(tr_fb, (size_t) ne))
+                    fb_ok = false;
+            }
+        }
+        cudaFree(dg_fb); cudaFree(db_fb); cudaFree(dbl_fb);
+        cudaFree(lr_fb); cudaFree(lg_fb); cudaFree(wr_fb); cudaFree(wg_fb);
+        cudaFree(ir_fb); cudaFree(ig_fb); cudaFree(pr_fb); cudaFree(pg_fb);
+        cudaFree(sr_fb); cudaFree(sg_fb); cudaFree(dr_fb); cudaFree(dg2_fb);
+        cudaFree(tr_fb); cudaFree(tg_fb);
+    }
+    std::printf("%-34s %s\n", "router_plan_fused >128 fallback", fb_ok ? "bitwise" : "FAIL");
+    failures += !fb_ok;
+    for (int R : {1, 2, 4, 8}) {
+        bk::RouterArgs ra;
+        ra.n_expert = n_exp; ra.n_embd = E; ra.k = k; ra.weight_scale = 2.5f; ra.gate = bk::RouterGate::Sigmoid;
+        RouterPlanArgs rp;
+        rp.x = dx; rp.gate = dgate; rp.bias = dbias; rp.n_expert = n_exp; rp.k = k; rp.weight_scale = 2.5f;
+        rp.blobs = dblobs_all; rp.logits = rlog_got; rp.ids = ids_got; rp.weights = rw_got;
+        rp.ptr = ptr_got; rp.start = st_got; rp.n_groups = ng_got; rp.dst = dst_got; rp.tok = tok_got;
+        rp.done = done;
+        const double t_sep = time_us([&] {
+            bk::router(dx, dgate, dbias, R, ra, rlog_ref, ids_ref, rw_ref, nullptr);
+            moe_plan(ids_ref, R, k, n_exp, dblobs_all, ptr_ref, st_ref, ng_ref, dst_ref, tok_ref, nullptr);
+        }, 200);
+        const double t_fus = time_us([&] { router_plan_fused(rp, R, nullptr); }, 200);
+        std::printf("  router+plan R=%d: sep=%.2f us  fused=%.2f us  (delta=%+.2f us)\n", R, t_sep, t_fus, t_fus - t_sep);
+    }
+
+    // Section 7.1 CUDA Graph stress test: 1,200 consecutive replays across T={1,2,4,8} of BOTH fused controllers()
+    // and router_plan_fused() on main stream + concurrent standalone bk::router on side stream (k.ra_st model).
+    cudaStream_t main_st = nullptr, side_st = nullptr;
+    cudaEvent_t ev_fork = nullptr, ev_join = nullptr;
+    cudaStreamCreateWithFlags(&main_st, cudaStreamNonBlocking);
+    cudaStreamCreateWithFlags(&side_st, cudaStreamNonBlocking);
+    cudaEventCreateWithFlags(&ev_fork, cudaEventDisableTiming);
+    cudaEventCreateWithFlags(&ev_join, cudaEventDisableTiming);
+
+    const int S = 3, rank = kCtrlRank;
+    CtrlArgs ca;
+    ca.scratch = zeros<float>(ctrl_scratch_floats());
+    ca.norm_out = zeros<float>((size_t) maxR * E);
+    for (int s = 0; s < S; ++s) {
+        ca.dest[s] = dev(randn((size_t) maxR * E, 0.7f));
+        ca.msg[s] = dev(randn((size_t) maxR * E, 1.1f));
+        std::vector<uint16_t> dn((size_t) rank * 2 * E), up((size_t) 2 * E * rank);
+        const auto rf = randn(dn.size(), 0.05f), uf = randn(up.size(), 0.05f);
+        const auto to_bf = [](float v) -> uint16_t {
+            uint32_t u = 0;
+            std::memcpy(&u, &v, 4);
+            return (uint16_t) (u >> 16);
+        };
+        for (size_t i = 0; i < dn.size(); ++i) dn[i] = to_bf(rf[i]);
+        for (size_t i = 0; i < up.size(); ++i) up[i] = to_bf(uf[i]);
+        ca.down[s] = dev(dn);
+        ca.up[s] = dev(up);
+        ca.norm[s] = dev(randn(E, 0.2f, 1.f));
+        ca.q8[s] = zeros<uint8_t>((size_t) maxR * E / 32 * 36);
+    }
+    float *gs_log = zeros<float>((size_t) maxR * n_exp), *gs_w = zeros<float>((size_t) maxR * k);
+    int32_t* gs_ids = zeros<int32_t>((size_t) maxR * k);
+
+    bool graph_ok = true;
+    const int kShapeList[4] = {1, 2, 4, 8};
+    cudaGraphExec_t execs[4] = {};
+    std::vector<float> exp_ctrl[4], exp_rw[4];
+    std::vector<int32_t> exp_ids[4], exp_dst[4];
+    for (int si = 0; si < 4; ++si) {
+        const int R = kShapeList[si];
+        RouterPlanArgs rp;
+        rp.x = dx; rp.gate = dgate; rp.bias = dbias; rp.n_expert = n_exp; rp.k = k; rp.weight_scale = 2.5f;
+        rp.blobs = dblobs_all; rp.logits = rlog_got; rp.ids = ids_got; rp.weights = rw_got;
+        rp.ptr = ptr_got; rp.start = st_got; rp.n_groups = ng_got; rp.dst = dst_got; rp.tok = tok_got;
+        rp.done = done;
+        bk::RouterArgs ga;
+        ga.n_expert = n_exp; ga.n_embd = E; ga.k = k; ga.weight_scale = 2.5f; ga.gate = bk::RouterGate::Sigmoid;
+
+        // Reference direct run
+        controllers(ca, S, R, main_st);
+        router_plan_fused(rp, R, main_st);
+        cudaStreamSynchronize(main_st);
+        exp_ctrl[si] = host(ca.norm_out, (size_t) R * E);
+        exp_ids[si] = host(ids_got, (size_t) R * k);
+        exp_rw[si] = host(rw_got, (size_t) R * k);
+        exp_dst[si] = host(dst_got, (size_t) R * k);
+
+        // Capture graph with concurrent side stream
+        cudaGraph_t gr = nullptr;
+        if (cudaStreamBeginCapture(main_st, cudaStreamCaptureModeThreadLocal) != cudaSuccess) graph_ok = false;
+        controllers(ca, S, R, main_st);
+        cudaEventRecord(ev_fork, main_st);
+        router_plan_fused(rp, R, main_st);
+        cudaStreamWaitEvent(side_st, ev_fork, 0);
+        bk::router(dx, dgate, dbias, R, ga, gs_log, gs_ids, gs_w, side_st);
+        cudaEventRecord(ev_join, side_st);
+        cudaStreamWaitEvent(main_st, ev_join, 0);
+        if (cudaStreamEndCapture(main_st, &gr) != cudaSuccess ||
+            cudaGraphInstantiate(&execs[si], gr, nullptr, nullptr, 0) != cudaSuccess)
+            graph_ok = false;
+        if (gr) cudaGraphDestroy(gr);
+    }
+    // 1,200 consecutive replays cycling across T={1,2,4,8}
+    for (int rep = 0; rep < 1200 && graph_ok; ++rep) {
+        const int si = rep & 3;
+        const int R = kShapeList[si];
+        if (cudaGraphLaunch(execs[si], main_st) != cudaSuccess) { graph_ok = false; break; }
+        if ((rep % 100) == 99 || rep == 1199) {
+            if (cudaStreamSynchronize(main_st) != cudaSuccess) { graph_ok = false; break; }
+            if (host(done, 1)[0] != 0u ||
+                host(ca.norm_out, (size_t) R * E) != exp_ctrl[si] ||
+                host(ids_got, (size_t) R * k) != exp_ids[si] ||
+                host(rw_got, (size_t) R * k) != exp_rw[si] ||
+                host(dst_got, (size_t) R * k) != exp_dst[si]) {
+                graph_ok = false;
+                break;
+            }
+        }
+    }
+    for (int si = 0; si < 4; ++si)
+        if (execs[si]) cudaGraphExecDestroy(execs[si]);
+    cudaEventDestroy(ev_fork); cudaEventDestroy(ev_join);
+    cudaStreamDestroy(main_st); cudaStreamDestroy(side_st);
+    std::printf("%-34s %s\n", "P1.5b 1200x CUDA Graph stress", graph_ok ? "bitwise (0 hangs)" : "FAIL");
+    failures += !graph_ok;
+}
+
 int main() {
     int n = 0;
     if (cudaGetDeviceCount(&n) != cudaSuccess || n == 0) {
         std::printf("no GPU\n");
         return 77;
     }
+    test_e4m3_fast_unpack();
     test_mix();
     test_ctrl();
     test_prepare();
     test_attention();
+    test_attention_krows_invariance();
     test_post_conv();
     test_experts();
     test_expert_halves(40);
@@ -1562,6 +2016,7 @@ int main() {
     test_moe_finish();
     test_cpu_merge();
     test_batch_window();
+    test_p15_fusions_and_graph_replay();
     std::printf("inkling2_kernels_parity: %d failures\n", failures);
     return failures ? 1 : 0;
 }

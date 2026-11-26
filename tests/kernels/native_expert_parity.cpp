@@ -1239,6 +1239,51 @@ int check_q8k_one(const char* tag, void (*quant)(const float*, void*, int64_t)) 
     return bad != 0 ? 1 : 0;
 }
 
+int check_nvfp4_scale_256(cudaStream_t s) {
+    // 64 NVFP4 blocks = 256 sub-blocks = 4096 values (multiple of 256), exercising every uint8_t scale byte 0..255
+    // and every 4-bit E2M1 nibble 0..15 through iq_dequant_f32 (nvfp4_scale_dev) vs ggml's CPU to_float bit-for-bit.
+    constexpr int kBlocks = 64;
+    constexpr int64_t kN = (int64_t) kBlocks * 64;
+    constexpr size_t kBlockBytes = 36;
+    std::vector<uint8_t> raw((size_t) kBlocks * kBlockBytes);
+    for (int b = 0; b < kBlocks; ++b) {
+        uint8_t* p = raw.data() + (size_t) b * kBlockBytes;
+        for (int sb = 0; sb < 4; ++sb) p[sb] = (uint8_t) (b * 4 + sb);   // all 256 scale bytes 0..255
+        for (int j = 0; j < 32; ++j) {
+            const uint8_t lo = (uint8_t) ((j * 2 + b) & 0x0Fu);
+            const uint8_t hi = (uint8_t) ((j * 2 + 1 + b) & 0x0Fu);
+            p[4 + j] = (uint8_t) (lo | (hi << 4));
+        }
+    }
+    std::vector<float> ref((size_t) kN), got((size_t) kN);
+    const auto* tr = ggml_get_type_traits(GGML_TYPE_NVFP4);
+    tr->to_float(raw.data(), ref.data(), kN);
+    void* d_raw = nullptr;
+    float* d_out = nullptr;
+    cudaMalloc(&d_raw, raw.size());
+    cudaMalloc(&d_out, (size_t) kN * sizeof(float));
+    cudaMemcpy(d_raw, raw.data(), raw.size(), cudaMemcpyHostToDevice);
+    granite::kernels::iq_dequant_f32(GGML_TYPE_NVFP4, d_raw, kN, d_out, s);
+    cudaStreamSynchronize(s);
+    cudaMemcpy(got.data(), d_out, (size_t) kN * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(d_raw);
+    cudaFree(d_out);
+    int bad = 0;
+    for (size_t i = 0; i < (size_t) kN; ++i) {
+        if (std::memcmp(&got[i], &ref[i], 4) != 0) {
+            if (bad < 8)
+                std::printf("nvfp4_scale_256 mismatch at elem %zu (scale 0x%02x): got %.9g (0x%08x), ref %.9g (0x%08x)\n",
+                            i, (unsigned) (i / 16), got[i],
+                            *reinterpret_cast<const uint32_t*>(&got[i]), ref[i],
+                            *reinterpret_cast<const uint32_t*>(&ref[i]));
+            ++bad;
+        }
+    }
+    std::printf("nvfp4_scale_256 (all 256 UE4M3 scale codes x 16 nibbles = %lld values): %d differ bitwise  %s\n",
+                (long long) kN, bad, bad == 0 ? "ok" : "FAIL");
+    return bad ? 1 : 0;
+}
+
 int check_q8k_quant() {
     int failures = 0;
     if (cpu::cpu_avx512_ok()) failures += check_q8k_one("AVX-512", cpu::quantize_q8_K_avx512);
@@ -1280,6 +1325,8 @@ int main(int argc, char** argv) {
         failures += check_q6k_embd(gpu());
     } else if (mode == "--q8-embd-hot") {
         failures += check_q8_embd_hot(gpu());
+    } else if (mode == "--nvfp4-scale-256") {
+        failures += check_nvfp4_scale_256(gpu());
     } else if (mode == "--cpu-synthetic") {
         for (int i = 2; i < argc; ++i) {
             const std::string arg = argv[i];
@@ -1298,6 +1345,7 @@ int main(int argc, char** argv) {
             cpu::NativeFmt f;
             std::string err;
             if (gu == GGML_TYPE_NVFP4 && dn == GGML_TYPE_NVFP4 && cpu::native_fmt(gu, dn, H, FF, f, err)) {
+                failures += check_nvfp4_scale_256(gpu());
                 failures += check_nvfp4_cpu(f, synthetic_nvfp4_blob(f, i), i, "synthetic", gpu());
                 continue;
             }

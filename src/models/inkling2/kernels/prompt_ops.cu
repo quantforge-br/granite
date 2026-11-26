@@ -149,14 +149,23 @@ void remap_ids(int32_t* ids, int n, const int32_t* map, void* stream) {
 }
 
 void stage_to_ring(const void* k_stage, const void* v_stage, int64_t stage_cap, void* k_ring, void* v_ring, int64_t ring_cap,
-                   int64_t pos0, int rows, int keep, int elem, void* stream) {
+                   int64_t pos0, int rows, int keep, int elem, void* stream,
+                   const uint16_t* ks_stage, const uint16_t* vs_stage, uint16_t* ks_ring, uint16_t* vs_ring, int kv_heads) {
     const int64_t end = pos0 + rows, first = end - keep > pos0 ? end - keep : pos0;
     const int n = (int) (end - first);
     if (n <= 0) return;
-    const int pieces = kKvHeads * kHeadDim * elem / 16;
+    if (kv_heads <= 0 || kv_heads > kKvHeads || (kv_heads * (kHeadDim / 64) * 2) % 16 != 0)
+        throw std::invalid_argument("inkling2 stage_to_ring: kv_heads");
+    const int pieces = kv_heads * kHeadDim * elem / 16;
     stage_to_ring_kernel<<<dim3((unsigned) n, 2), 128, 0, (cudaStream_t) stream>>>(
         static_cast<const uint4*>(k_stage), static_cast<const uint4*>(v_stage), stage_cap, static_cast<uint4*>(k_ring),
         static_cast<uint4*>(v_ring), ring_cap, first, pieces);
+    if (ks_stage && vs_stage && ks_ring && vs_ring) {
+        const int scale_pieces = (kv_heads * (kHeadDim / 64) * 2) / 16;
+        stage_to_ring_kernel<<<dim3((unsigned) n, 2), 32, 0, (cudaStream_t) stream>>>(
+            reinterpret_cast<const uint4*>(ks_stage), reinterpret_cast<const uint4*>(vs_stage), stage_cap,
+            reinterpret_cast<uint4*>(ks_ring), reinterpret_cast<uint4*>(vs_ring), ring_cap, first, scale_pieces);
+    }
     check("stage_to_ring");
 }
 
@@ -451,15 +460,17 @@ static_assert((kHeads * kHeadDim) % (4 * kGateQ8Threads) == 0, "kHeads * kHeadDi
 
 __global__ void __launch_bounds__(kGateQ8Threads)
     attn_gate_q8_1_prompt_kernel(const float* __restrict__ attn, const float* __restrict__ yq, int64_t yq_ld, int rows,
-                                 Q81MmqBlock* __restrict__ xq) {
+                                 int col0, int width, Q81MmqBlock* __restrict__ xq) {
     const int r = (int) blockIdx.x;
     const int c4 = (int) blockIdx.y * kGateQ8Threads + (int) threadIdx.x;
-    const int col = c4 * 4;
+    const int local_col = c4 * 4;
+    if (local_col >= width) return;
+    const int col = col0 + local_col;
     const float4 a = *reinterpret_cast<const float4*>(attn + (size_t) r * (kHeads * kHeadDim) + col);
     const float4 g = *reinterpret_cast<const float4*>(yq + (size_t) r * yq_ld + kOffGate + col);
     const float4 v = make_float4(a.x / (1.f + expf(-g.x)), a.y / (1.f + expf(-g.y)),
                                  a.z / (1.f + expf(-g.z)), a.w / (1.f + expf(-g.w)));
-    emit_q8_1_sub32(v, col, r, rows, xq);
+    emit_q8_1_sub32(v, local_col, r, rows, xq);
 }
 
 }  // namespace
@@ -471,11 +482,15 @@ void rms_norm_q8_1_prompt(const float* x, const float* w, int rows, float eps, v
     check("rms_norm_q8_1_prompt");
 }
 
-void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, int rows, void* xq, void* stream) {
+void attn_gate_q8_1_prompt(const float* attn, const float* yq, int64_t yq_ld, int rows, void* xq, void* stream,
+                           int g0, int ng) {
     if (rows <= 0) return;
-    const dim3 grid((unsigned) rows, (unsigned) ((kHeads * kHeadDim) / (4 * kGateQ8Threads)));
+    if (g0 < 0 || ng < 1 || g0 + ng > kKvHeads) throw std::runtime_error("inkling2 attn_gate_q8_1_prompt: groups");
+    const int col0 = g0 * (kHeads / kKvHeads) * kHeadDim;
+    const int width = ng * (kHeads / kKvHeads) * kHeadDim;
+    const dim3 grid((unsigned) rows, (unsigned) ((width + 4 * kGateQ8Threads - 1) / (4 * kGateQ8Threads)));
     attn_gate_q8_1_prompt_kernel<<<grid, kGateQ8Threads, 0, (cudaStream_t) stream>>>(
-        attn, yq, yq_ld, rows, static_cast<Q81MmqBlock*>(xq));
+        attn, yq, yq_ld, rows, col0, width, static_cast<Q81MmqBlock*>(xq));
     check("attn_gate_q8_1_prompt");
 }
 
@@ -516,6 +531,180 @@ void moe_combine_f16(const uint16_t* out, const float* w, int rows, int k, float
     if (k <= 0 || k > 32) throw std::runtime_error("inkling2 moe_combine_f16: k");
     moe_combine_f16_kernel<<<(unsigned) rows, kCombF16Threads, 0, (cudaStream_t) stream>>>(out, w, k, y);
     check("moe_combine_f16");
+}
+
+namespace {
+
+constexpr int kP2pWarps = (kCombF16Threads + 31) / 32;   // 9 warps for 288 threads
+
+__device__ __forceinline__ void row_pow2_scale(float row_amax, float& sc, float& inv) {
+    sc = 1.f;
+    inv = 1.f;
+    if (row_amax > 32768.f && isfinite(row_amax)) {
+        int e = 0;
+        frexpf(row_amax, &e);
+        const int p = e - 15;   // 2^15 = 32768 -> scaled amax in [16384, 32768)
+        if (p > 0) {
+            sc = ldexpf(1.f, p);
+            inv = ldexpf(1.f, -p);
+        }
+    }
+}
+
+__device__ __forceinline__ uint4 pack8_f16_scaled(float4 a0, float4 a1, float inv) {
+    const __half2 h0 = __floats2half2_rn(a0.x * inv, a0.y * inv);
+    const __half2 h1 = __floats2half2_rn(a0.z * inv, a0.w * inv);
+    const __half2 h2 = __floats2half2_rn(a1.x * inv, a1.y * inv);
+    const __half2 h3 = __floats2half2_rn(a1.z * inv, a1.w * inv);
+    uint4 u;
+    u.x = *reinterpret_cast<const uint32_t*>(&h0);
+    u.y = *reinterpret_cast<const uint32_t*>(&h1);
+    u.z = *reinterpret_cast<const uint32_t*>(&h2);
+    u.w = *reinterpret_cast<const uint32_t*>(&h3);
+    return u;
+}
+
+__global__ void __launch_bounds__(kCombF16Threads)
+    moe_combine_p2p_f16_kernel(const float* __restrict__ out, const float* __restrict__ w, int k,
+                               uint16_t* __restrict__ y_local, float* __restrict__ scale_local,
+                               uint16_t* __restrict__ y_peer, float* __restrict__ scale_peer) {
+    __shared__ float sw[32];
+    __shared__ float wmax[kP2pWarps];
+    __shared__ float s_inv;
+    const int r = (int) blockIdx.x, tid = (int) threadIdx.x;
+    if (tid < k) sw[tid] = w[(size_t) r * k + tid];
+    __syncthreads();
+    const float4* out4 = reinterpret_cast<const float4*>(out);
+    float4 a0 = make_float4(0.f, 0.f, 0.f, 0.f), a1 = make_float4(0.f, 0.f, 0.f, 0.f);
+    for (int s = 0; s < k; ++s) {
+        const float ws = sw[s];
+        const size_t base = ((size_t) r * k + s) * (kWidth / 4) + 2 * tid;
+        const float4 v0 = out4[base];
+        const float4 v1 = out4[base + 1];
+        a0.x = fmaf(ws, v0.x, a0.x); a0.y = fmaf(ws, v0.y, a0.y);
+        a0.z = fmaf(ws, v0.z, a0.z); a0.w = fmaf(ws, v0.w, a0.w);
+        a1.x = fmaf(ws, v1.x, a1.x); a1.y = fmaf(ws, v1.y, a1.y);
+        a1.z = fmaf(ws, v1.z, a1.z); a1.w = fmaf(ws, v1.w, a1.w);
+    }
+    float amax = fmaxf(fmaxf(fabsf(a0.x), fabsf(a0.y)), fmaxf(fabsf(a0.z), fabsf(a0.w)));
+    amax = fmaxf(amax, fmaxf(fmaxf(fabsf(a1.x), fabsf(a1.y)), fmaxf(fabsf(a1.z), fabsf(a1.w))));
+#pragma unroll
+    for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+    if ((tid & 31) == 0) wmax[tid >> 5] = amax;
+    __syncthreads();
+    if (tid == 0) {
+        float m = 0.f;
+#pragma unroll
+        for (int i = 0; i < kP2pWarps; ++i) m = fmaxf(m, wmax[i]);
+        float sc, inv;
+        row_pow2_scale(m, sc, inv);
+        s_inv = inv;
+        scale_local[r] = sc;
+        if (scale_peer) scale_peer[r] = sc;
+    }
+    __syncthreads();
+    const uint4 u = pack8_f16_scaled(a0, a1, s_inv);
+    const size_t idx = (size_t) r * kCombF16Threads + tid;
+    reinterpret_cast<uint4*>(y_local)[idx] = u;
+    if (y_peer) reinterpret_cast<uint4*>(y_peer)[idx] = u;
+}
+
+__global__ void __launch_bounds__(256)
+    pack_p2p_f16_scaled_kernel(const float* __restrict__ src, uint16_t* __restrict__ dst_local,
+                               float* __restrict__ scale_local, uint16_t* __restrict__ dst_peer,
+                               float* __restrict__ scale_peer, int width8) {
+    __shared__ float wmax[8];
+    __shared__ float s_inv;
+    const int r = (int) blockIdx.x, tid = (int) threadIdx.x;
+    const float4* src4 = reinterpret_cast<const float4*>(src + (size_t) r * width8 * 8);
+    float amax = 0.f;
+    for (int i = tid; i < width8; i += 256) {
+        const float4 v0 = src4[2 * i], v1 = src4[2 * i + 1];
+        amax = fmaxf(amax, fmaxf(fmaxf(fabsf(v0.x), fabsf(v0.y)), fmaxf(fabsf(v0.z), fabsf(v0.w))));
+        amax = fmaxf(amax, fmaxf(fmaxf(fabsf(v1.x), fabsf(v1.y)), fmaxf(fabsf(v1.z), fabsf(v1.w))));
+    }
+#pragma unroll
+    for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
+    if ((tid & 31) == 0) wmax[tid >> 5] = amax;
+    __syncthreads();
+    if (tid == 0) {
+        float m = 0.f;
+#pragma unroll
+        for (int i = 0; i < 8; ++i) m = fmaxf(m, wmax[i]);
+        float sc, inv;
+        row_pow2_scale(m, sc, inv);
+        s_inv = inv;
+        scale_local[r] = sc;
+        if (scale_peer) scale_peer[r] = sc;
+    }
+    __syncthreads();
+    const float inv = s_inv;
+    uint4* l8 = reinterpret_cast<uint4*>(dst_local) + (size_t) r * width8;
+    uint4* p8 = dst_peer ? reinterpret_cast<uint4*>(dst_peer) + (size_t) r * width8 : nullptr;
+    for (int i = tid; i < width8; i += 256) {
+        const uint4 u = pack8_f16_scaled(src4[2 * i], src4[2 * i + 1], inv);
+        l8[i] = u;
+        if (p8) p8[i] = u;
+    }
+}
+
+__global__ void __launch_bounds__(256)
+    add_p2p_f16_scaled_kernel(const uint16_t* __restrict__ a, const float* __restrict__ sa,
+                              const uint16_t* __restrict__ b, const float* __restrict__ sb,
+                              float* __restrict__ out, int width8) {
+    const int r = (int) blockIdx.x, tid = (int) threadIdx.x;
+    const float s0 = sa[r], s1 = sb[r];
+    const uint4* a8 = reinterpret_cast<const uint4*>(a) + (size_t) r * width8;
+    const uint4* b8 = reinterpret_cast<const uint4*>(b) + (size_t) r * width8;
+    float4* o4 = reinterpret_cast<float4*>(out + (size_t) r * width8 * 8);
+    for (int i = tid; i < width8; i += 256) {
+        const uint4 ua = a8[i], ub = b8[i];
+        const float2 a0 = __half22float2(*reinterpret_cast<const __half2*>(&ua.x));
+        const float2 a1 = __half22float2(*reinterpret_cast<const __half2*>(&ua.y));
+        const float2 a2 = __half22float2(*reinterpret_cast<const __half2*>(&ua.z));
+        const float2 a3 = __half22float2(*reinterpret_cast<const __half2*>(&ua.w));
+        const float2 b0 = __half22float2(*reinterpret_cast<const __half2*>(&ub.x));
+        const float2 b1 = __half22float2(*reinterpret_cast<const __half2*>(&ub.y));
+        const float2 b2 = __half22float2(*reinterpret_cast<const __half2*>(&ub.z));
+        const float2 b3 = __half22float2(*reinterpret_cast<const __half2*>(&ub.w));
+        // Explicit mul then IEEE add so a*s0 + b*s1 == b*s1 + a*s0 bit-for-bit on both cards (never asymmetric FMA).
+        o4[2 * i] = make_float4(__fadd_rn(__fmul_rn(a0.x, s0), __fmul_rn(b0.x, s1)),
+                                __fadd_rn(__fmul_rn(a0.y, s0), __fmul_rn(b0.y, s1)),
+                                __fadd_rn(__fmul_rn(a1.x, s0), __fmul_rn(b1.x, s1)),
+                                __fadd_rn(__fmul_rn(a1.y, s0), __fmul_rn(b1.y, s1)));
+        o4[2 * i + 1] = make_float4(__fadd_rn(__fmul_rn(a2.x, s0), __fmul_rn(b2.x, s1)),
+                                    __fadd_rn(__fmul_rn(a2.y, s0), __fmul_rn(b2.y, s1)),
+                                    __fadd_rn(__fmul_rn(a3.x, s0), __fmul_rn(b3.x, s1)),
+                                    __fadd_rn(__fmul_rn(a3.y, s0), __fmul_rn(b3.y, s1)));
+    }
+}
+
+}  // namespace
+
+void moe_combine_p2p_f16(const float* out, const float* w, int rows, int k, uint16_t* y_local, float* scale_local,
+                         uint16_t* y_peer, float* scale_peer, void* stream) {
+    if (rows <= 0) return;
+    if (k <= 0 || k > 32) throw std::runtime_error("inkling2 moe_combine_p2p_f16: k");
+    moe_combine_p2p_f16_kernel<<<(unsigned) rows, kCombF16Threads, 0, (cudaStream_t) stream>>>(
+        out, w, k, y_local, scale_local, y_peer, scale_peer);
+    check("moe_combine_p2p_f16");
+}
+
+void pack_p2p_f16_scaled(const float* src, uint16_t* dst_local, float* scale_local, uint16_t* dst_peer, float* scale_peer,
+                         int rows, int width, void* stream) {
+    if (rows <= 0) return;
+    if (width <= 0 || width % 8 != 0) throw std::runtime_error("inkling2 pack_p2p_f16_scaled: width");
+    pack_p2p_f16_scaled_kernel<<<(unsigned) rows, 256, 0, (cudaStream_t) stream>>>(
+        src, dst_local, scale_local, dst_peer, scale_peer, width / 8);
+    check("pack_p2p_f16_scaled");
+}
+
+void add_p2p_f16_scaled(const uint16_t* a, const float* sa, const uint16_t* b, const float* sb, float* out, int rows,
+                        int width, void* stream) {
+    if (rows <= 0) return;
+    if (width <= 0 || width % 8 != 0) throw std::runtime_error("inkling2 add_p2p_f16_scaled: width");
+    add_p2p_f16_scaled_kernel<<<(unsigned) rows, 256, 0, (cudaStream_t) stream>>>(a, sa, b, sb, out, width / 8);
+    check("add_p2p_f16_scaled");
 }
 
 }  // namespace granite::models::inkling2

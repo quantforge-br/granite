@@ -50,7 +50,7 @@ public:
     const char* model_name() const override { return "Inkling-2-Mini"; }
     const char* community_quant() const override { return "NVFP4"; }   // the pack's NVFP4 experts, Q8_0 dense
 
-    // --kv: the attention caches as fp16 (the default) or fp8; --spec, --drafter, --draft-log: the drafter's
+    // --kv: the attention caches as fp16 (the default), fp8, or int8; --spec, --drafter, --draft-log: the drafter's
     bool parse_flag(const std::string& a, model::FlagArgs& args, program::CommonOptions& o, int&) const override {
         if (a == "--kv") {
             o.kv = args.next("--kv");
@@ -60,8 +60,8 @@ public:
     }
 
     std::optional<int> finish_flags(program::CommonOptions& o) const override {
-        if (!o.kv.empty() && o.kv != "fp16" && o.kv != "fp8") {
-            granite::log::error("granite inkling2", "--kv %s: the attention caches are fp16 (the default) or fp8", o.kv.c_str());
+        if (!o.kv.empty() && o.kv != "fp16" && o.kv != "fp8" && o.kv != "int8") {
+            granite::log::error("granite inkling2", "--kv %s: the attention caches are fp16 (the default), int8 or fp8", o.kv.c_str());
             return 2;
         }
         dspark_finish_flags(o);   // DSPARK HOOK

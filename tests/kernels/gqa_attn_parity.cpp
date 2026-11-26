@@ -534,6 +534,111 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 4; ++i) frozen_ok = frozen_ok && hash[i] == frozen[i];
         std::printf("decode kernel bits against the frozen hashes: %s\n", frozen_ok ? "identical" : "DIFFERENT");
         if (!frozen_ok) ++fails;
+        cudaFree(dk); cudaFree(dv); cudaFree(c8.k); cudaFree(c8.v); cudaFree(c8.ks); cudaFree(c8.vs);
+        cudaFree(dq); cudaFree(dout); cudaFree(dscr); cudaFree(dpos);
+    }
+    // ---- gqa_window_attn (hd=128 & hd=256, block=true/false, wrap-around cap, KvInt8 g64) vs dequantized FP16 reference (P1.2)
+    for (const int WHD : {128, 256}) {
+        constexpr int WNH = 24, WNKV = 8, WT = 8;
+        const int64_t cap = 1024;
+        std::mt19937 wr(99 + WHD);
+        std::normal_distribution<float> wn(0.0f, 0.5f);
+        const size_t n = (size_t) cap * WNKV * WHD;
+        std::vector<uint16_t> hk(n), hv(n), kd(n), vd(n);
+        for (size_t i = 0; i < n; ++i) {
+            hk[i] = granite::kernels::f16_from_f32(wn(wr));
+            hv[i] = granite::kernels::f16_from_f32(wn(wr));
+        }
+        std::vector<int8_t> k8(n), v8(n);
+        std::vector<uint16_t> ks(n / 64), vs(n / 64);
+        auto quant = [&](const std::vector<uint16_t>& src, std::vector<int8_t>& qv, std::vector<uint16_t>& sc,
+                         std::vector<uint16_t>& deq) {
+            for (size_t g = 0; g < n / 64; ++g) {
+                float amax = 0.0f;
+                for (int i = 0; i < 64; ++i) amax = std::max(amax, std::fabs(h2f(src[g * 64 + i])));
+                const uint16_t h = granite::kernels::f16_from_f32(amax / 127.0f);
+                const float s16 = h2f(h);
+                sc[g] = h;
+                for (int i = 0; i < 64; ++i) {
+                    const float c = s16 > 0 ? std::rint(h2f(src[g * 64 + i]) / s16) : 0.0f;
+                    qv[g * 64 + i] = (int8_t) std::max(-127.0f, std::min(127.0f, c));
+                    deq[g * 64 + i] = granite::kernels::f16_from_f32((float) qv[g * 64 + i] * s16);
+                }
+            }
+        };
+        quant(hk, k8, ks, kd);
+        quant(hv, v8, vs, vd);
+        uint16_t *dk = dev<uint16_t>(n), *dv = dev<uint16_t>(n);
+        ck(cudaMemcpy(dk, kd.data(), n * 2, cudaMemcpyHostToDevice), "copy");
+        ck(cudaMemcpy(dv, vd.data(), n * 2, cudaMemcpyHostToDevice), "copy");
+        granite::kernels::KvInt8 q8;
+        ck(cudaMalloc(&q8.k, n), "malloc");
+        ck(cudaMalloc(&q8.v, n), "malloc");
+        ck(cudaMalloc(&q8.ks, ks.size() * 2), "malloc");
+        ck(cudaMalloc(&q8.vs, vs.size() * 2), "malloc");
+        ck(cudaMemcpy(q8.k, k8.data(), n, cudaMemcpyHostToDevice), "copy");
+        ck(cudaMemcpy(q8.v, v8.data(), n, cudaMemcpyHostToDevice), "copy");
+        ck(cudaMemcpy(q8.ks, ks.data(), ks.size() * 2, cudaMemcpyHostToDevice), "copy");
+        ck(cudaMemcpy(q8.vs, vs.data(), vs.size() * 2, cudaMemcpyHostToDevice), "copy");
+        std::vector<float> hq((size_t) WT * WNH * WHD);
+        for (auto& x : hq) x = wn(wr);
+        float *dq = dev<float>(hq.size()), *out_f16 = dev<float>(hq.size()), *out_i8 = dev<float>(hq.size());
+        float* dscr = dev<float>(granite::kernels::gqa_decode_scratch_floats(cap, WT, WNH, WHD));
+        ck(cudaMemcpy(dq, hq.data(), hq.size() * 4, cudaMemcpyHostToDevice), "copy");
+        // Test both non-wrap (pos0=700) and wrap-around crossing cap=1024 (pos0=1020, hi=1028), block=true and block=false
+        for (const int64_t pos0 : {(int64_t) 700, (int64_t) 1020}) {
+            const int64_t hi = pos0 + WT, win = 512;
+            for (const bool blk : {false, true}) {
+                granite::kernels::gqa_window_attn(dq, dk, dv, WNH, WNKV, WHD, pos0, WT, hi, win, cap, dscr, cap, out_f16, nullptr, blk);
+                granite::kernels::gqa_window_attn(dq, nullptr, nullptr, WNH, WNKV, WHD, pos0, WT, hi, win, cap, dscr, cap, out_i8, nullptr, blk, q8);
+                std::vector<float> hf16(hq.size()), hi8(hq.size());
+                ck(cudaMemcpy(hf16.data(), out_f16, hq.size() * 4, cudaMemcpyDeviceToHost), "copy");
+                ck(cudaMemcpy(hi8.data(), out_i8, hq.size() * 4, cudaMemcpyDeviceToHost), "copy");
+                const bool exact = std::memcmp(hf16.data(), hi8.data(), hq.size() * 4) == 0;
+                Err ew;
+                for (size_t i = 0; i < hq.size(); ++i) ew.add(hi8[i], hf16[i]);
+                std::printf("gqa_window_attn (hd=%d pos0=%lld blk=%d KvInt8 vs dequant fp16): bitwise %s, max abs %.3g\n",
+                            WHD, (long long) pos0, (int) blk, exact ? "yes" : "NO", ew.abs);
+                if (!exact) ++fails;
+                if (pos0 == 1020) {
+                    // Explicit CPU double wrap-around reference indexing absolute_position % cap directly.
+                    const double scale = 1.0 / std::sqrt((double) WHD);
+                    const int wg = WNH / WNKV;
+                    Err ecpu;
+                    for (int t = 0; t < WT; ++t) {
+                        const int64_t lo_t = std::max<int64_t>(0, pos0 + (blk ? 0 : t) - win + 1);
+                        for (int h = 0; h < WNH; ++h) {
+                            const int kv = h / wg;
+                            std::vector<double> sc((size_t) (hi - lo_t));
+                            double mx = -1e30;
+                            for (int64_t p = lo_t; p < hi; ++p) {
+                                const int64_t ce = p % cap;
+                                double dot = 0.0;
+                                for (int d = 0; d < WHD; ++d)
+                                    dot += (double) hq[((size_t) t * WNH + h) * WHD + d] *
+                                           (double) h2f(kd[((size_t) ce * WNKV + kv) * WHD + d]);
+                                sc[(size_t) (p - lo_t)] = dot * scale;
+                                mx = std::max(mx, sc[(size_t) (p - lo_t)]);
+                            }
+                            double den = 0.0;
+                            for (double& x : sc) { x = std::exp(x - mx); den += x; }
+                            for (int d = 0; d < WHD; ++d) {
+                                double acc = 0.0;
+                                for (int64_t p = lo_t; p < hi; ++p) {
+                                    const int64_t ce = p % cap;
+                                    acc += sc[(size_t) (p - lo_t)] * (double) h2f(vd[((size_t) ce * WNKV + kv) * WHD + d]);
+                                }
+                                ecpu.add(hi8[((size_t) t * WNH + h) * WHD + d], acc / den);
+                            }
+                        }
+                    }
+                    std::printf("  wrap-around CPU double ref (hd=%d blk=%d): max abs %.3g rel %.3g\n", WHD, (int) blk, ecpu.abs, ecpu.rel);
+                    if (ecpu.abs > 2e-3) ++fails;
+                }
+            }
+        }
+        cudaFree(dk); cudaFree(dv); cudaFree(q8.k); cudaFree(q8.v); cudaFree(q8.ks); cudaFree(q8.vs);
+        cudaFree(dq); cudaFree(out_f16); cudaFree(out_i8); cudaFree(dscr);
     }
     std::printf("%s\n", fails ? "FAIL" : "PASS");
     return fails ? 1 : 0;

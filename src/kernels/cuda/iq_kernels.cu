@@ -617,13 +617,16 @@ __device__ __forceinline__ float vec_dot_q3_K_q8_1(const void* __restrict__ vbq,
 }
 
 // NVFP4's UE4M3 sub-block scale as ggml decodes it (half the value, kvalues_fp4 being doubled; 0 and 0x7F as 0, bit 7
-// ignored), built from its bits: exact, and the same float as the CPU tier's nvfp4_scale.
+// ignored), branchless via FP16 unpack: exact bit-for-bit on all 256 uint8_t codes (iq_kernels.cu has no --use_fast_math),
+// matching the CPU tier's nvfp4_scale.
 __device__ __forceinline__ float nvfp4_scale_dev(uint32_t x) {
-    const uint32_t v = x & 0x7F;
-    if (v == 0 || v == 0x7F) return 0.0f;
-    const uint32_t e = v >> 3, m = v & 7;
-    if (e == 0) return (float) m * (1.0f / 1024.0f);
-    return __uint_as_float(((e + 119) << 23) | (m << 20));
+    uint32_t v = x & 0x7Fu;
+    v = (v == 0x7Fu) ? 0u : v;   // E4M3 NaN -> 0.0f (branchless SELP)
+    // Shift E4M3 (e:4, m:3) left by 7 into FP16 (e:5, m:10):
+    //   v == 0     -> 0.0h * 128.0f = +0.0f
+    //   e == 0,m>0 -> FP16 subnormal m*2^-17 * 2^7 = m/1024
+    //   e in 1..15 -> FP16 normal (1+m/8)*2^(e-15) * 2^7 = (1+m/8)*2^(e-8)
+    return __half2float(__ushort_as_half(static_cast<uint16_t>(v << 7))) * 128.0f;
 }
 // NVFP4: one call per 16-value sub-block (iqs 0..3).  Sub-block s meets q8_1 block s/2, half s&1; its byte j holds
 // value j (low nibble) and value j + 8 (high nibble), so the low nibbles of a word meet activation word w and the

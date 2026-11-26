@@ -8,8 +8,10 @@
 namespace granite::models::inkling2 {
 
 struct VisitCache {
-    void* k = nullptr;                   ///< [cap][kKvHeads][kHeadDim], position p in cell p % cap; fp16 or unit-scale E4M3
+    void* k = nullptr;                   ///< [cap][kv_heads][kHeadDim], position p in cell p % cap; fp16, E4M3, or int8
     void* v = nullptr;
+    uint16_t* ks = nullptr;              ///< non-null for --kv int8: fp16 scales [cap][kv_heads][kHeadDim/64]
+    uint16_t* vs = nullptr;
     int64_t cap = 0;
     bool ring = false;                   ///< a sliding-window visit: cells are positions modulo cap
     float* k_ring = nullptr;             ///< the key convolution's inputs of the last kConvRing positions [kConvRing][1024]

@@ -61,6 +61,8 @@ void ctrl_blend(const float* dest, const float* msg, const float* gf, int rows, 
 struct SegCaches {
     void* k = nullptr;
     void* v = nullptr;
+    uint16_t* k_scale = nullptr;
+    uint16_t* v_scale = nullptr;
     float* k_ring = nullptr;
     float* v_ring = nullptr;
     float* a_ring = nullptr;
@@ -92,8 +94,10 @@ struct AttnPrep {
     float log_floor = 8192.f, log_alpha = 0.1f;
     float* k_ring = nullptr;           ///< the convolution inputs of the last kConvRing positions [kConvRing][1024], slot pos % kConvRing
     float* v_ring = nullptr;
-    void* k_cache = nullptr;           ///< [cap][kKvHeads][kHeadDim], position p in cell p % cap; fp16 or E4M3 (fp8 set)
+    void* k_cache = nullptr;           ///< [cap][kKvHeads][kHeadDim], position p in cell p % cap; fp16, E4M3 (fp8), or int8 (k_scale set)
     void* v_cache = nullptr;
+    uint16_t* k_scale = nullptr;       ///< non-null: KvInt8 g64 fp16 scales [cap][kKvHeads][kHeadDim/64]
+    uint16_t* v_scale = nullptr;
     int64_t cap = 0;
     bool fp8 = false;                  ///< unit-scale E4M3 codes (keys are clipped and values normed, so they fit)
     float* q = nullptr;                ///< out: the clipped (and scaled) queries [rows][kHeads][kHeadDim]
@@ -102,6 +106,7 @@ struct AttnPrep {
     /// decode_prepare: the key/value groups [g0, g0 + ng) whose query heads (3g..3g + 2) it prepares (a card's share under
     /// tensor parallelism; yq is read only at their rows); every group's keys and values go to the cache
     int g0 = 0, ng = kKvHeads;
+    int kv_stride = kKvHeads;          ///< KV heads per cache cell (kKvHeads replicated, or ng under TP2 KV sharding)
     Segments seg;                      ///< a batch window's (decode_prepare only): each segment's caches and rings
 };
 /// Convolves the window's keys and values (positions before the window read from the rings, below position 0 zero),
@@ -118,6 +123,8 @@ struct AttnArgs {
     const int32_t* pos = nullptr;      ///< [rows]
     const void* k_cache = nullptr;
     const void* v_cache = nullptr;
+    const uint16_t* k_scale = nullptr; ///< non-null: KvInt8 g64 fp16 scales [cap][kKvHeads][kHeadDim/64]
+    const uint16_t* v_scale = nullptr;
     int64_t cap = 0;                   ///< the cache's cells (a ring when window is set)
     bool fp8 = false;
     int window = 0;                    ///< > 0: keys at distance < window only (the cache is then a ring of cap >= window + rows)
@@ -129,6 +136,7 @@ struct AttnArgs {
     /// attention_decode: the heads of key/value groups [g0, g0 + ng) only (a card's share under tensor parallelism; the
     /// other heads' fp32 outputs are left as they are)
     int g0 = 0, ng = kKvHeads;
+    int kv_stride = kKvHeads;          ///< KV heads per cache cell (kKvHeads replicated, or ng under TP2 KV sharding)
     uint32_t* sent = nullptr;          ///< set: counted there as sent (Exchange: the output projection sends the share)
     Segments seg;                      ///< a batch window's: each segment's caches
 };
@@ -143,6 +151,8 @@ size_t attention_decode_scratch(int rows, int64_t max_keys);
 /// window), with exp(sink[r][h]) beside them in the softmax's denominator. `max_keys` bounds the keys any row reads (it
 /// sizes the launch only: a row's keys split in slices fixed by its own key count). `out` may be null when q8 is set.
 void attention_decode(const AttnArgs& a, int rows, int64_t max_keys, void* scratch, float* out, void* stream);
+/// Diagnostic/test helper: unpack all 256 E4M3 byte codes via the branchless GPU converter into 256 raw IEEE FP16 bits.
+void e4m3_fast_unpack_all_256(uint16_t* out_h16, void* stream);
 
 /// out[r] = attn[r] * sigmoid(yq[r][kOffGate..]), the attention output gated by its own row's gate projection.
 void attn_gate(const float* attn, const float* yq, int rows, float* out, void* stream, int64_t yq_ld = kProjQ);
@@ -171,6 +181,32 @@ void moe_cpu_merge(const int32_t* ids, int rows, int k, const unsigned long long
 void moe_plan(const int32_t* ids, int rows, int k, int n_expert, const unsigned long long* blobs, unsigned long long* ptr,
               int32_t* start, int32_t* n_groups, int32_t* dst, int32_t* tok, void* stream, uint32_t* tally = nullptr,
               unsigned long long* rec_blobs = nullptr, int32_t* rec_n = nullptr);
+
+/// Fused decode router (logits + sigmoid top-k select) + moe_plan via formal last-block takeover (zero spin-wait,
+/// *done reset to 0 by the last block for CUDA Graph replay; `done` must be zero-initialized and never shared across
+/// concurrent streams). Bit-identical to standalone bk::router (Sigmoid) + moe_plan for rows <= kDecodeRows.
+struct RouterPlanArgs {
+    const float* x = nullptr;                  ///< [rows][kWidth]
+    const float* gate = nullptr;               ///< [n_expert][kWidth]
+    const float* bias = nullptr;               ///< [n_expert]
+    int n_expert = 0;
+    int k = 0;
+    float weight_scale = 1.0f;
+    const unsigned long long* blobs = nullptr; ///< [n_expert]
+    float* logits = nullptr;                   ///< [rows][n_expert]
+    int32_t* ids = nullptr;                    ///< [rows][k]
+    float* weights = nullptr;                  ///< [rows][k]
+    unsigned long long* ptr = nullptr;         ///< [rows * k]
+    int32_t* start = nullptr;                  ///< [rows * k + 2]
+    int32_t* n_groups = nullptr;               ///< [1]
+    int32_t* dst = nullptr;                    ///< [rows * k]
+    int32_t* tok = nullptr;                    ///< [rows * k]
+    uint32_t* done = nullptr;                  ///< [1] dedicated per-stream completion counter (starts and ends at 0)
+    uint32_t* tally = nullptr;                 ///< optional [n_expert]
+    unsigned long long* rec_blobs = nullptr;   ///< optional [kAheadExperts]
+    int32_t* rec_n = nullptr;                  ///< optional [1]
+};
+void router_plan_fused(const RouterPlanArgs& a, int rows, void* stream);
 constexpr int kAheadExperts = 8;   ///< the groups of a visit moe_plan records (rec_blobs, rec_n) for the next window
 /// Requests into L2 the first `bytes` of each of the *n blobs (moe_plan's record of a visit), 32 blocks each keeping one
 /// 128 KiB step in flight: run on a side stream while the glue before the experts runs; reads only.

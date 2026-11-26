@@ -58,7 +58,7 @@ void native_swiglu_quantize_q8_1(const float* gate, const float* up, void* x_q8_
 // calls would take different kernels run as those calls, which only segments of stride n_out (or one column) and no y2
 // allow. y2[i] set: the segment's output also there, the same layout (another card's memory: the stores go 16 rows at a
 // time, the tensor-core layout at any column count, which gives the same bits).
-constexpr int kQ80Segments = 6;
+constexpr int kQ80Segments = 8;
 struct Q80Segments {
     int n = 0;
     int row0[kQ80Segments] = {};

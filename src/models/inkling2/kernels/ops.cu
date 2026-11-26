@@ -3,6 +3,7 @@
 #include "granite/kernels/pdl.hpp"
 #include "granite/kernels/prefetch_l2.cuh"
 #include "granite/models/inkling2/kernels.hpp"
+#include "prep.cuh"
 
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
@@ -235,6 +236,9 @@ __global__ void __launch_bounds__(kThreads) attn_prepare_kernel(AttnPrep a) {
     const float inv_k = a.full ? (1.f / 3.f) : rsqrtf((float) kConv + 1.f);
     const float tau = a.full ? tau_of(p, a.log_floor, a.log_alpha) : 1.f;
     // keys and values
+    const bool remote = w < a.g0 || w >= a.g0 + a.ng;
+    if (remote && a.kv_stride < kKvHeads) return;
+    const int lw = a.kv_stride < kKvHeads ? (w - a.g0) : w;
 #pragma unroll
     for (int which = 0; which < 2; ++which) {
         const float* yall = which ? a.yv : a.yk;
@@ -273,10 +277,16 @@ __global__ void __launch_bounds__(kThreads) attn_prepare_kernel(AttnPrep a) {
         const float f = which == 0 ? fminf(a.qk_clip / (sqrtf(ss) + 1e-6f), 1.f) : rsqrtf(ss / (float) kHeadDim + a.eps);
         const int64_t cell = p % a.cap;
         void* cache = which ? a.v_cache : a.k_cache;
-        store_kv4(cache, a.fp8, ((size_t) cell * kKvHeads + w) * kHeadDim + lane * 4,
-                  val0 * f, val1 * f, val2 * f, val3 * f);
+        uint16_t* scale = which ? a.v_scale : a.k_scale;
+        if (scale) {
+            prep::store_kv4_i8(cache, scale, cell, lw, lane, val0 * f, val1 * f, val2 * f, val3 * f, a.kv_stride);
+        } else {
+            store_kv4(cache, a.fp8, ((size_t) cell * a.kv_stride + lw) * kHeadDim + lane * 4,
+                      val0 * f, val1 * f, val2 * f, val3 * f);
+        }
     }
-    // queries: warp w takes heads 3w .. 3w + 2
+    // queries: warp w takes heads 3w .. 3w + 2 (only this card's groups [g0, g0 + ng) under TP2)
+    if (remote) return;
     for (int h = w * 3; h < w * 3 + 3; ++h) {
         const int i = lane * 4;
         const float4 yv = *reinterpret_cast<const float4*>(yq + kOffQ + h * kHeadDim + i);
@@ -472,6 +482,289 @@ __global__ void __launch_bounds__(kPlanThreads) moe_plan_kernel(const int32_t* _
     }
 }
 
+// Fused decode router_logits + router_select (Sigmoid) + moe_plan via formal last-block takeover.
+// Bit-identical to standalone granite::kernels::router (Sigmoid) + moe_plan for rows <= kDecodeRows, n_embd == kWidth.
+constexpr int kRpGateRows = 4;
+constexpr int kRpTokStep = 2;
+constexpr int kRpMaxVec = 3;   // kWidth / 4 = 576 <= 3 * 256
+static_assert(kWidth % 128 == 0 && (kWidth / 4) <= kRpMaxVec * kPlanThreads && kDecodeRows % kRpTokStep == 0,
+              "router_plan_fused geometry");
+
+__global__ void __launch_bounds__(kPlanThreads) router_plan_fused_kernel(RouterPlanArgs a, int rows, int tb) {
+    // Phase 1: router_logits (verbatim arithmetic of granite::kernels::router_logits_kernel)
+    __shared__ union {
+        float red[kRpGateRows][kDecodeRows * (kPlanThreads / 32)];
+        struct {
+            float wmax[kPlanThreads / 32];
+            float lb[kPlanThreads / 2];
+            int le[kPlanThreads / 2];
+            float thr;
+            int n;
+            float sel[16];
+        } sel2[2];
+        struct {
+            float wmax[kPlanThreads / 32];
+            float lb[kPlanThreads];
+            int le[kPlanThreads];
+            float thr;
+            int n;
+            float sel[16];
+        } sel;
+        struct {
+            unsigned long long blob[kPlanThreads];
+            unsigned long long gblob[kPlanThreads];
+            int32_t count[kPlanThreads];
+            int32_t first[kPlanThreads];
+            int wsum[kPlanThreads / 32][2];
+            int groups;
+        } plan;
+    } u;
+    __shared__ int32_t sid[kDecodeRows * 16];
+    __shared__ bool last;
+
+    const int r0 = blockIdx.x * kRpGateRows, t0 = blockIdx.y * tb, nt = min(tb, rows - t0);
+    constexpr int n4 = kWidth >> 2;
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+    float4 w[kRpGateRows][kRpMaxVec];
+#pragma unroll
+    for (int g = 0; g < kRpGateRows; ++g)
+#pragma unroll
+        for (int c = 0; c < kRpMaxVec; ++c) {
+            const int i = threadIdx.x + c * kPlanThreads;
+            if (i < n4) w[g][c] = reinterpret_cast<const float4*>(a.gate + (size_t) (r0 + g) * kWidth)[i];
+        }
+    bk::pdl_wait();
+    bk::pdl_launch_dependents();
+    for (int t = 0; t < nt; t += kRpTokStep) {
+        float4 v[kRpTokStep][kRpMaxVec];
+#pragma unroll
+        for (int s = 0; s < kRpTokStep; ++s)
+#pragma unroll
+            for (int c = 0; c < kRpMaxVec; ++c) {
+                const int i = threadIdx.x + c * kPlanThreads;
+                if (t + s < nt && i < n4) v[s][c] = reinterpret_cast<const float4*>(a.x + (size_t) (t0 + t + s) * kWidth)[i];
+            }
+        float acc[kRpTokStep][kRpGateRows];
+#pragma unroll
+        for (int s = 0; s < kRpTokStep; ++s)
+#pragma unroll
+            for (int g = 0; g < kRpGateRows; ++g) acc[s][g] = 0.f;
+#pragma unroll
+        for (int c = 0; c < kRpMaxVec; ++c) {
+            if (threadIdx.x + c * kPlanThreads >= n4) break;
+#pragma unroll
+            for (int s = 0; s < kRpTokStep; ++s)
+#pragma unroll
+                for (int g = 0; g < kRpGateRows; ++g) {
+                    acc[s][g] = fmaf(w[g][c].x, v[s][c].x, acc[s][g]);
+                    acc[s][g] = fmaf(w[g][c].y, v[s][c].y, acc[s][g]);
+                    acc[s][g] = fmaf(w[g][c].z, v[s][c].z, acc[s][g]);
+                    acc[s][g] = fmaf(w[g][c].w, v[s][c].w, acc[s][g]);
+                }
+        }
+#pragma unroll
+        for (int s = 0; s < kRpTokStep; ++s)
+#pragma unroll
+            for (int g = 0; g < kRpGateRows; ++g) {
+                const float sum = warp_sum(acc[s][g]);
+                if (lane == 0 && t + s < nt) u.red[g][(t + s) * (kPlanThreads / 32) + warp] = sum;
+            }
+    }
+    __syncthreads();
+    {
+        const int g = threadIdx.x / kDecodeRows, t = threadIdx.x % kDecodeRows;
+        if (g < kRpGateRows && t < nt) {
+            float s = 0.f;
+#pragma unroll
+            for (int i = 0; i < kPlanThreads / 32; ++i) s += u.red[g][t * (kPlanThreads / 32) + i];
+            a.logits[(size_t) (t0 + t) * a.n_expert + r0 + g] = s;
+        }
+    }
+    __syncthreads();   // release this block's logit stores before signaling completion
+    if (threadIdx.x == 0) {
+        unsigned prior;
+        asm volatile("atom.acq_rel.gpu.global.add.u32 %0, [%1], 1;\n" : "=r"(prior) : "l"(a.done) : "memory");
+        last = prior == (unsigned) (gridDim.x * gridDim.y - 1);
+        if (last) *a.done = 0u;   // reset for CUDA Graph replay
+    }
+    __syncthreads();
+    if (!last) return;
+
+    // Phase 2: router_select (Sigmoid) over rows 0..rows-1 reading logits via __ldcg.
+    // When n_expert <= 128 (Inkling 2 Mini: 128), run 2 tokens in parallel across the two 128-thread halves of the block.
+    // All __syncthreads() sit outside per-expert/per-token guards so all 256 threads synchronize uniformly.
+    const int e = threadIdx.x, nw = a.n_expert >> 5;
+    if (a.n_expert <= kPlanThreads / 2) {
+        const int half = threadIdx.x >> 7;        // 0 or 1
+        const int ex = threadIdx.x & 127;         // 0..127
+        const int hw = (ex >> 5);                 // 0..3 within half
+        const float bias_e = ex < a.n_expert ? a.bias[ex] : 0.f;
+        for (int t0_s = 0; t0_s < rows; t0_s += 2) {
+            const int t = t0_s + half;
+            const bool act = t < rows && ex < a.n_expert;
+            float s = 0.f, b = -INFINITY;
+            if (act) {
+                s = sigmoidf_(__ldcg(a.logits + (size_t) t * a.n_expert + ex));
+                b = s + bias_e;
+                float m = b;
+#pragma unroll
+                for (int o = 16; o; o >>= 1) m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, o));
+                if (lane == 0) u.sel2[half].wmax[hw] = m;
+            }
+            if (ex == 0) u.sel2[half].n = 0;
+            __syncthreads();
+            if (hw == 0 && t < rows) {
+                if (nw < a.k) {
+                    if (lane == 0) u.sel2[half].thr = -INFINITY;
+                } else if (lane < nw) {
+                    const float v = u.sel2[half].wmax[lane];
+                    int r = 0;
+                    for (int j = 0; j < nw; ++j)
+                        r += (u.sel2[half].wmax[j] > v) | ((u.sel2[half].wmax[j] == v) & (j < lane));
+                    if (r == a.k - 1) u.sel2[half].thr = v;
+                }
+            }
+            __syncthreads();
+            const bool cand = act && b >= u.sel2[half].thr;
+            if (cand) {
+                const int i = atomicAdd(&u.sel2[half].n, 1);
+                u.sel2[half].lb[i] = b;
+                u.sel2[half].le[i] = ex;
+            }
+            __syncthreads();
+            if (cand) {
+                int rank = 0;
+                for (int j = 0; j < u.sel2[half].n; ++j)
+                    rank += (u.sel2[half].lb[j] > b) | ((u.sel2[half].lb[j] == b) & (u.sel2[half].le[j] < ex));
+                if (rank < a.k) {
+                    u.sel2[half].sel[rank] = s;
+                    a.ids[(size_t) t * a.k + rank] = ex;
+                    sid[t * a.k + rank] = ex;
+                }
+            }
+            __syncthreads();
+            if (ex == 0 && t < rows) {
+                float sum = 0.f;
+                for (int r = 0; r < a.k; ++r) sum += u.sel2[half].sel[r];
+                const float denom = sum + 1e-20f;
+                for (int r = 0; r < a.k; ++r) a.weights[(size_t) t * a.k + r] = u.sel2[half].sel[r] / denom * a.weight_scale;
+            }
+            __syncthreads();
+        }
+    } else {
+        const float bias_e = e < a.n_expert ? a.bias[e] : 0.f;
+        for (int t = 0; t < rows; ++t) {
+            float s = 0.f, b = -INFINITY;
+            if (e < a.n_expert) {
+                s = sigmoidf_(__ldcg(a.logits + (size_t) t * a.n_expert + e));
+                b = s + bias_e;
+                float m = b;
+#pragma unroll
+                for (int o = 16; o; o >>= 1) m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, o));
+                if (lane == 0) u.sel.wmax[warp] = m;
+            }
+            if (e == 0) u.sel.n = 0;
+            __syncthreads();
+            if (warp == 0) {
+                if (nw < a.k) {
+                    if (lane == 0) u.sel.thr = -INFINITY;
+                } else if (lane < nw) {
+                    const float v = u.sel.wmax[lane];
+                    int r = 0;
+                    for (int j = 0; j < nw; ++j) r += (u.sel.wmax[j] > v) | ((u.sel.wmax[j] == v) & (j < lane));
+                    if (r == a.k - 1) u.sel.thr = v;
+                }
+            }
+            __syncthreads();
+            const bool cand = e < a.n_expert && b >= u.sel.thr;
+            if (cand) {
+                const int i = atomicAdd(&u.sel.n, 1);
+                u.sel.lb[i] = b;
+                u.sel.le[i] = e;
+            }
+            __syncthreads();
+            if (cand) {
+                int rank = 0;
+                for (int j = 0; j < u.sel.n; ++j) rank += (u.sel.lb[j] > b) | ((u.sel.lb[j] == b) & (u.sel.le[j] < e));
+                if (rank < a.k) {
+                    u.sel.sel[rank] = s;
+                    a.ids[(size_t) t * a.k + rank] = e;
+                    sid[t * a.k + rank] = e;
+                }
+            }
+            __syncthreads();
+            if (e == 0) {
+                float sum = 0.f;
+                for (int r = 0; r < a.k; ++r) sum += u.sel.sel[r];
+                const float denom = sum + 1e-20f;
+                for (int r = 0; r < a.k; ++r) a.weights[(size_t) t * a.k + r] = u.sel.sel[r] / denom * a.weight_scale;
+            }
+            __syncthreads();
+        }
+    }
+
+    // Phase 3: moe_plan directly over shared sid[0..n)
+    const int n = rows * a.k;
+    if (e < a.n_expert) {
+        u.plan.blob[e] = a.blobs[e];
+        u.plan.count[e] = 0;
+    }
+    __syncthreads();
+    for (int i = threadIdx.x; i < n; i += blockDim.x) {
+        const int x = sid[i];
+        if (u.plan.blob[x]) atomicAdd(&u.plan.count[x], 1);
+    }
+    __syncthreads();
+    const int c = e < a.n_expert ? u.plan.count[e] : 0;
+    int s = c, used = c > 0;
+#pragma unroll
+    for (int o = 1; o < 32; o <<= 1) {
+        const int tv = __shfl_up_sync(0xffffffffu, s, o), uv = __shfl_up_sync(0xffffffffu, used, o);
+        if (lane >= o) {
+            s += tv;
+            used += uv;
+        }
+    }
+    if (lane == 31) {
+        u.plan.wsum[warp][0] = s;
+        u.plan.wsum[warp][1] = used;
+    }
+    __syncthreads();
+    int at = 0, g = 0;
+    for (int j = 0; j < warp; ++j) {
+        at += u.plan.wsum[j][0];
+        g += u.plan.wsum[j][1];
+    }
+    if (e < a.n_expert) u.plan.first[e] = at + s - c;
+    if (c > 0) {
+        u.plan.gblob[g + used - 1] = u.plan.blob[e];
+        a.ptr[g + used - 1] = u.plan.blob[e];
+        a.start[g + used - 1] = at + s - c;
+    }
+    if (e == kPlanThreads - 1) {
+        a.start[g + used] = at + s;
+        a.start[g + used + 1] = at + s;
+        *a.n_groups = g + used;
+        u.plan.groups = g + used;
+    }
+    __syncthreads();
+    if (a.rec_blobs && e < kAheadExperts) {
+        const int ng = u.plan.groups;
+        a.rec_blobs[e] = e < ng ? u.plan.gblob[e] : 0ull;
+        if (e == 0) *a.rec_n = ng < kAheadExperts ? ng : kAheadExperts;
+    }
+    if (a.tally && c) atomicAdd(&a.tally[e], (uint32_t) c);
+    for (int i = threadIdx.x; i < n; i += blockDim.x) {
+        const int x = sid[i];
+        if (!u.plan.blob[x]) continue;
+        int before = 0;
+        for (int j = 0; j < i; ++j) before += sid[j] == x;
+        const int p = u.plan.first[x] + before;
+        a.dst[p] = i;
+        a.tok[p] = i / a.k;
+    }
+}
+
 constexpr int kMergeThreads = 256;
 __global__ void __launch_bounds__(kMergeThreads) moe_cpu_merge_kernel(const int32_t* __restrict__ ids,
                                                                       const unsigned long long* __restrict__ blobs,
@@ -655,6 +948,16 @@ void moe_plan(const int32_t* ids, int rows, int k, int n_expert, const unsigned 
                    (size_t) n_expert * (2 * sizeof(unsigned long long) + 2 * sizeof(int32_t)) + (size_t) n * sizeof(int32_t), (cudaStream_t) stream,
                    ids, n, n_expert, blobs, ptr, start, n_groups, dst, tok, k, tally, rec_blobs, rec_n);
     check("moe_plan");
+}
+
+void router_plan_fused(const RouterPlanArgs& a, int rows, void* stream) {
+    if (rows <= 0) return;
+    if (rows > kDecodeRows || a.n_expert % 32 || a.n_expert > kPlanThreads || a.k < 1 || a.k > 16 || a.k > a.n_expert || !a.done)
+        throw std::invalid_argument("inkling2 router_plan_fused: unsupported geometry");
+    const int tb = rows <= 4 ? 2 : 4;
+    const dim3 grid((unsigned) (a.n_expert / kRpGateRows), (unsigned) ((rows + tb - 1) / tb));
+    bk::launch_pdl(router_plan_fused_kernel, grid, dim3(kPlanThreads), 0, (cudaStream_t) stream, a, rows, tb);
+    check("router_plan_fused");
 }
 
 void moe_combine(const float* out, const float* w, int rows, int k, float* y, void* stream, float* y_peer, uint32_t* sent) {
